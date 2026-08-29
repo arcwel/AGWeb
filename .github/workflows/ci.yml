@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - run: npm ci
+      - name: Rebuild node-pty for Electron
+        # If headers can't be fetched, the app falls back to its system-node pty host.
+        run: npm run rebuild:native || echo "electron-rebuild failed; smoke uses the pty-host fallback"
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run build
+      - name: Smoke test (Electron under Xvfb)
+        run: xvfb-run -a node scripts/smoke.mjs smoke.png
+      - name: Upload smoke screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agweb-smoke
+          path: app/smoke.png
+          if-no-files-found: ignore

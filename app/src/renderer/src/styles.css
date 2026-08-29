@@ -1,0 +1,685 @@
+@import 'tailwindcss';
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* The accent was written as Tailwind's `sky` throughout the app before the
+   Glass direction was settled. Remapping the scale to the design's teal turns
+   every existing `sky-*` utility into the right colour at once, rather than
+   leaving 24 files to drift apart one edit at a time. */
+@theme {
+  --color-sky-50: #eafaf7;
+  --color-sky-100: #cdf3ec;
+  --color-sky-200: #a3e9dd;
+  --color-sky-300: #7ce3d7;
+  --color-sky-400: #63dbcc;
+  --color-sky-500: #4fd4c4;
+  --color-sky-600: #2f9c92;
+  --color-sky-700: #26807a;
+  --color-sky-800: #1f6763;
+  --color-sky-900: #1a5450;
+}
+
+/* ============================================================
+   Design tokens — the "Glass" direction from the design canvas.
+   Dark-first: the palette, the teal accent and the glass surfaces
+   are the identity, so light mode is a variation on them rather
+   than the other way round.
+   ============================================================ */
+:root {
+  color-scheme: dark;
+
+  --wd-bg: #0f1114;
+  --wd-text: #e6e8ea;
+  --wd-muted: #9ba1a8;
+  --wd-dim: #6b7178;
+  --wd-faint: #4b5158;
+
+  --wd-accent: #4fd4c4;
+  --wd-accent-ink: #0f1114;
+  --wd-accent-2: #7a8cff;
+  --wd-accent-soft: rgba(79, 212, 196, 0.13);
+  --wd-accent-line: rgba(79, 212, 196, 0.24);
+
+  --wd-glass: rgba(255, 255, 255, 0.055);
+  --wd-glass-border: rgba(255, 255, 255, 0.09);
+  --wd-hairline: rgba(255, 255, 255, 0.07);
+  --wd-well: rgba(0, 0, 0, 0.3);
+  --wd-field: rgba(0, 0, 0, 0.28);
+  --wd-hover: rgba(255, 255, 255, 0.06);
+
+  /* Shape language: capsules and generously rounded rectangles. */
+  --wd-r-capsule: 20px;
+  --wd-r-stage: 18px;
+  --wd-r-block: 15px;
+  --wd-r-pill: 13px;
+  --wd-r-icon: 10px;
+  --wd-r-inner: 8px;
+
+  /* Room for the native traffic lights at the left of the tab row. */
+  --wd-titlebar-inset: 86px;
+}
+
+/* Light mode keeps the same shapes and accent, on paper instead of glass. */
+:root:not(.dark) {
+  color-scheme: light;
+  --wd-bg: #eef0f3;
+  --wd-text: #10141a;
+  --wd-muted: #5b636d;
+  --wd-dim: #79818b;
+  --wd-faint: #a8afb8;
+  --wd-accent: #17a08f;
+  --wd-accent-ink: #ffffff;
+  --wd-accent-soft: rgba(23, 160, 143, 0.12);
+  --wd-accent-line: rgba(23, 160, 143, 0.28);
+  --wd-glass: rgba(255, 255, 255, 0.72);
+  --wd-glass-border: rgba(15, 20, 26, 0.08);
+  --wd-hairline: rgba(15, 20, 26, 0.08);
+  --wd-well: rgba(255, 255, 255, 0.86);
+  --wd-field: rgba(15, 20, 26, 0.04);
+  --wd-hover: rgba(15, 20, 26, 0.05);
+}
+
+/* The frosted surface every floating element shares. */
+.glass {
+  background: var(--wd-glass);
+  backdrop-filter: blur(30px) saturate(1.5);
+  -webkit-backdrop-filter: blur(30px) saturate(1.5);
+  border: 1px solid var(--wd-glass-border);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.1) inset,
+    0 16px 40px rgba(0, 0, 0, 0.5);
+}
+:root:not(.dark) .glass {
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.7) inset,
+    0 10px 30px rgba(15, 20, 26, 0.1);
+}
+
+/* The two ambient glows behind everything. */
+.wd-shell {
+  position: relative;
+  background: var(--wd-bg);
+  color: var(--wd-text);
+  isolation: isolate;
+}
+.wd-shell::before,
+.wd-shell::after {
+  content: '';
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: -1;
+}
+.wd-shell::before {
+  width: 680px;
+  height: 680px;
+  left: -160px;
+  top: -220px;
+  background: radial-gradient(circle, rgba(79, 212, 196, 0.13), rgba(79, 212, 196, 0) 68%);
+}
+.wd-shell::after {
+  width: 600px;
+  height: 600px;
+  right: -140px;
+  bottom: -200px;
+  background: radial-gradient(circle, rgba(122, 140, 255, 0.12), rgba(122, 140, 255, 0) 68%);
+}
+
+/* Icon buttons: 30x30, soft-cornered, teal when active. */
+.wd-icon {
+  width: 30px;
+  height: 30px;
+  border-radius: var(--wd-r-icon);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  color: var(--wd-muted);
+  transition:
+    background 0.15s,
+    color 0.15s;
+}
+.wd-icon:hover:not(:disabled) {
+  background: var(--wd-hover);
+  color: var(--wd-text);
+}
+.wd-icon:disabled {
+  color: var(--wd-faint);
+}
+.wd-icon-on {
+  background: var(--wd-accent-soft);
+  color: var(--wd-accent);
+}
+
+/* Small uppercase mono labels, used for every section caption. */
+.wd-cap {
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--wd-dim);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  font-family:
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    Roboto,
+    sans-serif;
+}
+
+/* ---- Dev Deck: Stage reveal choreography (see DESIGN.md) ---- */
+
+.workspace {
+  --rail-w: 0px;
+  /* Deck sizes are user-resizable (2B.3); App.tsx sets these from the store. */
+  --deck-col-w: 436px;
+  --deck-left-w: 0px;
+  --deck-dock-h: 248px;
+  position: relative;
+  flex: 1;
+  overflow: hidden;
+  min-height: 0;
+}
+.workspace.has-rail {
+  --rail-w: 48px;
+}
+
+/* The stage is the browser viewport. Browsing: full bleed. Deck: spotlit frame. */
+.stage {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: 0;
+  transition:
+    inset 0.55s cubic-bezier(0.32, 0.72, 0, 1),
+    border-radius 0.55s cubic-bezier(0.32, 0.72, 0, 1),
+    box-shadow 0.55s ease;
+}
+.workspace.revealed .stage {
+  inset: 6px calc(var(--deck-col-w) + 12px + var(--rail-w)) calc(var(--deck-dock-h) + 12px)
+    calc(var(--deck-left-w) + 6px);
+  border-radius: var(--wd-r-stage);
+  box-shadow: 0 18px 46px rgba(0, 0, 0, 0.5);
+}
+:root:not(.dark) .workspace.revealed .stage {
+  box-shadow: 0 14px 34px rgba(15, 20, 26, 0.16);
+}
+
+/* Right column of blocks: slides in just after the stage starts moving. */
+/* An empty bottom dock contributes nothing: no reserved band, no gutter. The
+   height itself is set inline by App.tsx — an inline custom property beats a
+   class rule, so setting it here would silently do nothing. */
+.workspace.dock-empty .deck-resize-dock {
+  display: none;
+}
+/* Empty, the dock collapses to a thin strip that still accepts a drop —
+   hiding it entirely left nowhere to put a block back. */
+.workspace.dock-empty .deck-dock {
+  height: 10px;
+  bottom: 6px;
+  border-radius: 8px;
+  border: 1px dashed transparent;
+  transition:
+    border-color 0.15s,
+    background 0.15s;
+}
+.workspace.dock-empty .deck-dock:hover {
+  border-color: var(--wd-accent-line);
+  background: var(--wd-accent-soft);
+}
+
+/* Left column of blocks. Zero-width until something is dropped into it, but
+   the drop target itself stays reachable at the stage's left edge. */
+.deck-left {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  bottom: calc(var(--deck-dock-h) + 12px);
+  width: var(--deck-left-w);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow-y: auto;
+  transform: translateX(calc(-100% - 12px));
+  transition: transform 0.55s cubic-bezier(0.32, 0.72, 0, 1) 0.07s;
+}
+.workspace.revealed .deck-left {
+  transform: translateX(0);
+}
+.deck-left > .deck-group {
+  min-height: 260px;
+}
+/* Closed: a thin strip that still accepts a drop, so the zone is discoverable
+   without permanently costing 220px of stage. */
+.workspace.left-empty .deck-left {
+  width: 10px;
+  overflow: visible;
+}
+
+.deck-col {
+  position: absolute;
+  top: 6px;
+  right: calc(6px + var(--rail-w));
+  bottom: calc(var(--deck-dock-h) + 12px);
+  width: var(--deck-col-w);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow-y: auto;
+  transform: translateX(calc(100% + 12px));
+  transition: transform 0.55s cubic-bezier(0.32, 0.72, 0, 1) 0.07s;
+}
+
+/* Stacks share the column evenly until that would leave one too short to use;
+   past that they stop shrinking and the column scrolls, which is what keeps a
+   transcript or a file tree readable once four blocks are open at once. */
+.deck-col > .deck-group {
+  min-height: 260px;
+}
+.workspace.revealed .deck-col {
+  transform: translateX(0);
+}
+
+/* Bottom dock: rises from below, last. */
+.deck-dock {
+  position: absolute;
+  left: calc(var(--deck-left-w) + 6px);
+  right: calc(6px + var(--rail-w));
+  bottom: 6px;
+  height: var(--deck-dock-h);
+  display: flex;
+  gap: 6px;
+  transform: translateY(calc(100% + 12px));
+  transition: transform 0.55s cubic-bezier(0.32, 0.72, 0, 1) 0.14s;
+}
+.workspace.revealed .deck-dock {
+  transform: translateY(0);
+}
+
+/* The rail: collapsed blocks as an icon strip on the right edge. */
+.deck-rail {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 36px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transform: translateX(calc(100% + 24px));
+  transition: transform 0.55s cubic-bezier(0.32, 0.72, 0, 1) 0.07s;
+}
+.workspace.revealed .deck-rail {
+  transform: translateX(0);
+}
+
+/* Edge-resize handles (2B.3): live in the 12px gutters beside the deck. */
+.deck-resize {
+  position: absolute;
+  z-index: 30;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.deck-resize:hover,
+.deck-resize.dragging {
+  opacity: 1;
+}
+.deck-resize::after {
+  content: '';
+  position: absolute;
+  inset: 4px 5px;
+  border-radius: 3px;
+  background: rgba(14, 165, 233, 0.45);
+}
+.deck-resize-col {
+  top: 6px;
+  bottom: calc(var(--deck-dock-h) + 12px);
+  right: calc(12px + var(--rail-w) + var(--deck-col-w));
+  width: 12px;
+  cursor: col-resize;
+}
+.deck-resize-dock {
+  left: calc(var(--deck-left-w) + 6px);
+  right: calc(6px + var(--rail-w));
+  bottom: calc(12px + var(--deck-dock-h));
+  height: 12px;
+  cursor: row-resize;
+}
+.deck-resize-dock::after {
+  inset: 5px 4px;
+}
+
+/* Frameless child windows: header drags the window, controls stay clickable. */
+.drag-region {
+  -webkit-app-region: drag;
+}
+.no-drag,
+.drag-region button,
+.drag-region input,
+.drag-region select,
+.drag-region a,
+.drag-region [role='separator'] {
+  -webkit-app-region: no-drag;
+}
+
+/* ---- Document Studio: styled Markdown (GitHub-flavored look) ---- */
+
+.doc-md {
+  font-size: 15px;
+  line-height: 1.65;
+  color: #1e293b;
+}
+.dark .doc-md {
+  color: #d3dce6;
+}
+.doc-md h1,
+.doc-md h2 {
+  margin: 1.4em 0 0.6em;
+  padding-bottom: 0.3em;
+  border-bottom: 1px solid #e2e8f0;
+  font-weight: 700;
+  line-height: 1.25;
+}
+.dark .doc-md h1,
+.dark .doc-md h2 {
+  border-color: #1e293b;
+}
+.doc-md h1 {
+  margin-top: 0;
+  font-size: 1.9em;
+}
+.doc-md h2 {
+  font-size: 1.45em;
+}
+.doc-md h3,
+.doc-md h4 {
+  margin: 1.2em 0 0.5em;
+  font-weight: 650;
+  font-size: 1.15em;
+}
+.doc-md p,
+.doc-md ul,
+.doc-md ol {
+  margin: 0 0 1em;
+}
+.doc-md ul,
+.doc-md ol {
+  padding-left: 1.6em;
+}
+.doc-md li {
+  margin: 0.25em 0;
+}
+.doc-md a {
+  color: #0284c7;
+  text-decoration: none;
+}
+.doc-md a:hover {
+  text-decoration: underline;
+}
+.dark .doc-md a {
+  color: #38bdf8;
+}
+.doc-md code {
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 0.86em;
+  background: #f1f5f9;
+  border-radius: 5px;
+  padding: 0.15em 0.35em;
+}
+.dark .doc-md code {
+  background: #16202e;
+}
+.doc-md pre {
+  margin: 0 0 1em;
+  padding: 14px 16px;
+  overflow-x: auto;
+  background: #f1f5f9;
+  border-radius: 8px;
+}
+.dark .doc-md pre {
+  background: #101827;
+}
+.doc-md pre code {
+  background: none;
+  padding: 0;
+}
+.doc-md blockquote {
+  margin: 0 0 1em;
+  padding: 0.2em 1em;
+  border-left: 3px solid #cbd5e1;
+  color: #64748b;
+}
+.dark .doc-md blockquote {
+  border-color: #334155;
+  color: #94a3b8;
+}
+.doc-md table {
+  margin: 0 0 1em;
+  border-collapse: collapse;
+  display: block;
+  overflow-x: auto;
+}
+.doc-md th,
+.doc-md td {
+  border: 1px solid #e2e8f0;
+  padding: 6px 12px;
+}
+.dark .doc-md th,
+.dark .doc-md td {
+  border-color: #1e293b;
+}
+.doc-md th {
+  background: #f8fafc;
+  font-weight: 650;
+}
+.dark .doc-md th {
+  background: #101827;
+}
+.doc-md hr {
+  margin: 1.6em 0;
+  border: none;
+  border-top: 1px solid #e2e8f0;
+}
+.dark .doc-md hr {
+  border-color: #1e293b;
+}
+.doc-md img {
+  max-width: 100%;
+}
+.doc-md input[type='checkbox'] {
+  margin-right: 0.4em;
+}
+
+/* Document themes */
+.doc-theme-serif {
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 17px;
+  line-height: 1.7;
+}
+.doc-theme-compact {
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* Code highlighting tokens (highlight.js class names), light + dark */
+.doc-md .hljs-keyword,
+.doc-md .hljs-selector-tag,
+.doc-md .hljs-meta {
+  color: #9333ea;
+}
+.doc-md .hljs-string,
+.doc-md .hljs-attr,
+.doc-md .hljs-regexp {
+  color: #15803d;
+}
+.doc-md .hljs-title,
+.doc-md .hljs-name,
+.doc-md .hljs-built_in {
+  color: #0369a1;
+}
+.doc-md .hljs-comment,
+.doc-md .hljs-quote {
+  color: #64748b;
+}
+.doc-md .hljs-number,
+.doc-md .hljs-literal,
+.doc-md .hljs-type {
+  color: #b45309;
+}
+.dark .doc-md .hljs-keyword,
+.dark .doc-md .hljs-selector-tag,
+.dark .doc-md .hljs-meta {
+  color: #c084fc;
+}
+.dark .doc-md .hljs-string,
+.dark .doc-md .hljs-attr,
+.dark .doc-md .hljs-regexp {
+  color: #86efac;
+}
+.dark .doc-md .hljs-title,
+.dark .doc-md .hljs-name,
+.dark .doc-md .hljs-built_in {
+  color: #7dd3fc;
+}
+.dark .doc-md .hljs-number,
+.dark .doc-md .hljs-literal,
+.dark .doc-md .hljs-type {
+  color: #fcd34d;
+}
+
+/* Mermaid diagrams center in the document flow */
+.mermaid-diagram {
+  display: block;
+  margin: 0 0 1em;
+  text-align: center;
+}
+.mermaid-diagram svg {
+  max-width: 100%;
+}
+
+/* Breakpoint glyph in the editor gutter (task 12.4). */
+.agweb-breakpoint::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 4px;
+  width: 10px;
+  height: 10px;
+  margin-top: -5px;
+  border-radius: 50%;
+  background: #ef4444;
+}
+
+/* Left-column edge resize, mirroring .deck-resize-col on the other side. */
+.deck-resize-left {
+  top: 6px;
+  bottom: calc(var(--deck-dock-h) + 12px);
+  left: var(--deck-left-w);
+  width: 12px;
+  cursor: col-resize;
+}
+
+/* Splitters between bottom-dock blocks: every block in the dock is resizable
+   (not just the first), so each boundary gets its own handle. */
+.dock-splitter {
+  flex: 0 0 8px;
+  cursor: col-resize;
+  position: relative;
+}
+.dock-splitter::after {
+  content: '';
+  position: absolute;
+  inset: 8px 2px;
+  border-radius: 3px;
+  background: transparent;
+  transition: background 0.15s;
+}
+.dock-splitter:hover::after,
+.dock-splitter.dragging::after {
+  background: rgba(14, 165, 233, 0.45);
+}
+
+/* Drag preview: the block's own header, so what moves is obviously the block. */
+.drag-ghost {
+  position: fixed;
+  top: -1000px;
+  left: -1000px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 12px;
+  border-radius: 8px;
+  border: 1px solid #38bdf8;
+  background: #ffffff;
+  color: #334155;
+  font:
+    600 11px/1 ui-sans-serif,
+    system-ui,
+    sans-serif;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.28);
+  pointer-events: none;
+}
+.dark .drag-ghost {
+  background: #0e1420;
+  color: #cbd5e1;
+  border-color: #0ea5e9;
+}
+
+/* ---- Deck blocks: the design's dark wells with hairline borders ---- */
+.deck-group {
+  background: var(--wd-well) !important;
+  border-color: var(--wd-glass-border) !important;
+  border-radius: var(--wd-r-block) !important;
+  backdrop-filter: blur(24px) saturate(1.4);
+  -webkit-backdrop-filter: blur(24px) saturate(1.4);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
+}
+:root:not(.dark) .deck-group {
+  box-shadow: 0 8px 22px rgba(15, 20, 26, 0.08);
+}
+/* Block headers are a 36px hairline-separated strip. */
+.deck-group > [data-deck-header] {
+  height: 36px !important;
+  border-color: var(--wd-hairline) !important;
+}
+
+/* The rail's collapsed chips share the glass. */
+.deck-rail > * {
+  border-radius: var(--wd-r-icon);
+}
+
+/* Chrome shares the window's ground so the top edge is seamless: no capsule
+   floating on a different colour, no border where the title bar used to be. */
+.wd-chrome {
+  background: transparent;
+}
+
+/* The favourites bar reveals slowly enough to read, rather than snapping in. */
+.utilities-bar {
+  animation: utilities-reveal 0.42s cubic-bezier(0.32, 0.72, 0, 1);
+  transform-origin: top center;
+  overflow: hidden;
+}
+@keyframes utilities-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+    max-height: 0;
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    max-height: 60px;
+  }
+}

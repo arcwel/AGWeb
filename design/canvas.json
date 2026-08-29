@@ -1,0 +1,17 @@
+{
+  "artboards": [
+    { "file": "Main.dc.html", "title": "Browser only — the star", "x": 0, "y": 0, "w": 1440, "h": 900 },
+    { "file": "DeckDocked.dc.html", "title": "Direction A — Stage (docked)", "x": 1560, "y": 0, "w": 1440, "h": 900 },
+    { "file": "RevealPrototype.dc.html", "title": "Reveal prototype — click Deck", "x": 0, "y": 1060, "w": 1440, "h": 900, "is_interactive": true },
+    { "file": "DeckFloating.dc.html", "title": "Direction B — Overlay (floating)", "x": 1560, "y": 1060, "w": 1440, "h": 900 },
+    { "file": "DetachedIDE.dc.html", "title": "Detached — browser + IDE as two windows", "x": 0, "y": 2120, "w": 1560, "h": 820 },
+    { "file": "BlockAnatomy.dc.html", "title": "Block anatomy & states", "x": 1680, "y": 2120, "w": 1080, "h": 760 }
+  ],
+  "annotations": [
+    { "id": "brief", "x": 0, "y": -170, "w": 620, "text": "AGWeb, browser-first. Top-left: pure browsing — zero dev chrome, just a Deck button. Right: two directions for how the Dev Deck appears. A (Stage): the page scales back into a spotlit stage and blocks dock around it. B (Overlay): glass blocks float over the page. The second-row left artboard is interactive — click its Deck button to play the reveal/hide animation (Direction A choreography)." },
+    { "id": "prototype-hint", "x": -290, "y": 1100, "w": 260, "text": "Interactive: click the Deck button (top right of this artboard) to toggle the reveal. Stage retreats, blocks slide in staggered; click again to hide." },
+    { "id": "stacking-hint", "x": 1560, "y": -170, "w": 400, "text": "Blocks stack: drop one onto another to make a tabbed group (see the bottom dock — Terminal 1 / Terminal 2 / Logs). Any block type can have multiple instances; + opens another. The pop-out button beside Deck detaches the whole deck into its own window." },
+    { "id": "detached-hint", "x": 0, "y": 2970, "w": 520, "text": "Detached mode: one click pops the entire deck out as a standalone IDE window (files, tabbed editors, stacked terminals) while the browser returns to pure browsing — two apps, two monitors if you like. Dock back re-merges them into the single-window Stage layout." }
+  ],
+  "launch": { "view": "canvas" }
+}

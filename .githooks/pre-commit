@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# AGWeb pre-commit gate (task 0.7): lint + typecheck before any commit.
+# Installed automatically by app/scripts/postinstall.mjs (core.hooksPath).
+# Skip in a pinch with: git commit --no-verify
+set -euo pipefail
+cd "$(git rev-parse --show-toplevel)/app"
+npm run --silent lint
+npm run --silent typecheck

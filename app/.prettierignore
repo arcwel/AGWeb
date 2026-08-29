@@ -1,0 +1,6 @@
+out/
+node_modules/
+dist/
+
+# Microsoft's vendored debug adapter build (task 12.4), not our source.
+resources/js-debug/

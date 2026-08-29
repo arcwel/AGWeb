@@ -1,0 +1,74 @@
+/** Agent orchestration domain types, shared by main and every renderer. */
+
+export type AgentStatus =
+  | 'planning'
+  | 'awaiting_approval'
+  | 'running'
+  | 'done'
+  | 'rejected'
+  | 'error'
+  | 'stopped'
+  /** Cut off mid-run by an app restart; resumable (6.7). */
+  | 'interrupted'
+
+export type PlanStepKind = 'edit' | 'command' | 'inspect' | 'verify' | 'other'
+
+export interface PlanStep {
+  /** Stable across edits — React keys and step-level edits rely on it. */
+  id: string
+  kind: PlanStepKind
+  title: string
+  detail?: string
+}
+
+/** A file, directory or image the user attached as explicit task context. */
+export interface AgentAttachment {
+  /** Workspace-relative path. */
+  path: string
+  kind: 'file' | 'dir' | 'image'
+  /** Pinned attachments stay attached across turns in the conversation. */
+  pinned?: boolean
+}
+
+export type AgentLogKind =
+  'status' | 'text' | 'tool' | 'edit' | 'command' | 'browser' | 'screenshot' | 'error'
+
+export interface AgentLogEntry {
+  ts: number
+  kind: AgentLogKind
+  text: string
+  /** For 'edit' entries: the touched file and its before/after content.
+   *  For 'screenshot' entries: the workspace-relative PNG path. */
+  path?: string
+  /** For 'command' entries: the pty session, so the transcript can render the
+   *  live terminal inline at the point the command was run. */
+  terminalId?: string
+  /** Set once the command exits, which collapses the inline terminal. */
+  exitCode?: number
+  /** For 'text' entries: still arriving. Streamed turns are broadcast but not
+   *  persisted, so only the settled text survives a restart. */
+  streaming?: boolean
+  before?: string
+  after?: string
+}
+
+export interface AgentSessionInfo {
+  id: string
+  task: string
+  status: AgentStatus
+  workspacePath: string | null
+  plan: PlanStep[]
+  log: AgentLogEntry[]
+  /** What the user attached as context, so the transcript can show it and an
+   *  edit-and-resend can restore it. */
+  attachments: AgentAttachment[]
+  createdAt: number
+}
+
+export interface AgentKeyStatus {
+  /** An API key is available (settings or ANTHROPIC_API_KEY). */
+  configured: boolean
+  /** Mock provider active (AGWEB_AGENT_MOCK=1) — no key or network needed. */
+  mock: boolean
+  model: string
+}

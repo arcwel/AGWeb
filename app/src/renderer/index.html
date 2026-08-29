@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!--
+      Two allowances the VS Code service layer needs (task 12.1):
+
+      connect-src data: — the bundled VS Code extensions ship their manifests,
+      TextMate grammars and themes as data: URIs and fetch them at startup. A
+      data: URI is a self-contained payload already in the bundle, so this
+      grants no network reach.
+
+      script-src 'wasm-unsafe-eval' — TextMate tokenizes through the oniguruma
+      regex engine, which is WebAssembly. This is the narrow directive that
+      permits compiling WASM *without* permitting JavaScript eval, so it is a
+      far smaller grant than 'unsafe-eval'.
+
+      Without either, syntax highlighting fails silently: the first blocks the
+      grammars from loading, the second blocks the engine from starting.
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self' data:; worker-src 'self' blob:; frame-src http://localhost:* http://127.0.0.1:*"
+    />
+    <title>Arcwel WebDeck</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
