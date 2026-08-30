@@ -1,4 +1,5 @@
 import { session } from 'electron'
+import type { Session } from 'electron'
 import type { EmbedProxyStatus } from '@shared/ipc'
 
 /**
@@ -11,8 +12,6 @@ import type { EmbedProxyStatus } from '@shared/ipc'
  * default, and is never persisted — every run starts with it disabled. The
  * toolbar shows an indicator whenever it is on.
  */
-
-const BROWSER_PARTITION = 'persist:agweb-browser'
 
 /** Chromium match patterns ignore ports, so these cover every localhost port. */
 const ALLOWLIST = ['http://localhost/*', 'http://127.0.0.1/*']
@@ -47,23 +46,37 @@ function rewriteHeaders(
   return out
 }
 
-function sessions(): Electron.Session[] {
-  // Browser tabs load in the persistent partition; Phase 4 preview iframes
-  // load in the shell renderer's default session — cover both.
-  return [session.fromPartition(BROWSER_PARTITION), session.defaultSession]
+// Every browser-profile session, plus the shell's default session (Phase 4
+// preview iframes). Profiles register theirs as they are configured, so the
+// proxy covers all profiles rather than only the default partition. Populated
+// lazily — `session.defaultSession` must not be touched before app-ready.
+const proxySessions = new Set<Session>()
+
+function allSessions(): Set<Session> {
+  proxySessions.add(session.defaultSession)
+  return proxySessions
+}
+
+function applyTo(ses: Session): void {
+  if (enabled) {
+    ses.webRequest.onHeadersReceived({ urls: ALLOWLIST }, (details, callback) => {
+      callback({ responseHeaders: rewriteHeaders(details.responseHeaders) })
+    })
+  } else {
+    ses.webRequest.onHeadersReceived(null)
+  }
+}
+
+/** Register a profile session; the proxy's current state is applied at once. */
+export function registerEmbedProxySession(ses: Session): void {
+  if (proxySessions.has(ses)) return
+  proxySessions.add(ses)
+  applyTo(ses)
 }
 
 export function setEmbedProxyEnabled(value: boolean): EmbedProxyStatus {
   enabled = value
-  for (const ses of sessions()) {
-    if (enabled) {
-      ses.webRequest.onHeadersReceived({ urls: ALLOWLIST }, (details, callback) => {
-        callback({ responseHeaders: rewriteHeaders(details.responseHeaders) })
-      })
-    } else {
-      ses.webRequest.onHeadersReceived(null)
-    }
-  }
+  for (const ses of allSessions()) applyTo(ses)
   return getEmbedProxyStatus()
 }
 

@@ -35,10 +35,14 @@ export interface BlockGroup {
   activeBlockId: string
 }
 
-/** A block collapsed to the rail, remembering where to restore it. */
+/** A block collapsed to the rail, remembering where to restore it (P3-6). */
 export interface RailEntry {
   blockId: string
-  prevZone: DockZone
+  /** The zone it came from — including `floating`, so a floated block returns floating. */
+  prevZone: DeckZone
+  /** Its group's position among all groups, so restore lands in the same spot,
+   *  not appended at the end. Absent on rail entries persisted before P3-6. */
+  index?: number
 }
 
 /** User-resizable deck dimensions (2B.3), in px. */

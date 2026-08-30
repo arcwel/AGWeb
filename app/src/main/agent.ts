@@ -1,8 +1,8 @@
 import fsp from 'node:fs/promises'
 import { join } from 'node:path'
 import Anthropic from '@anthropic-ai/sdk'
-import { app } from 'electron'
-import { IpcEvents } from '@shared/ipc'
+import { coreEnv } from '../core/env'
+import { IpcChannels, IpcEvents } from '@shared/ipc'
 import type {
   AgentAttachment,
   AgentKeyStatus,
@@ -35,12 +35,15 @@ import {
   agentWaitFor,
   takeBlockedNavigation
 } from './agent-browser'
+import { hasVisionProblems, inspectText } from './browser-vision'
 import { artifactsRoot, generateReport, removeArtifacts } from './agent-report'
 import { searchWorkspace } from './search'
 import { isTerminalRunning, runInTerminal, stopTerminal, terminalOutput } from './terminal'
 import { JsonStore } from './json-store'
 import { checkAction } from './policy'
 import type { PolicyActionKind } from '@shared/ipc'
+import { core } from '../core/rpc'
+import { asString } from '../core/coerce'
 import { getApiKey, setApiKey } from './secrets'
 
 /**
@@ -54,7 +57,6 @@ import { getApiKey, setApiKey } from './secrets'
  * so the pipeline is testable without keys or network.
  */
 
-const MODEL = process.env.AGWEB_AGENT_MODEL || 'claude-opus-5'
 const MAX_ITERATIONS = 40
 /** The only remaining cap: what a tool result can add to the model's context.
  *  Head and tail are both kept, because the interesting part of a long build
@@ -87,6 +89,22 @@ const sessions = new Map<string, AgentSession>()
 let nextSessionId = 1
 
 const settingsStore = new JsonStore<{ apiKey?: string }>('agent-settings', {})
+
+/** Non-secret AI config (chosen model). Separate from the key, which lives in
+ *  the OS keychain. */
+const configStore = new JsonStore<{ model?: string }>('ai-config', {})
+
+/** The Claude models the agent can run, newest/most-capable first. */
+export const ANTHROPIC_MODELS = ['claude-opus-5', 'claude-sonnet-5', 'claude-haiku-4-5-20251001']
+
+/** The model in force: an env override, then the user's choice, then default. */
+function currentModel(): string {
+  return process.env.AGWEB_AGENT_MODEL || configStore.read().model || 'claude-opus-5'
+}
+
+export function setAgentModel(model: string): void {
+  if (ANTHROPIC_MODELS.includes(model)) configStore.write({ model })
+}
 
 /**
  * The Anthropic key, newest source first: the encrypted keychain store (set in
@@ -220,7 +238,7 @@ export function getAgentKeyStatus(): AgentKeyStatus {
   return {
     configured: Boolean(resolveAnthropicKey()),
     mock: process.env.AGWEB_AGENT_MOCK === '1',
-    model: MODEL
+    model: currentModel()
   }
 }
 
@@ -473,7 +491,7 @@ async function planTask(session: AgentSession): Promise<void> {
 
   const client = getClient()
   const response = await client.messages.create({
-    model: MODEL,
+    model: currentModel(),
     max_tokens: 16000,
     system:
       'You are the planning stage of WebDeck, an agent-first IDE. Produce a concise, ' +
@@ -750,6 +768,18 @@ const EXEC_TOOLS: Anthropic.Tool[] = [
       }
     },
     strict: true
+  },
+  {
+    name: 'browser_inspect',
+    description:
+      'Agent Vision: report what the browser itself saw on the tab — network requests, failed requests (with status/error and, for HTTP errors, the response body), and console errors/warnings. Use in your verify step to catch failures the rendered page hides: a page can look fine while an XHR silently returns 500. Always inspect before concluding a browser task succeeded.',
+    input_schema: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['tab_id'],
+      properties: { tab_id: { type: 'string' } }
+    },
+    strict: true
   }
 ]
 
@@ -808,7 +838,7 @@ async function executeTool(
   name: string,
   input: Record<string, unknown>
 ): Promise<string> {
-  const cwd = session.workspacePath ?? app.getPath('home')
+  const cwd = session.workspacePath ?? coreEnv().homeDir
   // Every workspace op is pinned to the session's own workspace: opening
   // another project mid-run must never retarget an in-flight agent (P0-1).
   const root = session.workspacePath
@@ -951,11 +981,21 @@ async function executeTool(
       const blocked = await enforceNavigationPolicy(session, navTabId)
       return blocked ? `${result}\n${blocked}` : result
     }
-    case 'browser_read':
-      return agentReadPage(
-        String(input.tab_id ?? ''),
+    case 'browser_read': {
+      const readTabId = String(input.tab_id ?? '')
+      const page = await agentReadPage(
+        readTabId,
         input.selector ? String(input.selector) : undefined
       )
+      // Agent Vision auto-surface: a page can render fine while its network
+      // silently failed. If the browser saw failures, append them so the model
+      // notices without having to think to call browser_inspect (P0 success
+      // criterion: the failing request shows up on its own).
+      if (hasVisionProblems(readTabId)) {
+        return `${page}\n\n--- Agent Vision ---\n${inspectText(readTabId)}`
+      }
+      return page
+    }
     case 'browser_eval': {
       const expression = String(input.expression ?? '')
       // Injected JS runs with the page origin's full powers (fetch, beacon,
@@ -1035,6 +1075,11 @@ async function executeTool(
       log(session, { kind: 'browser', text: result })
       return result
     }
+    case 'browser_inspect': {
+      const report = inspectText(String(input.tab_id ?? ''))
+      log(session, { kind: 'browser', text: report })
+      return report
+    }
     default:
       return `error: unknown tool ${name}`
   }
@@ -1079,7 +1124,7 @@ async function executeTask(session: AgentSession, resumed = false): Promise<void
     }
 
     const stream = client.beta.messages.stream({
-      model: MODEL,
+      model: currentModel(),
       max_tokens: 32000,
       // Route policy declines to a fallback model server-side (skill default).
       betas: ['server-side-fallback-2026-07-01'],
@@ -1184,11 +1229,15 @@ async function mockExecute(session: AgentSession): Promise<void> {
 
   // Drive the shell browser end to end: open a page, interact, assert on the
   // DOM, then capture screenshot evidence — the PRD 4.1 verification loop.
+  // The page renders fine but its script hits a dead endpoint and logs an error
+  // — the exact "looks OK, silently broke" case Agent Vision exists to catch.
   const html =
     '<title>Agent Target</title>' +
     '<h1 id="status">waiting</h1>' +
     '<button id="go" onclick="document.getElementById(\'status\').textContent=\'clicked-ok\'">Go</button>' +
-    '<input id="name">'
+    '<input id="name">' +
+    '<script>console.error("vision-demo: synthetic console error on load");' +
+    'fetch("http://127.0.0.1:9/agent-vision-probe").catch(function(){});</script>'
   const opened = await executeTool(session, 'browser_open', {
     url: 'data:text/html,' + encodeURIComponent(html)
   })
@@ -1207,6 +1256,13 @@ async function mockExecute(session: AgentSession): Promise<void> {
     expression: "document.getElementById('name').value"
   })
   log(session, { kind: 'text', text: `Input round-trip: #name reads ${value}` })
+  // Agent Vision: check what the browser actually saw. The DOM looked fine, but
+  // this surfaces the failed request + console error the page produced.
+  const vision = await executeTool(session, 'browser_inspect', { tab_id: tabId })
+  log(session, {
+    kind: vision.includes('console error') || vision.includes('failed') ? 'text' : 'error',
+    text: `Agent Vision verified the page's network/console: ${vision.split('\n')[0]}`
+  })
   await executeTool(session, 'browser_set_viewport', { tab_id: tabId, width: 390, height: 700 })
   await executeTool(session, 'browser_screenshot', { tab_id: tabId, path: 'agent-shot.png' })
   await executeTool(session, 'browser_set_viewport', { tab_id: tabId, width: 0, height: 0 })
@@ -1222,4 +1278,78 @@ async function mockExecute(session: AgentSession): Promise<void> {
   })
   update(session, { status: 'done' })
   log(session, { kind: 'status', text: 'Task complete.' })
+}
+
+/** Register the agent domain with webdeck-core (P1). The largest surface; live
+ *  session updates are a separate broadcast, not requests. */
+export function registerAgentRpc(): void {
+  core.register(IpcChannels.agentStart, (task, attachments) => {
+    const t = asString(task)?.trim()
+    if (!t) throw new Error('empty task')
+    const list = Array.isArray(attachments)
+      ? (attachments as AgentAttachment[])
+          .filter((a) => a && typeof a.path === 'string' && a.path.length > 0)
+          .slice(0, 24)
+          .map(
+            (a) =>
+              ({
+                path: a.path.slice(0, 400),
+                kind: a.kind === 'dir' ? 'dir' : a.kind === 'image' ? 'image' : 'file',
+                pinned: a.pinned === true
+              }) as AgentAttachment
+          )
+      : []
+    return startAgentTask(t, list)
+  })
+  core.register(IpcChannels.agentApprove, (id) => {
+    const s = asString(id)
+    if (s) approveAgentPlan(s)
+  })
+  core.register(IpcChannels.agentReject, (id) => {
+    const s = asString(id)
+    if (s) rejectAgentPlan(s)
+  })
+  core.register(IpcChannels.agentStop, (id) => {
+    const s = asString(id)
+    if (s) stopAgent(s)
+  })
+  core.register(IpcChannels.agentUpdatePlan, (id, steps) => {
+    const s = asString(id)
+    if (s && Array.isArray(steps)) updateAgentPlan(s, steps as PlanStep[])
+  })
+  core.register(IpcChannels.agentResume, (id) => {
+    const s = asString(id)
+    if (s) resumeAgentTask(s)
+  })
+  core.register(IpcChannels.agentList, () => listAgentSessions())
+  core.register(IpcChannels.agentOpenReport, (id) => {
+    const s = asString(id)
+    return s ? openAgentReport(s) : undefined
+  })
+  core.register(IpcChannels.agentClearFinished, () => {
+    clearFinishedAgentSessions()
+  })
+  core.register(IpcChannels.agentRename, (id, title) => {
+    const s = asString(id)
+    if (s) renameAgentSession(s, asString(title) ?? '')
+  })
+  core.register(IpcChannels.agentDelete, (id) => {
+    const s = asString(id)
+    if (s) deleteAgentSession(s)
+  })
+  core.register(IpcChannels.agentExport, (id, format) => {
+    const s = asString(id)
+    if (!s) return { error: 'No such session.' }
+    return exportAgentSession(s, format === 'json' ? 'json' : 'md')
+  })
+  core.register(IpcChannels.agentKeyStatus, () => getAgentKeyStatus())
+  core.register(IpcChannels.agentSetKey, (key) => {
+    setAgentApiKey(asString(key) ?? '')
+    return getAgentKeyStatus()
+  })
+  core.register(IpcChannels.agentSetModel, (model) => {
+    const m = asString(model)
+    if (m) setAgentModel(m)
+    return getAgentKeyStatus()
+  })
 }

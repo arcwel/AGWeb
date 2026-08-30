@@ -40,42 +40,6 @@ export function CloseIcon({ size = 13, className }: IconProps): React.JSX.Elemen
   )
 }
 
-export function BackIcon({ size = 16, className }: IconProps): React.JSX.Element {
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={className}
-    >
-      <path d="M15 18l-6-6 6-6" />
-    </svg>
-  )
-}
-
-export function ForwardIcon({ size = 16, className }: IconProps): React.JSX.Element {
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={className}
-    >
-      <path d="M9 18l6-6-6-6" />
-    </svg>
-  )
-}
-
 export function ReloadIcon({ size = 15, className }: IconProps): React.JSX.Element {
   return (
     <svg
@@ -322,6 +286,17 @@ export function FolderIcon({ size = 15, className }: IconProps): React.JSX.Eleme
   )
 }
 
+/** A styled-document (Document Studio) tab — a page with a folded corner. */
+export function DocIcon({ size = 13, className }: IconProps): React.JSX.Element {
+  return (
+    <svg {...stroke(size, className)}>
+      <path d="M6 3h7l5 5v12a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z" />
+      <path d="M13 3v5h5" />
+      <path d="M8.5 13h7M8.5 16.5h7M8.5 9.5h3" />
+    </svg>
+  )
+}
+
 export function SlashIcon({ size = 15, className }: IconProps): React.JSX.Element {
   return (
     <svg {...stroke(size, className)}>
@@ -344,25 +319,6 @@ export function SendIcon({ size = 15, className }: IconProps): React.JSX.Element
   return (
     <svg {...stroke(size, className)}>
       <path d="M12 19V5M6 11l6-6 6 6" />
-    </svg>
-  )
-}
-
-export function HomeIcon({ size = 15, className }: IconProps): React.JSX.Element {
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.9}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={className}
-    >
-      <path d="M3 11.5 12 4l9 7.5" />
-      <path d="M5.5 10v9a1 1 0 0 0 1 1h11a1 1 0 0 0 1-1v-9" />
     </svg>
   )
 }

@@ -2,6 +2,9 @@ import fsp from 'node:fs/promises'
 import { join } from 'node:path'
 import { JsonStore } from './json-store'
 import { getCurrentWorkspace } from './workspace'
+import { IpcChannels } from '@shared/ipc'
+import { core } from '../core/rpc'
+import { asString } from '../core/coerce'
 
 /**
  * Settings and keybindings (task 12.6).
@@ -131,14 +134,19 @@ export async function writeWorkspaceSettings(text: string): Promise<{ error?: st
   }
 }
 
-/**
- * The effective settings: workspace over user.
- *
- * Returned as an object rather than text because this is what gets handed to
- * the configuration service, which wants values, not a document.
- */
-export async function effectiveSettings(): Promise<Record<string, unknown>> {
-  const user = parseSettings(readUserSettings()) ?? {}
-  const workspace = parseSettings(await readWorkspaceSettings()) ?? {}
-  return { ...user, ...workspace }
+/** Register the editor-config domain with webdeck-core (P1). `settingsImport`
+ *  is a hybrid (native file dialog) and stays shell-side. */
+export function registerSettingsRpc(): void {
+  core.register(IpcChannels.settingsRead, async () => ({
+    user: readUserSettings(),
+    workspace: await readWorkspaceSettings(),
+    keybindings: readUserKeybindings()
+  }))
+  core.register(IpcChannels.settingsWrite, (scope, text) => {
+    const body = asString(text)
+    if (body === null) return { error: 'bad arguments' }
+    if (scope === 'workspace') return writeWorkspaceSettings(body)
+    if (scope === 'keybindings') return writeUserKeybindings(body)
+    return writeUserSettings(body)
+  })
 }

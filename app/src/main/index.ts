@@ -9,8 +9,8 @@ import {
   getCurrentWorkspace,
   grantFile,
   removeWorkspaceRoot,
+  registerWorkspaceRpc,
   workspaceRoots,
-  getRecentProjects,
   openWorkspaceDialog,
   openWorkspacePath
 } from './workspace'
@@ -35,24 +35,8 @@ import {
   openDeckWindow,
   syncFloatWindows
 } from './windows'
-import {
-  createEntry,
-  deleteEntry,
-  listDir,
-  readFile,
-  renameEntry,
-  watchWorkspace,
-  writeFile
-} from './fs'
-import {
-  attachTerminal,
-  createTerminal,
-  disposeAllTerminals,
-  disposeTerminal,
-  resizeTerminal,
-  stopTerminal,
-  writeTerminal
-} from './terminal'
+import { registerFsRpc, watchWorkspace } from './fs'
+import { disposeAllTerminals, registerTerminalRpc } from './terminal'
 import { buildApplicationMenu } from './menu'
 import {
   listProfiles,
@@ -60,91 +44,57 @@ import {
   createProfile,
   removeProfile,
   clearBrowsingData,
-  initProfileSessions
+  initProfileSessions,
+  googleStatus,
+  activeProfile
 } from './profiles'
-import { clearApiKey, isEncryptionAvailable, listConfiguredProviders, setApiKey } from './secrets'
+import { registerSecretsRpc } from './secrets'
+import { core } from '../core/rpc'
+import { setCoreEnv } from '../core/env'
+import { electronCoreEnv } from './core-env'
+import { electronTransport } from '../core/transports/electron'
 import {
   applyPreReadySettings,
   initAppSettings,
   readAppSettings,
+  registerAppSettingsRpc,
   writeAppSettings,
-  type AppSettings,
   type ClearableData
 } from './app-settings'
-import { searchWorkspace } from './search'
+import { registerSearchRpc } from './search'
 import { exportCapture, exportHtml, exportPdf } from './export'
 import { findInPage, getTabWebContents, getZoom, setZoom, stopFindInPage } from './browser'
-import { listTaskRuns, listTasks, runTask, stopTask } from './tasks'
-import {
-  attachDebugChild,
-  isDebuggerAvailable,
-  sendToDebugAdapter,
-  startDebugSession,
-  stopDebugSession
-} from './debug'
-import {
-  readUserKeybindings,
-  readUserSettings,
-  readWorkspaceSettings,
-  writeUserKeybindings,
-  writeUserSettings,
-  writeWorkspaceSettings
-} from './settings'
-import {
-  gitBlame,
-  gitBranches,
-  gitCheckout,
-  gitCommit,
-  gitFileDiff,
-  gitStage,
-  gitStatus,
-  gitUnstage
-} from './git'
-import {
-  sendToLanguageServer,
-  startLanguageServer,
-  stopAllLanguageServers,
-  stopLanguageServer
-} from './lsp'
-import {
-  approveAgentPlan,
-  clearFinishedAgentSessions,
-  deleteAgentSession,
-  exportAgentSession,
-  renameAgentSession,
-  getAgentKeyStatus,
-  initAgents,
-  listAgentSessions,
-  openAgentReport,
-  rejectAgentPlan,
-  resumeAgentTask,
-  setAgentApiKey,
-  startAgentTask,
-  stopAgent,
-  updateAgentPlan
-} from './agent'
-import type { AgentAttachment, PlanStep } from '@shared/agents'
+import { registerTasksRpc } from './tasks'
+import { registerDebugRpc, stopDebugSession } from './debug'
+import { registerSettingsRpc } from './settings'
+import { registerGitRpc } from './git'
+import { registerLspRpc, stopAllLanguageServers } from './lsp'
+import { initAgents, registerAgentRpc } from './agent'
 import type { WorkspaceInfo } from '@shared/ipc'
 import {
   listExtensions,
   loadExtensionDialog,
   loadExtensionFromPath,
+  loadPackedExtension,
   removeExtension,
   restoreExtensions
 } from './extensions'
 import { getEmbedProxyStatus, setEmbedProxyEnabled } from './embed-proxy'
 import { clearDownloads, initDownloads, listDownloads, showDownload } from './downloads'
 import { initPermissions, respondToPermission } from './permissions'
-import { getDevServerStatus, initDevServers, startDevServer, stopDevServer } from './dev-servers'
-import { openSlides, stopSlideServer } from './slides'
+import { initDevServers, registerDevServersRpc, stopDevServer } from './dev-servers'
+import { registerSlidesRpc, stopSlideServer } from './slides'
 import {
-  getPolicyStatus,
   initPolicy,
-  respondToPolicyPrompt,
-  setCustomRules,
-  setPolicyMode
+  registerPolicyRpc,
+  setPolicyBroadcaster,
+  setPolicyDenyNotifier
 } from './policy'
-import type { CustomPolicyRules, PermissionMode } from '@shared/ipc'
+
+import { readFileSync as _readFileSync } from 'node:fs'
+function readFileSyncUtf8(path: string): string {
+  return _readFileSync(path, 'utf8')
+}
 
 // Test/dev hooks: isolate state and open a workspace without the dialog.
 if (process.env.AGWEB_USER_DATA) app.setPath('userData', process.env.AGWEB_USER_DATA)
@@ -242,6 +192,10 @@ function createMainWindow(): void {
   initPermissions(mainWindow)
   initDevServers(mainWindow)
   initPolicy(mainWindow)
+  // Fan policy changes out to every window so a PolicyControls in another window
+  // never shows stale mode/rules (P2-13).
+  setPolicyBroadcaster((status) => broadcast(IpcEvents.policyChanged, status, null))
+  setPolicyDenyNotifier((info) => broadcast(IpcEvents.policyDenied, info, null))
   void restoreExtensions()
 
   if (process.env.ELECTRON_RENDERER_URL) {
@@ -252,6 +206,10 @@ function createMainWindow(): void {
 }
 
 function registerIpcHandlers(): void {
+  // Wire the platform seam before any CORE domain runs. Under the Chromium fork
+  // this is the only line that changes — a Node adapter replaces the Electron one.
+  setCoreEnv(electronCoreEnv())
+
   ipcMain.handle(IpcChannels.appInfo, (): AppInfo => {
     return {
       // app.getVersion() falls back to Electron's own version in unpackaged dev runs
@@ -292,12 +250,9 @@ function registerIpcHandlers(): void {
     }
   })
 
-  ipcMain.handle(IpcChannels.workspaceCurrent, () => getCurrentWorkspace())
-
   // Multi-root (3B.4). A root is granted only through this picker: there is no
   // path-taking variant, so nothing but a human choosing a folder can widen
   // what the app — or the agent inside it — can reach.
-  ipcMain.handle(IpcChannels.workspaceRoots, () => workspaceRoots())
   ipcMain.handle(IpcChannels.workspaceAddRoot, async () => {
     if (!mainWindow) return workspaceRoots()
     const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
@@ -315,7 +270,6 @@ function registerIpcHandlers(): void {
     broadcast(IpcEvents.fsChanged, null, null)
     return roots
   })
-  ipcMain.handle(IpcChannels.workspaceRecent, () => getRecentProjects())
 
   ipcMain.handle(IpcChannels.themeSet, (_event, source: unknown) => {
     if (source === 'system' || source === 'light' || source === 'dark') {
@@ -390,33 +344,6 @@ function registerIpcHandlers(): void {
   })
 
   const str = (v: unknown): string | null => (typeof v === 'string' ? v : null)
-  // Path lists arrive over IPC as unknown; keep only the strings.
-  const strList = (v: unknown): string[] =>
-    Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []
-
-  ipcMain.handle(IpcChannels.fsList, (_e, rel: unknown) => listDir(str(rel) ?? ''))
-  ipcMain.handle(IpcChannels.fsRead, (_e, rel: unknown) => readFile(str(rel) ?? ''))
-  ipcMain.handle(IpcChannels.fsWrite, (_e, rel: unknown, content: unknown) => {
-    const r = str(rel)
-    if (r === null || typeof content !== 'string') return { error: 'bad arguments' }
-    return writeFile(r, content)
-  })
-  ipcMain.handle(IpcChannels.fsCreate, (_e, rel: unknown, kind: unknown) => {
-    const r = str(rel)
-    if (r === null || (kind !== 'file' && kind !== 'dir')) return { error: 'bad arguments' }
-    return createEntry(r, kind)
-  })
-  ipcMain.handle(IpcChannels.fsRename, (_e, from: unknown, to: unknown) => {
-    const f = str(from)
-    const t = str(to)
-    if (f === null || t === null) return { error: 'bad arguments' }
-    return renameEntry(f, t)
-  })
-  ipcMain.handle(IpcChannels.fsDelete, (_e, rel: unknown) => {
-    const r = str(rel)
-    if (r === null) return { error: 'bad arguments' }
-    return deleteEntry(r)
-  })
 
   ipcMain.handle(IpcChannels.dialogConfirm, async (_e, message: unknown) => {
     if (!mainWindow) return false
@@ -429,9 +356,6 @@ function registerIpcHandlers(): void {
     })
     return response === 1
   })
-
-  const num = (v: unknown, fallback: number): number =>
-    typeof v === 'number' && Number.isFinite(v) ? Math.round(v) : fallback
 
   // Attachment picker. Selections outside the open workspace are dropped
   // rather than silently widening what the agent can reach.
@@ -470,36 +394,6 @@ function registerIpcHandlers(): void {
     })
   })
 
-  ipcMain.handle(IpcChannels.termCreate, (_e, id: unknown, cols: unknown, rows: unknown) => {
-    const t = str(id)
-    if (t) createTerminal(t, num(cols, 80), num(rows, 24))
-  })
-  ipcMain.handle(IpcChannels.termInput, (_e, id: unknown, data: unknown) => {
-    const t = str(id)
-    if (t && typeof data === 'string') writeTerminal(t, data)
-  })
-  ipcMain.handle(IpcChannels.termResize, (_e, id: unknown, cols: unknown, rows: unknown) => {
-    const t = str(id)
-    if (t) resizeTerminal(t, num(cols, 80), num(rows, 24))
-  })
-  ipcMain.handle(IpcChannels.termDispose, (_e, id: unknown) => {
-    const t = str(id)
-    if (t) disposeTerminal(t)
-  })
-  ipcMain.handle(IpcChannels.termStop, (_e, id: unknown) => {
-    const t = str(id)
-    if (t) stopTerminal(t)
-  })
-  ipcMain.handle(IpcChannels.termAttach, (_e, id: unknown) => {
-    const t = str(id)
-    return t ? attachTerminal(t) : { buffer: '', running: false }
-  })
-
-  ipcMain.handle(IpcChannels.searchQuery, (_e, query: unknown) => {
-    const q = str(query)
-    return q ? searchWorkspace(q) : []
-  })
-
   const owner = (event: Electron.IpcMainInvokeEvent): BrowserWindow | null =>
     BrowserWindow.fromWebContents(event.sender)
 
@@ -521,93 +415,9 @@ function registerIpcHandlers(): void {
     return exportCapture(owner(event), r, str(name) ?? 'document.png')
   })
 
-  ipcMain.handle(IpcChannels.agentStart, (_e, task: unknown, attachments: unknown) => {
-    const t = str(task)?.trim()
-    if (!t) throw new Error('empty task')
-    const list = Array.isArray(attachments)
-      ? (attachments as AgentAttachment[])
-          .filter((a) => a && typeof a.path === 'string' && a.path.length > 0)
-          .slice(0, 24)
-          .map(
-            (a) =>
-              ({
-                path: a.path.slice(0, 400),
-                kind: a.kind === 'dir' ? 'dir' : a.kind === 'image' ? 'image' : 'file',
-                pinned: a.pinned === true
-              }) as AgentAttachment
-          )
-      : []
-    return startAgentTask(t, list)
-  })
-  ipcMain.handle(IpcChannels.agentApprove, (_e, id: unknown) => {
-    const s = str(id)
-    if (s) approveAgentPlan(s)
-  })
-  ipcMain.handle(IpcChannels.agentReject, (_e, id: unknown) => {
-    const s = str(id)
-    if (s) rejectAgentPlan(s)
-  })
-  ipcMain.handle(IpcChannels.agentStop, (_e, id: unknown) => {
-    const s = str(id)
-    if (s) stopAgent(s)
-  })
-  ipcMain.handle(IpcChannels.agentUpdatePlan, (_e, id: unknown, steps: unknown) => {
-    const s = str(id)
-    if (s && Array.isArray(steps)) updateAgentPlan(s, steps as PlanStep[])
-  })
-  ipcMain.handle(IpcChannels.agentResume, (_e, id: unknown) => {
-    const s = str(id)
-    if (s) resumeAgentTask(s)
-  })
-  ipcMain.handle(IpcChannels.agentList, () => listAgentSessions())
-  ipcMain.handle(IpcChannels.agentOpenReport, (_e, id: unknown) => {
-    const s = str(id)
-    return s ? openAgentReport(s) : undefined
-  })
-  ipcMain.handle(IpcChannels.agentClearFinished, () => {
-    clearFinishedAgentSessions()
-  })
-  ipcMain.handle(IpcChannels.agentRename, (_e, id: unknown, title: unknown) => {
-    const s = str(id)
-    if (s) renameAgentSession(s, str(title) ?? '')
-  })
-  ipcMain.handle(IpcChannels.agentDelete, (_e, id: unknown) => {
-    const s = str(id)
-    if (s) deleteAgentSession(s)
-  })
-  ipcMain.handle(IpcChannels.agentExport, (_e, id: unknown, format: unknown) => {
-    const s = str(id)
-    if (!s) return { error: 'No such session.' }
-    return exportAgentSession(s, format === 'json' ? 'json' : 'md')
-  })
   // Debugging (12.4).
-  ipcMain.handle(IpcChannels.debugAvailable, () => isDebuggerAvailable())
-  ipcMain.handle(IpcChannels.debugStart, () => startDebugSession())
-  ipcMain.handle(IpcChannels.debugAttachChild, (_e, sessionId: unknown) => {
-    const id = str(sessionId)
-    return id ? attachDebugChild(id) : { error: 'bad arguments' }
-  })
-  ipcMain.on(IpcChannels.debugSend, (_e, sessionId: unknown, message: unknown) => {
-    const id = str(sessionId)
-    if (id && message && typeof message === 'object') {
-      sendToDebugAdapter(id, message as Parameters<typeof sendToDebugAdapter>[1])
-    }
-  })
-  ipcMain.handle(IpcChannels.debugStop, () => stopDebugSession())
 
   // Settings and keybindings (12.6).
-  ipcMain.handle(IpcChannels.settingsRead, async () => ({
-    user: readUserSettings(),
-    workspace: await readWorkspaceSettings(),
-    keybindings: readUserKeybindings()
-  }))
-  ipcMain.handle(IpcChannels.settingsWrite, async (_e, scope: unknown, text: unknown) => {
-    const body = str(text)
-    if (body === null) return { error: 'bad arguments' }
-    if (scope === 'workspace') return writeWorkspaceSettings(body)
-    if (scope === 'keybindings') return writeUserKeybindings(body)
-    return writeUserSettings(body)
-  })
   ipcMain.handle(IpcChannels.settingsImport, async () => {
     if (!mainWindow) return { error: 'No window.' }
     // Deliberately not pinned to the workspace: the point of importing is to
@@ -627,16 +437,6 @@ function registerIpcHandlers(): void {
   })
 
   // Tasks (12.5).
-  ipcMain.handle(IpcChannels.taskList, () => listTasks())
-  ipcMain.handle(IpcChannels.taskRun, (_e, name: unknown) => {
-    const n = str(name)
-    return n ? runTask(n) : { task: '', terminalId: '', problems: [], error: 'bad arguments' }
-  })
-  ipcMain.handle(IpcChannels.taskStop, (_e, name: unknown) => {
-    const n = str(name)
-    if (n) stopTask(n)
-  })
-  ipcMain.handle(IpcChannels.taskRuns, () => listTaskRuns())
 
   // Browser: find in page and zoom.
   ipcMain.handle(IpcChannels.browserFind, (_e, tabId: unknown, q: unknown, next: unknown) => {
@@ -665,14 +465,11 @@ function registerIpcHandlers(): void {
     })
     return true
   })
-  ipcMain.handle(IpcChannels.appSettingsRead, () => readAppSettings())
-  // Synchronous variant for boot-time gates in the renderer (tab restore).
+  // appSettingsRead/Write are served through webdeck-core; the boot-time
+  // synchronous read stays here (it needs ipcMain.on's returnValue).
   ipcMain.on(IpcChannels.appSettingsReadSync, (event) => {
     event.returnValue = readAppSettings()
   })
-  ipcMain.handle(IpcChannels.appSettingsWrite, (_e, patch: unknown) =>
-    writeAppSettings((patch ?? {}) as Partial<AppSettings>)
-  )
   ipcMain.handle(IpcChannels.appSettingsClearData, async (_e, kinds: unknown) => {
     await clearBrowsingData(Array.isArray(kinds) ? (kinds as ClearableData[]) : [])
   })
@@ -688,19 +485,45 @@ function registerIpcHandlers(): void {
     return readAppSettings()
   })
 
-  ipcMain.handle(IpcChannels.secretsList, () => ({
-    encryptionAvailable: isEncryptionAvailable(),
-    configured: listConfiguredProviders()
-  }))
-  ipcMain.handle(IpcChannels.secretsSet, (_e, provider: unknown, key: unknown) =>
-    setApiKey(provider, key)
-  )
-  ipcMain.handle(IpcChannels.secretsClear, (_e, provider: unknown) => clearApiKey(provider))
+  // Secrets is served through webdeck-core rather than a direct ipcMain.handle
+  // (P1 decoupling); the electron transport binds it below. Migrating a domain
+  // is: register it with the core, delete its ipcMain.handle calls here.
+  registerSecretsRpc()
+  registerAppSettingsRpc()
+  registerGitRpc()
+  registerTasksRpc()
+  registerSearchRpc()
+  registerLspRpc()
+  registerDebugRpc()
+  registerSettingsRpc()
+  registerTerminalRpc()
+  registerFsRpc()
+  registerDevServersRpc()
+  registerAgentRpc()
+  registerPolicyRpc()
+  registerWorkspaceRpc()
+  registerSlidesRpc()
 
   ipcMain.handle(IpcChannels.profilesList, () => listProfiles())
   ipcMain.handle(IpcChannels.profilesSetActive, (_e, id: unknown) => setActiveProfile(id))
   ipcMain.handle(IpcChannels.profilesCreate, (_e, name: unknown) => createProfile(name))
   ipcMain.handle(IpcChannels.profilesRemove, (_e, id: unknown) => removeProfile(id))
+  ipcMain.handle(IpcChannels.profilesGoogleStatus, () => googleStatus())
+
+  ipcMain.handle(IpcChannels.bookmarksImportFile, async () => {
+    if (!mainWindow) return {}
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: 'Import bookmarks',
+      properties: ['openFile'],
+      filters: [{ name: 'Bookmarks', extensions: ['html', 'htm', 'json'] }]
+    })
+    if (result.canceled || !result.filePaths[0]) return {}
+    try {
+      return { text: readFileSyncUtf8(result.filePaths[0]) }
+    } catch (error) {
+      return { error: error instanceof Error ? error.message : 'Could not read that file' }
+    }
+  })
 
   ipcMain.handle(IpcChannels.windowNew, () => {
     createMainWindow()
@@ -709,58 +532,21 @@ function registerIpcHandlers(): void {
 
   // Source control (12.3). Driven by the user's own clicks, so unlike the
   // agent's tools these are not routed through the policy engine.
-  ipcMain.handle(IpcChannels.gitStatus, () => gitStatus())
-  ipcMain.handle(IpcChannels.gitDiff, (_e, path: unknown, staged: unknown) => {
-    const p = str(path)
-    if (p === null) return { original: '', modified: '', error: 'bad arguments' }
-    return gitFileDiff(p, staged === true)
-  })
-  ipcMain.handle(IpcChannels.gitStage, (_e, paths: unknown) => gitStage(strList(paths)))
-  ipcMain.handle(IpcChannels.gitUnstage, (_e, paths: unknown) => gitUnstage(strList(paths)))
-  ipcMain.handle(IpcChannels.gitCommit, (_e, message: unknown) => gitCommit(str(message) ?? ''))
-  ipcMain.handle(IpcChannels.gitBranches, () => gitBranches())
-  ipcMain.handle(IpcChannels.gitCheckout, (_e, branch: unknown) => gitCheckout(str(branch) ?? ''))
-  ipcMain.handle(IpcChannels.gitBlame, (_e, path: unknown) => {
-    const p = str(path)
-    return p === null ? { lines: [], error: 'bad arguments' } : gitBlame(p)
-  })
 
   // Language servers (12.2). The workspace is the server's cwd, so a server is
   // only useful once a workspace is open — starting without one is refused
   // rather than pointed at the app's own directory.
-  ipcMain.handle(IpcChannels.lspStart, (_e, id: unknown) => {
-    const s = str(id)
-    if (!s) return { error: 'No language given.' }
-    const workspace = getCurrentWorkspace()
-    if (!workspace?.path) return { error: 'No workspace open.' }
-    return startLanguageServer(s, workspace.path)
-  })
-  ipcMain.on(IpcChannels.lspSend, (_e, id: unknown, message: unknown) => {
-    const s = str(id)
-    if (s && message && typeof message === 'object') {
-      sendToLanguageServer(s, message as Parameters<typeof sendToLanguageServer>[1])
-    }
-  })
-  ipcMain.handle(IpcChannels.lspStop, (_e, id: unknown) => {
-    const s = str(id)
-    if (s) stopLanguageServer(s)
-  })
 
-  ipcMain.handle(IpcChannels.agentKeyStatus, () => getAgentKeyStatus())
-  ipcMain.handle(IpcChannels.agentSetKey, (_e, key: unknown) => {
-    setAgentApiKey(str(key) ?? '')
-    return getAgentKeyStatus()
-  })
-
-  ipcMain.handle(IpcChannels.extLoad, () => loadExtensionDialog())
+  ipcMain.handle(IpcChannels.extLoad, () => loadExtensionDialog(activeProfile().id))
+  ipcMain.handle(IpcChannels.extLoadPacked, () => loadPackedExtension(activeProfile().id))
   ipcMain.handle(IpcChannels.extLoadPath, (_e, path: unknown) => {
     const p = str(path)
-    return p ? loadExtensionFromPath(p) : { error: 'bad arguments' }
+    return p ? loadExtensionFromPath(p, activeProfile().id) : { error: 'bad arguments' }
   })
-  ipcMain.handle(IpcChannels.extList, () => listExtensions())
+  ipcMain.handle(IpcChannels.extList, () => listExtensions(activeProfile().id))
   ipcMain.handle(IpcChannels.extRemove, (_e, id: unknown) => {
     const s = str(id)
-    if (s) removeExtension(s)
+    if (s) removeExtension(s, activeProfile().id)
   })
 
   ipcMain.handle(IpcChannels.proxyStatus, () => getEmbedProxyStatus())
@@ -783,48 +569,11 @@ function registerIpcHandlers(): void {
     }
   )
 
-  ipcMain.handle(IpcChannels.devServerStart, (_e, mode: unknown) =>
-    startDevServer(mode === 'script' ? 'script' : 'static')
-  )
-  ipcMain.handle(IpcChannels.devServerStop, () => stopDevServer())
-  ipcMain.handle(IpcChannels.devServerStatus, () => getDevServerStatus())
-
-  ipcMain.handle(IpcChannels.slidesOpen, (_e, rel: unknown) => {
-    const r = str(rel)
-    return r ? openSlides(r) : { error: 'bad arguments' }
-  })
-
-  ipcMain.handle(IpcChannels.policyGet, () => getPolicyStatus())
-  ipcMain.handle(IpcChannels.policySetMode, (_e, mode: unknown) => {
-    const valid: PermissionMode[] = ['secure', 'review', 'agent', 'custom']
-    return valid.includes(mode as PermissionMode)
-      ? setPolicyMode(mode as PermissionMode)
-      : getPolicyStatus()
-  })
-  ipcMain.handle(IpcChannels.policySetCustom, (_e, rules: unknown) => {
-    const r = rules as CustomPolicyRules
-    const decisions = ['allow', 'confirm', 'deny']
-    if (
-      !r ||
-      !decisions.includes(r.fileWrites) ||
-      !decisions.includes(r.commands) ||
-      !decisions.includes(r.navigation) ||
-      !Array.isArray(r.allowedHosts) ||
-      !r.allowedHosts.every((h) => typeof h === 'string')
-    ) {
-      return getPolicyStatus()
-    }
-    return setCustomRules({
-      fileWrites: r.fileWrites,
-      commands: r.commands,
-      navigation: r.navigation,
-      allowedHosts: r.allowedHosts.map((h) => h.trim()).filter(Boolean)
-    })
-  })
-  ipcMain.handle(IpcChannels.policyRespond, (_e, id: unknown, allow: unknown, always: unknown) => {
-    const s = str(id)
-    if (s) respondToPolicyPrompt(s, allow === true, always === true)
-  })
+  // Expose every webdeck-core method registered above (currently the secrets
+  // domain) over Electron IPC. As more domains migrate off direct
+  // ipcMain.handle calls, they join this single bind — and swapping the
+  // transport is all it takes to serve them from the Chromium fork instead.
+  core.bind(electronTransport)
 }
 
 // Hardware acceleration can only be turned off before the app is ready, so

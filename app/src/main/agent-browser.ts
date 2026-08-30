@@ -3,6 +3,7 @@ import { IpcEvents } from '@shared/ipc'
 import { broadcast } from './windows'
 import { createBrowserTab, getTabWebContents, navigate } from './browser'
 import { audit, decide } from './policy'
+import { attachVision, detachVision } from './browser-vision'
 
 /**
  * Agent↔browser bridge (Phase 7): agents open and drive real shell tabs.
@@ -43,6 +44,7 @@ const blockedNavigations = new Map<string, string>()
 /** Drop any recording/blocked-nav state for a destroyed tab (P2-4). */
 export function disposeAgentTabState(tabId: string): void {
   blockedNavigations.delete(tabId)
+  detachVision(tabId)
   const recording = recordings.get(tabId)
   if (!recording) return
   recordings.delete(tabId)
@@ -92,6 +94,9 @@ export async function agentOpenTab(url: string): Promise<string> {
   createBrowserTab(tabId)
   const wc = requireTab(tabId)
   installNavigationGuard(tabId, wc)
+  // Attach Agent Vision before navigating so the page's own load requests and
+  // console output are recorded, not just what fires after the first paint.
+  attachVision(tabId)
   // The renderer adds the tab to its strip and activates it, which positions
   // the native view over the stage and makes it visible.
   broadcast(IpcEvents.browserAdoptTab, { tabId, url }, null)

@@ -20,13 +20,15 @@ Direction A — "Stage" (the recommended default, prototyped on the canvas):
 
 ## Block anatomy
 
-Header: drag grip · identity + context (file / shell / agent) · float/re-dock · collapse-to-rail · close. Resize handles on every edge.
+Header: drag grip · identity (the block tab) + active context (the editor tab shows its current file) · float/re-dock · collapse-to-rail · close.
+
+**Resize (as built):** blocks resize through **shared gutters between zones**, not per-edge handles on each block — a vertical gutter between the right column and the stage, and a horizontal gutter above the bottom dock. Dragging a gutter resizes the adjacent zones and persists per project. This is simpler and less fiddly than per-block edge handles, and it matches how the zones actually compose.
 
 Block states:
 
 - **Docked** — snapped into the right column or bottom dock; shares space with neighbors.
 - **Tabbed stack** — drop a block onto another to merge them into one tabbed group (DevTools-style). Tabs drag out to split again; `+` in the strip opens another instance into the group.
-- **Floating** — glass panel over the page; free position/size, always on top.
+- **Floating** — glass panel over the page; free position/size, always on top. Popped out into its **own OS window**, a float renders as a plain native panel on the opaque panel ground — the translucent glass treatment is the in-window overlay, not cross-window OS vibrancy (which is platform-specific and out of scope).
 - **On the rail** — collapsed to an icon on the window edge; one click restores it exactly where it was.
 - **Closed** — reopen from the Deck menu.
 

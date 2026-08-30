@@ -1,10 +1,12 @@
 import fsp from 'node:fs/promises'
 import { join } from 'node:path'
 import type { TaskDefinition, TaskProblem, TaskRun } from '@shared/tasks'
-import { IpcEvents } from '@shared/ipc'
+import { IpcChannels, IpcEvents } from '@shared/ipc'
 import { broadcast } from './windows'
 import { getCurrentWorkspace } from './workspace'
 import { runInTerminal, stopTerminal } from './terminal'
+import { core } from '../core/rpc'
+import { asString } from '../core/coerce'
 
 /**
  * Tasks (task 12.5).
@@ -220,4 +222,18 @@ export async function runTask(name: string): Promise<TaskRun> {
 export function stopTask(name: string): void {
   const run = runs.get(name)
   if (run && run.exitCode === undefined) stopTerminal(run.terminalId)
+}
+
+/** Register the tasks domain with webdeck-core (P1). */
+export function registerTasksRpc(): void {
+  core.register(IpcChannels.taskList, () => listTasks())
+  core.register(IpcChannels.taskRun, (name) => {
+    const n = asString(name)
+    return n ? runTask(n) : { task: '', terminalId: '', problems: [], error: 'bad arguments' }
+  })
+  core.register(IpcChannels.taskStop, (name) => {
+    const n = asString(name)
+    if (n) stopTask(n)
+  })
+  core.register(IpcChannels.taskRuns, () => listTaskRuns())
 }

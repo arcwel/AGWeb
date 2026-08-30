@@ -1,7 +1,9 @@
 import { spawn } from 'node:child_process'
 import { promises as fsp } from 'node:fs'
 import { join, relative, sep } from 'node:path'
-import type { SearchHit } from '@shared/ipc'
+import { IpcChannels, type SearchHit } from '@shared/ipc'
+import { core } from '../core/rpc'
+import { asString } from '../core/coerce'
 import { getCurrentWorkspace } from './workspace'
 
 /**
@@ -119,4 +121,12 @@ async function searchWithNode(root: string, query: string): Promise<SearchHit[]>
 
   await walk(root)
   return hits
+}
+
+/** Register the search domain with webdeck-core (P1). */
+export function registerSearchRpc(): void {
+  core.register(IpcChannels.searchQuery, (query) => {
+    const q = asString(query)
+    return q ? searchWorkspace(q) : []
+  })
 }

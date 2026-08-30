@@ -74,15 +74,6 @@ export function HomeIcon(props: Props): React.JSX.Element {
   )
 }
 
-/** The site-information pill Chrome shows at the head of the address bar. */
-export function TuneIcon(props: Props): React.JSX.Element {
-  return (
-    <Icon {...props}>
-      <path d="M400-240v-80h480v80H400Zm-240 0v-80h80v80h-80Zm240-200v-80h480v80H400Zm-240 0v-80h80v80h-80Zm240-200v-80h480v80H400Zm-240 0v-80h80v80h-80Z" />
-    </Icon>
-  )
-}
-
 export function StarIcon(props: Props): React.JSX.Element {
   return (
     <Icon {...props}>
@@ -123,14 +114,6 @@ export function ZoomInIcon(props: Props): React.JSX.Element {
   )
 }
 
-export function DownloadIcon(props: Props): React.JSX.Element {
-  return (
-    <Icon {...props}>
-      <path d="M480-320 280-520l56-58 104 104v-326h80v326l104-104 56 58-200 200ZM240-160q-33 0-56.5-23.5T160-240v-120h80v120h480v-120h80v120q0 33-23.5 56.5T720-160H240Z" />
-    </Icon>
-  )
-}
-
 export function ExtensionIcon(props: Props): React.JSX.Element {
   return (
     <Icon {...props}>
@@ -164,14 +147,6 @@ export function MoreVertIcon(props: Props): React.JSX.Element {
   )
 }
 
-export function AddIcon(props: Props): React.JSX.Element {
-  return (
-    <Icon {...props}>
-      <path d="M440-440H200v-80h240v-240h80v240h240v80H520v240h-80v-240Z" />
-    </Icon>
-  )
-}
-
 export function CloseIcon(props: Props): React.JSX.Element {
   return (
     <Icon {...props}>
@@ -192,38 +167,6 @@ export function SplitscreenIcon(props: Props): React.JSX.Element {
   return (
     <Icon {...props}>
       <path d="M200-120q-33 0-56.5-23.5T120-200v-160q0-33 23.5-56.5T200-440h560q33 0 56.5 23.5T840-360v160q0 33-23.5 56.5T760-120H200Zm0-400q-33 0-56.5-23.5T120-600v-160q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v160q0 33-23.5 56.5T760-520H200Z" />
-    </Icon>
-  )
-}
-
-export function TranslateIcon(props: Props): React.JSX.Element {
-  return (
-    <Icon {...props}>
-      <path d="m476-80 182-480h84L924-80h-84l-43-122H603L560-80h-84ZM160-200l-56-56 202-202q-35-35-63.5-80T190-640h84q20 39 40 68t48 58q33-33 68.5-92.5T484-720H40v-80h280v-80h80v80h280v80H564q-21 72-63 148t-83 116l96 98-30 82-122-125-202 201Zm468-72h144l-72-204-72 204Z" />
-    </Icon>
-  )
-}
-
-export function PrintIcon(props: Props): React.JSX.Element {
-  return (
-    <Icon {...props}>
-      <path d="M640-640v-120H320v120h-80v-200h480v200h-80Zm-480 80h640-640Zm560 100q17 0 28.5-11.5T760-500q0-17-11.5-28.5T720-540q-17 0-28.5 11.5T680-500q0 17 11.5 28.5T720-460Zm-80 260v-160H320v160h320Zm80 80H240v-160H80v-240q0-51 35-85.5t85-34.5h560q51 0 85.5 34.5T880-520v240H720v160Z" />
-    </Icon>
-  )
-}
-
-export function ShareIcon(props: Props): React.JSX.Element {
-  return (
-    <Icon {...props}>
-      <path d="M720-80q-50 0-85-35t-35-85q0-7 1-14.5t3-13.5L322-392q-17 15-38 23.5t-44 8.5q-50 0-85-35t-35-85q0-50 35-85t85-35q23 0 44 8.5t38 23.5l282-164q-2-6-3-13.5t-1-14.5q0-50 35-85t85-35q50 0 85 35t35 85q0 50-35 85t-85 35q-23 0-44-8.5T638-672L356-508q2 6 3 13.5t1 14.5q0 7-1 14.5t-3 13.5l282 164q17-15 38-23.5t44-8.5q50 0 85 35t35 85q0 50-35 85t-85 35Z" />
-    </Icon>
-  )
-}
-
-export function DevToolsIcon(props: Props): React.JSX.Element {
-  return (
-    <Icon {...props}>
-      <path d="m320-240-56-56 184-184-184-184 56-56 240 240-240 240Zm240 0v-80h240v80H560Z" />
     </Icon>
   )
 }

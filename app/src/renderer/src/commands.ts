@@ -31,6 +31,13 @@ export function useAppCommands(): void {
         await window.agweb.windows.newWindow()
         return
 
+      case 'app:new-incognito':
+        // Switch into the incognito profile and open a fresh private tab.
+        await window.agweb.profiles.setActive('incognito')
+        store.syncProfile('incognito')
+        store.newTab()
+        return
+
       case 'app:save':
         // Editors own their own buffers; the one with focus takes the save.
         window.dispatchEvent(new CustomEvent('agweb:save'))
@@ -101,6 +108,7 @@ export function useAppCommands(): void {
     const commands = [
       'app:settings',
       'app:new-window',
+      'app:new-incognito',
       'app:save',
       'app:print',
       'app:find',

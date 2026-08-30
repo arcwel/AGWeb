@@ -1,13 +1,16 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
 import type { AppInfo, RecentProject } from '@shared/ipc'
 import { useShellStore } from '@/store'
-import { listShortcuts } from '@/shortcuts'
+import { subscribeShortcuts, getShortcuts } from '@/shortcuts'
 
 export function StartPage(): React.JSX.Element {
   const setWorkspace = useShellStore((s) => s.setWorkspace)
   const workspace = useShellStore((s) => s.workspace)
   const [recent, setRecent] = useState<RecentProject[]>([])
   const [info, setInfo] = useState<AppInfo | null>(null)
+  // Subscribe so the shortcut list fills in as shortcuts register after first
+  // paint, instead of rendering the empty/partial registry once (P3-8).
+  const shortcuts = useSyncExternalStore(subscribeShortcuts, getShortcuts)
 
   useEffect(() => {
     void window.agweb.getRecentProjects().then(setRecent)
@@ -70,16 +73,14 @@ export function StartPage(): React.JSX.Element {
       </div>
 
       <div className="flex flex-col items-center gap-1 text-xs text-slate-500">
-        {listShortcuts()
-          .slice(0, 5)
-          .map((s) => (
-            <div key={s.combo}>
-              <kbd className="rounded border border-slate-300 bg-slate-100 px-1.5 py-0.5 font-mono text-[10px] dark:border-slate-600 dark:bg-slate-800">
-                {s.combo}
-              </kbd>{' '}
-              {s.description}
-            </div>
-          ))}
+        {shortcuts.slice(0, 5).map((s) => (
+          <div key={s.combo}>
+            <kbd className="rounded border border-slate-300 bg-slate-100 px-1.5 py-0.5 font-mono text-[10px] dark:border-slate-600 dark:bg-slate-800">
+              {s.combo}
+            </kbd>{' '}
+            {s.description}
+          </div>
+        ))}
         {info && (
           <div className="mt-3 text-[11px] text-slate-400 dark:text-slate-600">
             WebDeck {info.version} · Electron {info.electron} · Chromium {info.chrome}

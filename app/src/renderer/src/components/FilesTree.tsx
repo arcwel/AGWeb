@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FsEntry, RecentProject, WorkspaceInfo } from '@shared/ipc'
 import { isDocFile, isSlidesFile, useShellStore } from '@/store'
 import { BlockTypeIcon, CloseIcon } from '@/components/icons'
 import { SLIDE_TEMPLATES } from '@/slideTemplates'
+import { useVirtualRows } from '@/virtual'
 
 /**
  * The Files block: a lazy, watcher-refreshed tree of the open workspace.
@@ -17,6 +18,40 @@ interface TreeState {
 
 /** Drag-to-move (3.1): a row's workspace-relative path rides the drag. */
 const FILE_DRAG_MIME = 'application/x-agweb-file'
+
+/** Fixed row height (px) the virtualizer windows on — must match the row's box. */
+const ROW_H = 24
+
+/** One flattened, visible tree row (only expanded directories contribute). */
+interface TreeRow {
+  path: string
+  entry: FsEntry
+  depth: number
+  isExpanded: boolean
+}
+
+/**
+ * Flatten the visible tree (expanded directories only) into a windowable list.
+ * Pure and module-level so the recursion + local accumulation stay outside any
+ * hook, and the memo below can depend on it cleanly.
+ */
+function flattenTree(
+  children: Record<string, FsEntry[]>,
+  expanded: Set<string>,
+  dir: string,
+  depth: number
+): TreeRow[] {
+  const out: TreeRow[] = []
+  for (const entry of children[dir] ?? []) {
+    const path = dir ? `${dir}/${entry.name}` : entry.name
+    const isExpanded = expanded.has(path)
+    out.push({ path, entry, depth, isExpanded })
+    if (entry.kind === 'dir' && isExpanded) {
+      out.push(...flattenTree(children, expanded, path, depth + 1))
+    }
+  }
+  return out
+}
 
 const parentOf = (path: string): string =>
   path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : ''
@@ -139,16 +174,16 @@ function WorkspaceTree(): React.JSX.Element {
 
   const toggleDir = (path: string): void => {
     setSelectedDir(path)
-    setTree((t) => {
-      const expanded = new Set(t.expanded)
-      if (expanded.has(path)) expanded.delete(path)
-      else {
-        expanded.add(path)
-        if (!t.children[path]) void loadDir(path)
-      }
-      expandedRef.current = expanded
-      return { ...t, expanded }
-    })
+    // Decide from the current state, then keep the setState updater pure: the
+    // ref mutation and the fs.list load are side effects and must live in the
+    // handler, or StrictMode's double-invoke of the updater double-fires them (P2-9).
+    const expanded = new Set(tree.expanded)
+    const willExpand = !expanded.has(path)
+    if (willExpand) expanded.add(path)
+    else expanded.delete(path)
+    expandedRef.current = expanded
+    setTree((t) => ({ ...t, expanded }))
+    if (willExpand && !tree.children[path]) void loadDir(path)
   }
 
   const submitCreate = async (): Promise<void> => {
@@ -178,71 +213,82 @@ function WorkspaceTree(): React.JSX.Element {
     }
   }
 
-  const renderEntries = (dir: string, depth: number): React.JSX.Element[] => {
-    const entries = tree.children[dir] ?? []
-    return entries.map((entry) => {
-      const path = dir ? `${dir}/${entry.name}` : entry.name
-      const isExpanded = tree.expanded.has(path)
+  // Render only the rows in view so a large workspace no longer mounts thousands
+  // of nested nodes (P2-12).
+  const rows = useMemo(
+    () => flattenTree(tree.children, tree.expanded, '', 0),
+    [tree.children, tree.expanded]
+  )
+  const { containerRef, onScroll, start, end, padTop, padBottom } = useVirtualRows(
+    rows.length,
+    ROW_H
+  )
+
+  const renderRow = (row: TreeRow): React.JSX.Element => {
+    const { path, entry, depth, isExpanded } = row
+    if (renaming === path) {
       return (
-        <div key={path}>
-          {renaming === path ? (
-            <input
-              autoFocus
-              value={nameInput}
-              onChange={(e) => setNameInput(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && void submitRename(path)}
-              onBlur={() => setRenaming(null)}
-              className="mx-1 my-0.5 w-11/12 rounded border border-sky-500 bg-transparent px-1.5 py-0.5 text-xs outline-none"
-              style={{ marginLeft: depth * 14 + 4 }}
-            />
-          ) : (
-            <div
-              draggable
-              onDragStart={(event) => {
-                event.dataTransfer.setData(FILE_DRAG_MIME, path)
-                event.dataTransfer.effectAllowed = 'move'
-              }}
-              {...(entry.kind === 'dir' ? dropHandlers(path) : {})}
-              onClick={() => (entry.kind === 'dir' ? toggleDir(path) : openFile(path))}
-              className={`group flex cursor-pointer items-center gap-1.5 rounded px-1.5 py-1 text-xs hover:bg-slate-100 dark:hover:bg-slate-800 ${
-                selectedDir === path ? 'bg-slate-100 dark:bg-slate-800' : ''
-              } ${dropDir === path ? 'ring-1 ring-inset ring-sky-500' : ''}`}
-              style={{ paddingLeft: depth * 14 + 6 }}
-            >
-              <span className="w-3 text-[10px] text-slate-400">
-                {entry.kind === 'dir' ? (isExpanded ? '▾' : '▸') : ''}
-              </span>
-              <span className="truncate text-slate-700 dark:text-slate-300">{entry.name}</span>
-              <span className="ml-auto hidden shrink-0 items-center gap-1 group-hover:flex">
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    setRenaming(path)
-                    setNameInput(entry.name)
-                  }}
-                  className="rounded p-0.5 text-slate-400 hover:text-sky-500"
-                  aria-label={`Rename ${entry.name}`}
-                >
-                  <BlockTypeIcon type="editor" size={11} />
-                </button>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    void remove(path)
-                  }}
-                  className="rounded p-0.5 text-slate-400 hover:text-red-500"
-                  aria-label={`Delete ${entry.name}`}
-                >
-                  <CloseIcon size={11} />
-                </button>
-              </span>
-            </div>
-          )}
-          {entry.kind === 'dir' && isExpanded && renderEntries(path, depth + 1)}
-        </div>
+        <input
+          key={path}
+          autoFocus
+          value={nameInput}
+          onChange={(e) => setNameInput(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && void submitRename(path)}
+          onBlur={() => setRenaming(null)}
+          className="my-0.5 w-11/12 rounded border border-sky-500 bg-transparent px-1.5 text-xs outline-none"
+          style={{ marginLeft: depth * 14 + 4, height: ROW_H - 4 }}
+        />
       )
-    })
+    }
+    return (
+      <div
+        key={path}
+        draggable
+        onDragStart={(event) => {
+          event.dataTransfer.setData(FILE_DRAG_MIME, path)
+          event.dataTransfer.effectAllowed = 'move'
+        }}
+        {...(entry.kind === 'dir' ? dropHandlers(path) : {})}
+        onClick={() => (entry.kind === 'dir' ? toggleDir(path) : openFile(path))}
+        className={`group flex cursor-pointer items-center gap-1.5 rounded px-1.5 text-xs hover:bg-slate-100 dark:hover:bg-slate-800 ${
+          selectedDir === path ? 'bg-slate-100 dark:bg-slate-800' : ''
+        } ${dropDir === path ? 'ring-1 ring-inset ring-sky-500' : ''}`}
+        style={{ paddingLeft: depth * 14 + 6, height: ROW_H }}
+      >
+        <span className="w-3 text-[10px] text-slate-400">
+          {entry.kind === 'dir' ? (isExpanded ? '▾' : '▸') : ''}
+        </span>
+        <span className="truncate text-slate-700 dark:text-slate-300">{entry.name}</span>
+        <span className="ml-auto hidden shrink-0 items-center gap-1 group-hover:flex">
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              setRenaming(path)
+              setNameInput(entry.name)
+            }}
+            className="rounded p-0.5 text-slate-400 hover:text-sky-500"
+            aria-label={`Rename ${entry.name}`}
+          >
+            <BlockTypeIcon type="editor" size={11} />
+          </button>
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              void remove(path)
+            }}
+            className="rounded p-0.5 text-slate-400 hover:text-red-500"
+            aria-label={`Delete ${entry.name}`}
+          >
+            <CloseIcon size={11} />
+          </button>
+        </span>
+      </div>
+    )
   }
+
+  /** Render a bounded subtree in full (used for the few extra roots). */
+  const renderSubtree = (dir: string, depth: number): React.JSX.Element[] =>
+    flattenTree(tree.children, tree.expanded, dir, depth).map(renderRow)
 
   return (
     <div className="flex h-full flex-col text-xs">
@@ -315,8 +361,10 @@ function WorkspaceTree(): React.JSX.Element {
           className="mx-2 mt-1.5 rounded border border-sky-500 bg-transparent px-1.5 py-1 text-xs outline-none"
         />
       )}
-      <div className="min-h-0 flex-1 overflow-y-auto p-1.5">
-        {renderEntries('', 0)}
+      <div ref={containerRef} onScroll={onScroll} className="min-h-0 flex-1 overflow-y-auto p-1.5">
+        <div style={{ height: padTop }} />
+        {rows.slice(start, end).map(renderRow)}
+        <div style={{ height: padBottom }} />
 
         {extraRoots.map((root) => (
           <div
@@ -350,7 +398,7 @@ function WorkspaceTree(): React.JSX.Element {
                 ×
               </button>
             </div>
-            {tree.expanded.has(root.path) && renderEntries(root.path, 1)}
+            {tree.expanded.has(root.path) && renderSubtree(root.path, 1)}
           </div>
         ))}
 
@@ -373,7 +421,14 @@ function NoWorkspace(): React.JSX.Element {
   const [recent, setRecent] = useState<RecentProject[]>([])
 
   useEffect(() => {
-    void window.agweb.getRecentProjects().then(setRecent)
+    let cancelled = false
+    void window.agweb.getRecentProjects().then((r) => {
+      // Guard against an unmount (or workspace change) before this resolves (P2-7).
+      if (!cancelled) setRecent(r)
+    })
+    return () => {
+      cancelled = true
+    }
   }, [workspace])
 
   return (

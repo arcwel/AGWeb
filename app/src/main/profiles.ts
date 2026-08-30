@@ -3,6 +3,8 @@ import type { ClearStorageDataOptions, Session } from 'electron'
 import { JsonStore } from './json-store'
 import { attachPermissionHandler } from './permissions'
 import { attachDownloadHandler } from './downloads'
+import { registerExtensionSession } from './extensions'
+import { registerEmbedProxySession } from './embed-proxy'
 import {
   onAppSettingsChanged,
   readAppSettings,
@@ -41,10 +43,32 @@ interface ProfilesState {
 
 const DEFAULT_PROFILE: Profile = { id: 'default', name: 'Personal', color: '#4fd4c4' }
 
+/**
+ * Incognito is a built-in, never-persisted profile. Its partition has no
+ * `persist:` prefix, so Chromium keeps its cookies and storage in memory only
+ * and discards them when the app quits — genuine private browsing.
+ */
+export const INCOGNITO_ID = 'incognito'
+const INCOGNITO_PROFILE: Profile = { id: INCOGNITO_ID, name: 'Incognito', color: '#39404d' }
+
+export function isIncognito(profileId: string): boolean {
+  return profileId === INCOGNITO_ID
+}
+
 const store = new JsonStore<ProfilesState>('profiles', {
   profiles: [DEFAULT_PROFILE],
   activeId: DEFAULT_PROFILE.id
 })
+
+/**
+ * Active-profile override for incognito, kept in memory only.
+ *
+ * Switching into incognito must not be written to disk — otherwise the next
+ * launch would start in incognito, which no browser does. So the persisted
+ * `activeId` tracks the last *normal* profile, and this shadows it while
+ * incognito is active.
+ */
+let incognitoActive = false
 
 /** The Chromium version the shell is actually built on, for the UA string. */
 function chromeVersion(): string {
@@ -63,6 +87,8 @@ function chromeUserAgent(): string {
 }
 
 export function partitionFor(profileId: string): string {
+  // No `persist:` prefix → an in-memory session that is wiped on quit.
+  if (profileId === INCOGNITO_ID) return 'agweb-incognito'
   return profileId === DEFAULT_PROFILE.id ? 'persist:agweb-browser' : `persist:profile-${profileId}`
 }
 
@@ -114,10 +140,13 @@ export function sessionForProfile(profileId: string): Session {
   const ses = session.fromPartition(partition)
   if (!configured.has(partition)) {
     ses.setUserAgent(chromeUserAgent())
-    // Every profile gets the shell's permission prompt and download capture,
-    // not just the default.
+    // Every profile gets the shell's permission prompt, download capture and
+    // embed-proxy — not just the default. Extensions are skipped for incognito,
+    // matching Chrome, where extensions are off in private windows.
     attachPermissionHandler(ses)
     attachDownloadHandler(ses)
+    if (!isIncognito(profileId)) registerExtensionSession(ses, profileId)
+    registerEmbedProxySession(ses)
     applyBrowsingPrefs(ses, readAppSettings(), true)
     configured.set(partition, ses)
   }
@@ -155,10 +184,16 @@ export async function clearBrowsingData(kinds: ClearableData[]): Promise<void> {
 }
 
 export function listProfiles(): { profiles: Profile[]; activeId: string } {
-  return store.read()
+  const state = store.read()
+  return {
+    // Incognito is always offered, at the end of the list, but never stored.
+    profiles: [...state.profiles, INCOGNITO_PROFILE],
+    activeId: incognitoActive ? INCOGNITO_ID : state.activeId
+  }
 }
 
 export function activeProfile(): Profile {
+  if (incognitoActive) return INCOGNITO_PROFILE
   const state = store.read()
   return state.profiles.find((p) => p.id === state.activeId) ?? state.profiles[0] ?? DEFAULT_PROFILE
 }
@@ -168,11 +203,16 @@ export function activePartition(): string {
 }
 
 export function setActiveProfile(id: unknown): { profiles: Profile[]; activeId: string } {
+  if (id === INCOGNITO_ID) {
+    incognitoActive = true
+    return listProfiles()
+  }
   const state = store.read()
   if (typeof id === 'string' && state.profiles.some((p) => p.id === id)) {
+    incognitoActive = false
     store.write({ ...state, activeId: id })
   }
-  return store.read()
+  return listProfiles()
 }
 
 const CHIP_COLORS = ['#4fd4c4', '#7a8cff', '#e0b04f', '#e07a7a', '#8fd07a', '#c78ce0']
@@ -180,25 +220,55 @@ const CHIP_COLORS = ['#4fd4c4', '#7a8cff', '#e0b04f', '#e07a7a', '#8fd07a', '#c7
 export function createProfile(name: unknown): { profiles: Profile[]; activeId: string } {
   const state = store.read()
   const trimmed = typeof name === 'string' ? name.trim() : ''
-  if (trimmed === '') return state
+  if (trimmed === '') return listProfiles()
   const id = `p${Date.now().toString(36)}`
   const color = CHIP_COLORS[state.profiles.length % CHIP_COLORS.length]
-  const next: ProfilesState = {
+  incognitoActive = false
+  store.write({
     profiles: [...state.profiles, { id, name: trimmed.slice(0, 40), color }],
     activeId: id
+  })
+  return listProfiles()
+}
+
+/**
+ * Whether a profile is signed in to Google.
+ *
+ * A profile is a Google profile in the Chrome sense: an isolated identity you
+ * sign a Google account into. We read that account's own session cookies —
+ * `SID`/`SAPISID` on `.google.com`, set only after a real sign-in — to report
+ * whether this profile holds a Google login, with no Google API and no scraping
+ * of account details we have no right to.
+ */
+export async function googleSignedIn(profileId: string): Promise<boolean> {
+  try {
+    const cookies = await session
+      .fromPartition(partitionFor(profileId))
+      .cookies.get({ domain: '.google.com' })
+    return cookies.some((c) => c.name === 'SID' || c.name === 'SAPISID')
+  } catch {
+    return false
   }
-  store.write(next)
-  return next
+}
+
+/** Google sign-in status for every profile, keyed by id (incognito is never signed in). */
+export async function googleStatus(): Promise<Record<string, boolean>> {
+  const entries = await Promise.all(
+    store.read().profiles.map(async (p) => [p.id, await googleSignedIn(p.id)] as const)
+  )
+  return Object.fromEntries(entries)
 }
 
 export async function removeProfile(
   id: unknown
 ): Promise<{ profiles: Profile[]; activeId: string }> {
   const state = store.read()
-  // The default profile is the floor — there is always at least one.
-  if (typeof id !== 'string' || id === DEFAULT_PROFILE.id) return state
+  // The default and incognito profiles can't be removed.
+  if (typeof id !== 'string' || id === DEFAULT_PROFILE.id || id === INCOGNITO_ID) {
+    return listProfiles()
+  }
   const profiles = state.profiles.filter((p) => p.id !== id)
-  if (profiles.length === state.profiles.length) return state
+  if (profiles.length === state.profiles.length) return listProfiles()
 
   // Wipe the removed profile's data so "remove" actually forgets the account.
   try {
@@ -207,7 +277,6 @@ export async function removeProfile(
     // Best effort — the profile is gone from the list regardless.
   }
   const activeId = state.activeId === id ? profiles[0].id : state.activeId
-  const next = { profiles, activeId }
-  store.write(next)
-  return next
+  store.write({ profiles, activeId })
+  return listProfiles()
 }

@@ -1,6 +1,8 @@
-import { app, safeStorage } from 'electron'
+import { coreEnv } from '../core/env'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { IpcChannels } from '@shared/ipc'
+import { core } from '../core/rpc'
 
 /**
  * Secret storage for provider API keys.
@@ -26,7 +28,7 @@ interface StoredSecret {
 }
 
 function file(): string {
-  return join(app.getPath('userData'), 'secrets.json')
+  return join(coreEnv().userDataDir, 'secrets.json')
 }
 
 function loadAll(): Record<string, StoredSecret> {
@@ -57,8 +59,11 @@ export function setApiKey(provider: unknown, key: unknown): boolean {
     saveAll(all)
     return true
   }
-  if (safeStorage.isEncryptionAvailable()) {
-    all[provider] = { value: safeStorage.encryptString(key).toString('base64'), encrypted: true }
+  if (coreEnv().secrets.isAvailable()) {
+    all[provider] = {
+      value: coreEnv().secrets.encryptString(key).toString('base64'),
+      encrypted: true
+    }
   } else {
     // No OS keyring (a headless Linux box, say). Storing plaintext would be a
     // silent downgrade of a security promise, so we refuse instead.
@@ -74,7 +79,7 @@ export function getApiKey(provider: Provider): string | null {
   if (!stored) return null
   if (!stored.encrypted) return stored.value
   try {
-    return safeStorage.decryptString(Buffer.from(stored.value, 'base64'))
+    return coreEnv().secrets.decryptString(Buffer.from(stored.value, 'base64'))
   } catch {
     return null
   }
@@ -99,5 +104,22 @@ export function clearApiKey(provider: unknown): boolean {
 }
 
 export function isEncryptionAvailable(): boolean {
-  return safeStorage.isEncryptionAvailable()
+  return coreEnv().secrets.isAvailable()
+}
+
+/**
+ * Register the secrets domain with webdeck-core.
+ *
+ * Secrets is the pilot for the P1 decoupling: a self-contained "core" domain
+ * (keychain + files, no browser/window/dialog dependency) whose handlers no
+ * longer touch `ipcMain` directly. Under Electron the electron transport binds
+ * these to IPC; under the Chromium fork the same three lines bind to a socket.
+ */
+export function registerSecretsRpc(): void {
+  core.register(IpcChannels.secretsList, () => ({
+    encryptionAvailable: isEncryptionAvailable(),
+    configured: listConfiguredProviders()
+  }))
+  core.register(IpcChannels.secretsSet, (provider, key) => setApiKey(provider, key))
+  core.register(IpcChannels.secretsClear, (provider) => clearApiKey(provider))
 }

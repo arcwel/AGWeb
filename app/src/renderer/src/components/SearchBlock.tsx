@@ -1,6 +1,30 @@
-import { useRef, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import type { SearchHit } from '@shared/ipc'
 import { isDocFile, useShellStore } from '@/store'
+import { useVirtualRows } from '@/virtual'
+
+/** Fixed row height (px) the virtualizer windows on — must match each row's box. */
+const ROW_H = 26
+
+/** A flattened result row: a file header, or one hit under it. */
+type ResultRow = { kind: 'file'; path: string; count: number } | { kind: 'hit'; hit: SearchHit }
+
+/** Group hits by file and flatten to header+hit rows. Pure/module-level so the
+ *  local Map/array mutation stays outside any hook. */
+function flattenResults(hits: SearchHit[] | null): ResultRow[] {
+  const byFile = new Map<string, SearchHit[]>()
+  for (const hit of hits ?? []) {
+    const list = byFile.get(hit.path) ?? []
+    list.push(hit)
+    byFile.set(hit.path, list)
+  }
+  const out: ResultRow[] = []
+  for (const [path, fileHits] of byFile) {
+    out.push({ kind: 'file', path, count: fileHits.length })
+    for (const hit of fileHits) out.push({ kind: 'hit', hit })
+  }
+  return out
+}
 
 /**
  * Project-wide search (ripgrep-backed with a Node fallback in main).
@@ -14,6 +38,14 @@ export function SearchBlock(): React.JSX.Element {
   const [hits, setHits] = useState<SearchHit[] | null>(null)
   const [searching, setSearching] = useState(false)
   const seq = useRef(0)
+
+  // Window the (potentially huge) result set — a broad grep no longer renders
+  // thousands of DOM nodes at once (P2-12).
+  const rows = useMemo(() => flattenResults(hits), [hits])
+  const { containerRef, onScroll, start, end, padTop, padBottom } = useVirtualRows(
+    rows.length,
+    ROW_H
+  )
 
   const run = async (): Promise<void> => {
     const q = query.trim()
@@ -35,11 +67,31 @@ export function SearchBlock(): React.JSX.Element {
     return <div className="p-3 text-xs text-slate-500">Open a project to search it.</div>
   }
 
-  const byFile = new Map<string, SearchHit[]>()
-  for (const hit of hits ?? []) {
-    const list = byFile.get(hit.path) ?? []
-    list.push(hit)
-    byFile.set(hit.path, list)
+  const renderRow = (row: ResultRow, index: number): React.JSX.Element => {
+    if (row.kind === 'file') {
+      return (
+        <div
+          key={`f:${row.path}`}
+          className="flex items-center truncate px-1 font-semibold text-slate-600 dark:text-slate-300"
+          style={{ height: ROW_H }}
+        >
+          <span className="truncate">{row.path}</span>
+          <span className="ml-1 shrink-0 font-normal text-slate-400">({row.count})</span>
+        </div>
+      )
+    }
+    const hit = row.hit
+    return (
+      <button
+        key={`h:${index}`}
+        onClick={() => open(hit)}
+        className="flex w-full items-center gap-2 truncate rounded px-2 text-left hover:bg-slate-100 dark:hover:bg-slate-800"
+        style={{ height: ROW_H }}
+      >
+        <span className="shrink-0 text-slate-400">{hit.line}</span>
+        <span className="truncate text-slate-700 dark:text-slate-300">{hit.text}</span>
+      </button>
+    )
   }
 
   return (
@@ -59,29 +111,18 @@ export function SearchBlock(): React.JSX.Element {
           Search
         </button>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto p-2">
+      <div ref={containerRef} onScroll={onScroll} className="min-h-0 flex-1 overflow-y-auto p-2">
         {searching && <div className="px-1 py-2 text-slate-500">Searching…</div>}
         {!searching && hits !== null && hits.length === 0 && (
           <div className="px-1 py-2 text-slate-500">No matches.</div>
         )}
-        {!searching &&
-          [...byFile.entries()].map(([path, fileHits]) => (
-            <div key={path} className="mb-2">
-              <div className="truncate px-1 py-1 font-semibold text-slate-600 dark:text-slate-300">
-                {path} <span className="font-normal text-slate-400">({fileHits.length})</span>
-              </div>
-              {fileHits.map((hit, i) => (
-                <button
-                  key={i}
-                  onClick={() => open(hit)}
-                  className="flex w-full gap-2 truncate rounded px-2 py-1 text-left hover:bg-slate-100 dark:hover:bg-slate-800"
-                >
-                  <span className="shrink-0 text-slate-400">{hit.line}</span>
-                  <span className="truncate text-slate-700 dark:text-slate-300">{hit.text}</span>
-                </button>
-              ))}
-            </div>
-          ))}
+        {!searching && rows.length > 0 && (
+          <>
+            <div style={{ height: padTop }} />
+            {rows.slice(start, end).map((row, i) => renderRow(row, start + i))}
+            <div style={{ height: padBottom }} />
+          </>
+        )}
       </div>
     </div>
   )

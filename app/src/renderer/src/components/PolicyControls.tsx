@@ -20,10 +20,23 @@ export function PolicyControls(): React.JSX.Element | null {
   const [hosts, setHosts] = useState('')
 
   useEffect(() => {
-    void window.agweb.policy.get().then((status) => {
+    let cancelled = false
+    const apply = (status: PolicyStatus): void => {
       setPolicy(status)
       setHosts(status.custom.allowedHosts.join(', '))
+    }
+    void window.agweb.policy.get().then((status) => {
+      // The window can close before this async read resolves (P2-7): guard the
+      // setState so it never fires on an unmounted component.
+      if (!cancelled) apply(status)
     })
+    // Reflect changes made in any other window so this panel never goes stale
+    // (P2-13).
+    const off = window.agweb.policy.onChanged(apply)
+    return () => {
+      cancelled = true
+      off()
+    }
   }, [])
 
   if (!policy) return null

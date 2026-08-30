@@ -206,12 +206,3 @@ export async function documentSymbols(language: string, uri: string): Promise<Ou
     return []
   }
 }
-
-/** Stop every client — workspace change, or window teardown. */
-export async function stopLanguageClients(): Promise<void> {
-  for (const [id, client] of [...clients]) {
-    clients.delete(id)
-    await client.stop().catch(() => {})
-    await window.agweb.lsp.stop(id)
-  }
-}

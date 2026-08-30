@@ -308,6 +308,7 @@ export function GroupView({
   const closeBlock = useShellStore((s) => s.closeBlock)
   const sendToRail = useShellStore((s) => s.sendToRail)
   const moveGroup = useShellStore((s) => s.moveGroup)
+  const activeEditorPath = useShellStore((s) => s.activeEditorPath)
   const members = group.blockIds.map((id) => blocks[id]).filter(Boolean) as BlockInstance[]
   const active = blocks[group.activeBlockId] ?? members[0]
 
@@ -368,6 +369,15 @@ export function GroupView({
           >
             +
           </button>
+        )}
+        {active?.type === 'editor' && activeEditorPath && (
+          // The header's context string: identity (the tab) + what it's on (P3-5).
+          <span
+            className="ml-1 max-w-[45%] truncate text-[11px] font-normal normal-case text-slate-400 dark:text-slate-500"
+            title={activeEditorPath}
+          >
+            {activeEditorPath.split('/').pop()}
+          </span>
         )}
         <div className="ml-auto flex items-center gap-1.5 text-slate-400 dark:text-slate-600">
           {active && (

@@ -1,16 +1,19 @@
 import { appendFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { app } from 'electron'
 import type { BrowserWindow } from 'electron'
-import { IpcEvents } from '@shared/ipc'
+import { coreEnv } from '../core/env'
+import { IpcChannels, IpcEvents } from '@shared/ipc'
 import type {
   CustomPolicyRules,
   PolicyActionKind,
   PolicyDecision,
+  PolicyDeniedInfo,
   PolicyPromptInfo,
   PolicyStatus
 } from '@shared/ipc'
 import { JsonStore } from './json-store'
+import { core } from '../core/rpc'
+import { asString } from '../core/coerce'
 
 /**
  * Permission policy engine (Phase 9): the central gate every agent-driven
@@ -61,6 +64,21 @@ export function initPolicy(window: BrowserWindow): void {
   }
 }
 
+// A change broadcaster injected at startup (index.ts wires it to the shell's
+// window broadcast). Kept as an injected callback so policy.ts imports no
+// Electron and stays unit-testable without a mock (P2-13).
+let broadcastChange: ((status: PolicyStatus) => void) | null = null
+export function setPolicyBroadcaster(fn: (status: PolicyStatus) => void): void {
+  broadcastChange = fn
+}
+
+// Injected the same way: fired when an agent action is denied, so a silent block
+// surfaces as a toast in the shell (P2-13). Kept a callback — no Electron here.
+let notifyDenied: ((info: PolicyDeniedInfo) => void) | null = null
+export function setPolicyDenyNotifier(fn: (info: PolicyDeniedInfo) => void): void {
+  notifyDenied = fn
+}
+
 export function getPolicyStatus(): PolicyStatus {
   const saved = store.read()
   return { mode: saved.mode, custom: { ...DEFAULT_CUSTOM, ...saved.custom } }
@@ -72,7 +90,9 @@ export function setPolicyMode(mode: PolicyStatus['mode']): PolicyStatus {
   // under the old rules cannot outlive the change (P1-4).
   sessionGrants.clear()
   audit({ event: 'mode-change', detail: mode, decision: 'allow' })
-  return getPolicyStatus()
+  const status = getPolicyStatus()
+  broadcastChange?.(status) // every window's PolicyControls updates (P2-13)
+  return status
 }
 
 export function setCustomRules(custom: CustomPolicyRules): PolicyStatus {
@@ -81,7 +101,9 @@ export function setCustomRules(custom: CustomPolicyRules): PolicyStatus {
   // Rule edits change effective policy just like a mode switch — audit them
   // too, or the log misses how a later decision was reached (P2-2).
   audit({ event: 'mode-change', detail: `custom: ${JSON.stringify(custom)}`, decision: 'allow' })
-  return getPolicyStatus()
+  const status = getPolicyStatus()
+  broadcastChange?.(status) // every window's PolicyControls updates (P2-13)
+  return status
 }
 
 function isLocalNavigation(url: string): boolean {
@@ -136,6 +158,7 @@ export async function checkAction(
   // Deny is evaluated first: an explicit deny rule outranks any session grant.
   if (verdict === 'deny' || !host || host.isDestroyed()) {
     audit({ event: 'action', kind, detail, sessionId, decision: 'deny' })
+    notifyDenied?.({ kind, detail, byUser: false })
     return false
   }
   if (verdict === 'allow' || sessionGrants.has(`${sessionId}|${kind}`)) {
@@ -156,6 +179,7 @@ export async function checkAction(
     decision: allowed ? 'allow' : 'deny',
     byUser: true
   })
+  if (!allowed) notifyDenied?.({ kind, detail, byUser: true })
   return allowed
 }
 
@@ -182,7 +206,7 @@ interface AuditEntry {
 
 export function audit(entry: AuditEntry): void {
   try {
-    const dir = app.getPath('userData')
+    const dir = coreEnv().userDataDir
     mkdirSync(dir, { recursive: true })
     appendFileSync(
       join(dir, 'audit.jsonl'),
@@ -193,4 +217,40 @@ export function audit(entry: AuditEntry): void {
   } catch {
     // auditing must never break the action path
   }
+}
+
+/** Register the policy/permission-engine domain with webdeck-core (P1) — the
+ *  agent<->system boundary. */
+export function registerPolicyRpc(): void {
+  core.register(IpcChannels.policyGet, () => getPolicyStatus())
+  core.register(IpcChannels.policySetMode, (mode) => {
+    const valid: PolicyStatus['mode'][] = ['secure', 'review', 'agent', 'custom']
+    return valid.includes(mode as PolicyStatus['mode'])
+      ? setPolicyMode(mode as PolicyStatus['mode'])
+      : getPolicyStatus()
+  })
+  core.register(IpcChannels.policySetCustom, (rules) => {
+    const r = rules as CustomPolicyRules
+    const decisions = ['allow', 'confirm', 'deny']
+    if (
+      !r ||
+      !decisions.includes(r.fileWrites) ||
+      !decisions.includes(r.commands) ||
+      !decisions.includes(r.navigation) ||
+      !Array.isArray(r.allowedHosts) ||
+      !r.allowedHosts.every((h) => typeof h === 'string')
+    ) {
+      return getPolicyStatus()
+    }
+    return setCustomRules({
+      fileWrites: r.fileWrites,
+      commands: r.commands,
+      navigation: r.navigation,
+      allowedHosts: r.allowedHosts.map((h) => h.trim()).filter(Boolean)
+    })
+  })
+  core.register(IpcChannels.policyRespond, (id, allow, always) => {
+    const s = asString(id)
+    if (s) respondToPolicyPrompt(s, allow === true, always === true)
+  })
 }

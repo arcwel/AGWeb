@@ -1,4 +1,4 @@
-import { app } from 'electron'
+import { coreEnv } from '../core/env'
 import { spawn } from 'node:child_process'
 import type { ChildProcess } from 'node:child_process'
 import { createRequire } from 'node:module'
@@ -7,6 +7,9 @@ import { join } from 'node:path'
 import { IpcEvents } from '@shared/ipc'
 import { broadcast } from './windows'
 import { getCurrentWorkspace } from './workspace'
+import { IpcChannels } from '@shared/ipc'
+import { core } from '../core/rpc'
+import { asString, asNumber } from '../core/coerce'
 
 /**
  * Terminal sessions live in the main process so they survive deck hide/reveal,
@@ -55,7 +58,7 @@ let host: ChildProcess | null = null
 function getHost(): ChildProcess | null {
   if (host && host.exitCode === null) return host
   try {
-    const hostScript = join(app.getAppPath(), 'resources', 'pty-host.cjs')
+    const hostScript = join(coreEnv().appDir, 'resources', 'pty-host.cjs')
     const ptyModule = nodeRequire.resolve('node-pty')
     host = spawn(process.env.AGWEB_NODE ?? 'node', [hostScript, ptyModule], {
       stdio: ['pipe', 'pipe', 'inherit']
@@ -119,7 +122,7 @@ export function createTerminal(
   options: { command?: string; cwd?: string } = {}
 ): void {
   if (sessions.get(id)?.running) return
-  const cwd = options.cwd ?? getCurrentWorkspace()?.path ?? app.getPath('home')
+  const cwd = options.cwd ?? getCurrentWorkspace()?.path ?? coreEnv().homeDir
   const shell = process.env.SHELL || 'bash'
   // A command-backed session runs that command in a login shell and exits with
   // its real status, so the agent gets a true exit code while the user watches
@@ -247,4 +250,33 @@ export function attachTerminal(id: string): { buffer: string; running: boolean }
 export function disposeAllTerminals(): void {
   for (const id of [...sessions.keys()]) disposeTerminal(id)
   host?.kill()
+}
+
+/** Register the terminal domain with webdeck-core (P1). All invoke-based; the
+ *  live output stream is a separate broadcast, not a request. */
+export function registerTerminalRpc(): void {
+  core.register(IpcChannels.termCreate, (id, cols, rows) => {
+    const t = asString(id)
+    if (t) createTerminal(t, asNumber(cols, 80), asNumber(rows, 24))
+  })
+  core.register(IpcChannels.termInput, (id, data) => {
+    const t = asString(id)
+    if (t && typeof data === 'string') writeTerminal(t, data)
+  })
+  core.register(IpcChannels.termResize, (id, cols, rows) => {
+    const t = asString(id)
+    if (t) resizeTerminal(t, asNumber(cols, 80), asNumber(rows, 24))
+  })
+  core.register(IpcChannels.termDispose, (id) => {
+    const t = asString(id)
+    if (t) disposeTerminal(t)
+  })
+  core.register(IpcChannels.termStop, (id) => {
+    const t = asString(id)
+    if (t) stopTerminal(t)
+  })
+  core.register(IpcChannels.termAttach, (id) => {
+    const t = asString(id)
+    return t ? attachTerminal(t) : { buffer: '', running: false }
+  })
 }

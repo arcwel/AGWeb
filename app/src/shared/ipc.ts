@@ -28,6 +28,30 @@ export interface AppSettings {
   doNotTrack: boolean
   restoreTabs: boolean
   downloadPath: string
+  askWhereToSave: boolean
+  /** Search-engine id (see SEARCH_ENGINES) used for address-bar queries. */
+  searchEngine: string
+}
+
+/** The search engines the address bar can use. `%s` is the query slot. */
+export interface SearchEngine {
+  id: string
+  name: string
+  template: string
+}
+export const SEARCH_ENGINES: SearchEngine[] = [
+  { id: 'duckduckgo', name: 'DuckDuckGo', template: 'https://duckduckgo.com/?q=%s' },
+  { id: 'google', name: 'Google', template: 'https://www.google.com/search?q=%s' },
+  { id: 'bing', name: 'Bing', template: 'https://www.bing.com/search?q=%s' },
+  { id: 'brave', name: 'Brave', template: 'https://search.brave.com/search?q=%s' },
+  { id: 'startpage', name: 'Startpage', template: 'https://www.startpage.com/sp/search?query=%s' },
+  { id: 'ecosia', name: 'Ecosia', template: 'https://www.ecosia.org/search?q=%s' }
+]
+
+/** Build a search URL for a query using the given engine id (falls back to the first). */
+export function searchUrlFor(engineId: string, query: string): string {
+  const engine = SEARCH_ENGINES.find((e) => e.id === engineId) ?? SEARCH_ENGINES[0]
+  return engine.template.replace('%s', encodeURIComponent(query))
 }
 
 export type ClearableData = 'cache' | 'cookies' | 'storage' | 'history'
@@ -74,6 +98,9 @@ export interface BrowserTabState {
   isLoading: boolean
   canGoBack: boolean
   canGoForward: boolean
+  /** The page's favicon as a data: URL (fetched in main; remote URLs are
+   *  blocked by the renderer CSP). Absent until one loads. */
+  favicon?: string
   /** Set when the last navigation failed, so the shell can say why rather
    *  than leaving the user looking at a blank view. */
   loadError?: { code: number; description: string; url: string }
@@ -140,6 +167,14 @@ export interface PolicyPromptInfo {
   sessionId: string
 }
 
+/** A denied agent action, surfaced to the user so a silent block isn't invisible. */
+export interface PolicyDeniedInfo {
+  kind: PolicyActionKind
+  detail: string
+  /** True when the user denied a prompt; false for an automatic policy deny. */
+  byUser: boolean
+}
+
 /** The workspace dev server driven by the Preview block (Phase 4). */
 export interface DevServerStatus {
   state: 'stopped' | 'starting' | 'running' | 'error'
@@ -191,6 +226,8 @@ export const IpcChannels = {
   profilesSetActive: 'profiles:set-active',
   profilesCreate: 'profiles:create',
   profilesRemove: 'profiles:remove',
+  profilesGoogleStatus: 'profiles:google-status',
+  bookmarksImportFile: 'bookmarks:import-file',
   windowNew: 'window:new',
   deckOpen: 'deck:open',
   deckClose: 'deck:close',
@@ -222,6 +259,7 @@ export const IpcChannels = {
   agentList: 'agent:list',
   agentKeyStatus: 'agent:key-status',
   agentSetKey: 'agent:set-key',
+  agentSetModel: 'agent:set-model',
   agentOpenReport: 'agent:open-report',
   agentClearFinished: 'agent:clear-finished',
   debugStart: 'debug:start',
@@ -253,6 +291,7 @@ export const IpcChannels = {
   agentUpdatePlan: 'agent:update-plan',
   agentResume: 'agent:resume',
   extLoad: 'ext:load',
+  extLoadPacked: 'ext:load-packed',
   extLoadPath: 'ext:load-path',
   extList: 'ext:list',
   extRemove: 'ext:remove',
@@ -304,9 +343,35 @@ export const IpcEvents = {
   permissionRequest: 'event:permission-request',
   devServerUpdate: 'event:devserver-update',
   policyPrompt: 'event:policy-prompt',
+  policyChanged: 'event:policy-changed',
+  policyDenied: 'event:policy-denied',
+  openDoc: 'event:open-doc',
   shellShortcut: 'event:shell-shortcut',
   terminalAdopt: 'event:terminal-adopt'
 } as const
+
+/** File types the Document Studio renders as styled documents. Shared so main
+ *  (browser navigation interception) and the renderer agree on what a doc is. */
+export const DOC_EXTENSIONS = new Set([
+  'md',
+  'markdown',
+  'json',
+  'yaml',
+  'yml',
+  'toml',
+  'csv',
+  'tsv'
+])
+
+export function isDocFile(path: string): boolean {
+  const ext = path.split('.').pop()?.toLowerCase() ?? ''
+  return DOC_EXTENSIONS.has(ext)
+}
+
+/** *.slides.md files render as Reveal.js decks instead of Document Studio. */
+export function isSlidesFile(path: string): boolean {
+  return /\.slides\.md$/i.test(path)
+}
 
 export interface FsEntry {
   name: string
@@ -341,6 +406,12 @@ export interface AgwebApi {
     setActive(id: string): Promise<ProfilesState>
     create(name: string): Promise<ProfilesState>
     remove(id: string): Promise<ProfilesState>
+    /** Which profiles hold a signed-in Google account, keyed by profile id. */
+    googleStatus(): Promise<Record<string, boolean>>
+  }
+  /** Read a bookmarks export file the user picks (HTML or JSON) as text. */
+  bookmarks: {
+    importFile(): Promise<{ text?: string; error?: string }>
   }
   /** Show a folder picker and open the chosen workspace. Null if cancelled. */
   openWorkspace(): Promise<WorkspaceInfo | null>
@@ -392,6 +463,8 @@ export interface AgwebApi {
     onOpenTab(listener: (url: string) => void): () => void
     /** An agent created a browser view in main; adopt it as a real tab. */
     onAdoptTab(listener: (tabId: string, url: string) => void): () => void
+    /** A `file:` navigation to a workspace doc — open it in Document Studio. */
+    onOpenDoc(listener: (path: string) => void): () => void
   }
 
   /** Multi-window deck: the detached IDE window, float windows, state sync. */
@@ -460,6 +533,8 @@ export interface AgwebApi {
     list(): Promise<import('./agents').AgentSessionInfo[]>
     keyStatus(): Promise<import('./agents').AgentKeyStatus>
     setKey(key: string): Promise<import('./agents').AgentKeyStatus>
+    /** Choose the Claude model the agent runs. */
+    setModel(model: string): Promise<import('./agents').AgentKeyStatus>
     /** Open a finished session's execution report in a browser tab. */
     openReport(id: string): Promise<void>
     /** Remove every finished session and its stored artifacts. */
@@ -551,6 +626,8 @@ export interface AgwebApi {
   extensions: {
     /** Show a directory picker and load the chosen unpacked extension. */
     load(): Promise<{ extension?: ExtensionInfo; error?: string }>
+    /** Pick a packed .crx/.zip extension, extract it, and load it. */
+    loadPacked(): Promise<{ extension?: ExtensionInfo; error?: string }>
     /** Load an unpacked extension from a known directory (tests, restores). */
     loadPath(path: string): Promise<{ extension?: ExtensionInfo; error?: string }>
     list(): Promise<ExtensionInfo[]>
@@ -607,6 +684,10 @@ export interface AgwebApi {
     /** Answer a pending action prompt; `always` grants the session+kind. */
     respond(id: string, allow: boolean, always: boolean): Promise<void>
     onPrompt(listener: (prompt: PolicyPromptInfo) => void): () => void
+    /** Policy mode/rules changed (possibly in another window). */
+    onChanged(listener: (status: PolicyStatus) => void): () => void
+    /** An agent action was denied — surface it so the block isn't silent. */
+    onDenied(listener: (info: PolicyDeniedInfo) => void): () => void
   }
 
   /** Terminal sessions, keyed by block id; they outlive renderer mounts. */

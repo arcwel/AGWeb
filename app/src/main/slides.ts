@@ -2,6 +2,9 @@ import { createServer } from 'node:http'
 import type { Server } from 'node:http'
 import { createReadStream, readFileSync, statSync } from 'node:fs'
 import { basename, dirname, extname, join, normalize, sep } from 'node:path'
+import { IpcChannels } from '@shared/ipc'
+import { core } from '../core/rpc'
+import { asString } from '../core/coerce'
 import { getCurrentWorkspace } from './workspace'
 
 /**
@@ -293,4 +296,18 @@ export function stopSlideServer(): void {
   server?.close()
   server = null
   baseUrl = null
+}
+
+/**
+ * Register the slide runtime behind webdeck-core. `slidesOpen` is pure Node —
+ * it spins up the loopback reveal server and hands back a URL — so it moves off
+ * direct Electron IPC with the other CORE domains. The renderer opens the
+ * returned URL in a browser tab; that tab-open is the only shell-side step, and
+ * it already happens on the renderer with this return value.
+ */
+export function registerSlidesRpc(): void {
+  core.register(IpcChannels.slidesOpen, (rel) => {
+    const r = asString(rel)
+    return r ? openSlides(r) : { error: 'bad arguments' }
+  })
 }

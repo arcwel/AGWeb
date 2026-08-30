@@ -1,10 +1,12 @@
 import { promises as fsp, watch } from 'node:fs'
 import type { FSWatcher } from 'node:fs'
 import { isAbsolute, resolve, sep } from 'node:path'
-import { IpcEvents } from '@shared/ipc'
+import { IpcChannels, IpcEvents } from '@shared/ipc'
 import type { FsEntry } from '@shared/ipc'
 import { broadcast } from './windows'
 import { isGrantedFile, workspaceRoots } from './workspace'
+import { core } from '../core/rpc'
+import { asString } from '../core/coerce'
 
 /**
  * Workspace-scoped filesystem access for the Files and Editor blocks.
@@ -220,4 +222,32 @@ export function watchWorkspace(root: string | null): void {
   } catch (error) {
     console.warn('workspace watcher unavailable:', error)
   }
+}
+
+/** Register the workspace-filesystem domain with webdeck-core (P1). Pure —
+ *  every path is workspace-scoped inside fs.ts. */
+export function registerFsRpc(): void {
+  core.register(IpcChannels.fsList, (rel) => listDir(asString(rel) ?? ''))
+  core.register(IpcChannels.fsRead, (rel) => readFile(asString(rel) ?? ''))
+  core.register(IpcChannels.fsWrite, (rel, content) => {
+    const r = asString(rel)
+    if (r === null || typeof content !== 'string') return { error: 'bad arguments' }
+    return writeFile(r, content)
+  })
+  core.register(IpcChannels.fsCreate, (rel, kind) => {
+    const r = asString(rel)
+    if (r === null || (kind !== 'file' && kind !== 'dir')) return { error: 'bad arguments' }
+    return createEntry(r, kind)
+  })
+  core.register(IpcChannels.fsRename, (from, to) => {
+    const f = asString(from)
+    const t = asString(to)
+    if (f === null || t === null) return { error: 'bad arguments' }
+    return renameEntry(f, t)
+  })
+  core.register(IpcChannels.fsDelete, (rel) => {
+    const r = asString(rel)
+    if (r === null) return { error: 'bad arguments' }
+    return deleteEntry(r)
+  })
 }

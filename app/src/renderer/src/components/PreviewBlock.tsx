@@ -15,8 +15,17 @@ export function PreviewBlock(): React.JSX.Element {
   const newTab = useShellStore((s) => s.newTab)
 
   useEffect(() => {
-    void window.agweb.devServer.status().then(setStatus)
-    return window.agweb.devServer.onUpdate(setStatus)
+    let cancelled = false
+    // Guard the one-shot status read against an unmount before it resolves
+    // (P2-7); the live onUpdate subscription is torn down in the cleanup.
+    void window.agweb.devServer.status().then((s) => {
+      if (!cancelled) setStatus(s)
+    })
+    const off = window.agweb.devServer.onUpdate(setStatus)
+    return () => {
+      cancelled = true
+      off()
+    }
   }, [])
 
   const start = (mode: 'script' | 'static'): void => {

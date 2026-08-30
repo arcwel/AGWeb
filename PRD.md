@@ -68,12 +68,13 @@ rewrite. No Python component exists in the build.
 
 A standout browser-integrated design tool that turns raw JSON, Markdown, and similar structured files into human-readable, stylized documents.
 
-- **In-Browser File Rendering:** Opening or navigating to a `.md`, `.json`, `.yaml`, `.csv`, `.toml`, or `.xml` file in the integrated browser renders a styled document view instead of raw text, with one-click toggle back to source (Monaco).
+- **In-Browser File Rendering:** Opening a `.md`, `.json`, `.yaml`/`.yml`, `.csv`/`.tsv`, or `.toml` file — from the Files tree or by navigating the browser to its `file:` URL — renders a styled document view instead of raw text, with one-click toggle back to source (Monaco).
 - **Markdown Studio:** GitHub-flavored rendering with theme presets, Shiki syntax-highlighted code blocks, Mermaid diagrams, math (KaTeX), and dark/light modes; sanitized rendering pipeline for untrusted content.
-- **JSON/Data Studio:** Collapsible tree inspector with search, type badges, and path copying, plus an interactive node-graph visualization (JSON Crack-style) for JSON, YAML, XML, and CSV; format conversion between these types.
+- **JSON/Data Studio:** Collapsible tree inspector with search, type badges, and path copying.
 - **Style & Theming Controls:** User-selectable document themes (typography, spacing, palette) applied live; custom themes savable per workspace.
-- **Export:** Render any styled view to standalone HTML, PDF, or image for sharing.
-- **Build Strategy:** Own thin viewer shell (file-type detection, theming, layout, export) composed from mature open-source rendering primitives (react-markdown/remark, Shiki, Mermaid, @uiw/react-json-view, PapaParse; JSON Crack under Apache 2.0 for graph view) — no third-party app embedding.
+- **Export:** Render a styled Markdown view to standalone HTML or PDF, or capture it as a PNG, for sharing.
+- **Build Strategy:** Own thin viewer shell (file-type detection, theming, layout, export) composed from mature open-source rendering primitives (react-markdown/remark, Shiki, Mermaid, @uiw/react-json-view, PapaParse) — no third-party app embedding.
+- **Roadmap (deferred to a future release):** `.xml` rendering; an interactive node-graph visualization (JSON Crack-style, Apache-2.0) for JSON/YAML/XML/CSV; format conversion between structured types; and styled export for the non-Markdown doc types.
 
 ### Integrated Development Environment (IDE)
 

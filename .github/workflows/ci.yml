@@ -24,6 +24,7 @@ jobs:
         run: npm run rebuild:native || echo "electron-rebuild failed; smoke uses the pty-host fallback"
       - run: npm run lint
       - run: npm run typecheck
+      - run: npm test
       - run: npm run build
       - name: Smoke test (Electron under Xvfb)
         run: xvfb-run -a node scripts/smoke.mjs smoke.png

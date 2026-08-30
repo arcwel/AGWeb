@@ -2,8 +2,11 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { createRequire } from 'node:module'
 import { StreamMessageReader, StreamMessageWriter } from 'vscode-jsonrpc/node'
 import type { Message } from 'vscode-jsonrpc'
-import { IpcEvents } from '@shared/ipc'
+import { IpcChannels, IpcEvents } from '@shared/ipc'
 import { broadcast } from './windows'
+import { getCurrentWorkspace } from './workspace'
+import { core } from '../core/rpc'
+import { asString } from '../core/coerce'
 
 /**
  * Language servers (task 12.2).
@@ -136,4 +139,26 @@ export function stopLanguageServer(id: string): void {
 /** Shut every server down — app quit, or the workspace changing under them. */
 export function stopAllLanguageServers(): void {
   for (const id of [...running.keys()]) stopLanguageServer(id)
+}
+
+/** Register the language-server domain with webdeck-core (P1). `lspSend` stays a
+ *  streaming ipcMain.on channel until the transport gains a notify path. */
+export function registerLspRpc(): void {
+  core.register(IpcChannels.lspStart, (id) => {
+    const s = asString(id)
+    if (!s) return { error: 'No language given.' }
+    const workspace = getCurrentWorkspace()
+    if (!workspace?.path) return { error: 'No workspace open.' }
+    return startLanguageServer(s, workspace.path)
+  })
+  core.register(IpcChannels.lspStop, (id) => {
+    const s = asString(id)
+    if (s) stopLanguageServer(s)
+  })
+  core.registerNotify(IpcChannels.lspSend, (id, message) => {
+    const s = asString(id)
+    if (s && message && typeof message === 'object') {
+      sendToLanguageServer(s, message as Parameters<typeof sendToLanguageServer>[1])
+    }
+  })
 }

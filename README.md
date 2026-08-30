@@ -25,13 +25,13 @@ That ordering matters for the work people actually do now. You're reading docs, 
 
 ### A real browser, not a preview pane
 
-Chromium via Electron's `WebContentsView`, with the chrome a browser is supposed to have. Tabs sit inline with the window's traffic lights and shrink to fit; the address bar is centred with the bookmark star leading it and zoom on the right. There's a **native application menu** (File / Edit / View / History / Window / Help) wired to real shortcuts, a **right-click context menu** on every page (open/copy link and image, cut/copy/paste, search the selection, inspect), and the everyday essentials: back/forward/reload, **find in page**, **zoom** (⌘0 restores 100%), **print**, **new window**, **reopen closed tab**, per-tab **devtools**, downloads with progress, and site permission prompts.
+Chromium via Electron's `WebContentsView`, with the chrome a browser is supposed to have. Tabs sit inline with the window's traffic lights, show real site **favicons**, and shrink to fit; the address bar is centred with the bookmark star leading it and zoom on the right. There's a **native application menu** (File / Edit / View / History / Window / Help) wired to real shortcuts, a **right-click context menu** on every page (open/copy link and image, cut/copy/paste, search the selection, inspect), and the everyday essentials: back/forward/reload, **find in page**, **zoom** (⌘0 restores 100%), **print**, **new window**, **reopen closed tab**, per-tab **devtools**, downloads with progress, and site permission prompts.
 
 **Split view** splits the *page* — two live tabs share the stage with a draggable divider — separate from the Dev Deck. A **favourites bar** is summoned rather than permanent, and can be locked open.
 
 **Profiles** work like Chrome's people: each is an isolated, persistent session with its own cookies and logins, so you can stay signed into different Google (or any) accounts side by side. Switch them from the avatar beside the Deck button; the browser presents a real Chrome user-agent so provider sign-in flows accept it.
 
-Unpacked Chrome extensions (MV3) load from the browser **⋮** menu. There's also an **embed proxy** for the one thing that always breaks local development: sites that refuse to be framed. Toggle it and `X-Frame-Options` plus the `frame-ancestors` CSP directive are stripped — but only for `localhost` and `127.0.0.1`, off by default, never persisted, with an amber indicator while it's live.
+Unpacked Chrome extensions (MV3) load from the browser **⋮** menu into every profile. Downloads can save to a fixed folder or prompt for a location each time (Settings → Application). There's also an **embed proxy** for the one thing that always breaks local development: sites that refuse to be framed. Toggle it and `X-Frame-Options` plus the `frame-ancestors` CSP directive are stripped — but only for `localhost` and `127.0.0.1`, off by default, never persisted, with an amber indicator while it's live.
 
 ### Settings that belong to the app
 
@@ -89,7 +89,7 @@ To give the agent a task you'll need an Anthropic API key. Add it in **Settings 
 Verify a build the way CI does:
 
 ```bash
-npm run lint && npm run typecheck && npm run build && node scripts/smoke.mjs
+npm run lint && npm run typecheck && npm test && npm run build && node scripts/smoke.mjs
 ```
 
 The smoke test drives the real application end to end — browser, deck, editor, terminal, language server, debugger, source control, tasks and agent — and is the check that matters before a push.
@@ -104,6 +104,7 @@ The smoke test drives the real application end to end — browser, deck, editor,
 | [`IDE_FOUNDATION.md`](IDE_FOUNDATION.md) | Why the IDE is built on VS Code's services rather than a fork |
 | [`SECURITY.md`](SECURITY.md) | Trust boundaries, the agent's limits, residual risks |
 | [`RESOURCES.md`](RESOURCES.md) | Every library and technique, with licences |
+| [`docs/`](docs/README.md) | User guides — getting started, permission modes, agent workflows, Document Studio |
 | `app/` | The application — Electron, React, TypeScript, Tailwind |
 
 ## Status

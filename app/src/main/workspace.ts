@@ -1,7 +1,8 @@
 import { dialog } from 'electron'
 import { statSync } from 'node:fs'
 import { basename, resolve, sep } from 'node:path'
-import type { RecentProject, WorkspaceInfo } from '@shared/ipc'
+import { IpcChannels, type RecentProject, type WorkspaceInfo } from '@shared/ipc'
+import { core } from '../core/rpc'
 import { JsonStore } from './json-store'
 
 const MAX_RECENT = 20
@@ -120,4 +121,17 @@ export async function openWorkspaceDialog(): Promise<WorkspaceInfo | null> {
   })
   if (result.canceled || result.filePaths.length === 0) return null
   return openWorkspacePath(result.filePaths[0])
+}
+
+/** Register the workspace *read* surface with webdeck-core (P1).
+ *
+ * Reads are pure core. The workspace *mutations* (open/addRoot/removeRoot) stay
+ * shell-side: they orchestrate a native picker plus shell side-effects — a
+ * broadcast, stopping the dev server, re-arming the file watcher — so the shell
+ * calls these state functions and then fires those effects.
+ */
+export function registerWorkspaceRpc(): void {
+  core.register(IpcChannels.workspaceCurrent, () => getCurrentWorkspace())
+  core.register(IpcChannels.workspaceRoots, () => workspaceRoots())
+  core.register(IpcChannels.workspaceRecent, () => getRecentProjects())
 }

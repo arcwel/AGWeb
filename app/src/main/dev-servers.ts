@@ -8,6 +8,8 @@ import type { BrowserWindow } from 'electron'
 import { IpcEvents } from '@shared/ipc'
 import type { DevServerStatus } from '@shared/ipc'
 import { getCurrentWorkspace } from './workspace'
+import { IpcChannels } from '@shared/ipc'
+import { core } from '../core/rpc'
 
 /**
  * Workspace dev server for the Preview block (Phase 4.1). Two modes:
@@ -235,4 +237,14 @@ export async function stopDevServer(): Promise<DevServerStatus> {
   }
   push({ state: 'stopped', url: null })
   return getDevServerStatus()
+}
+
+/** Register the dev-servers domain with webdeck-core (P1). initDevServers keeps
+ *  a window handle and stays shell-side. */
+export function registerDevServersRpc(): void {
+  core.register(IpcChannels.devServerStart, (mode) =>
+    startDevServer(mode === 'script' ? 'script' : 'static')
+  )
+  core.register(IpcChannels.devServerStop, () => stopDevServer())
+  core.register(IpcChannels.devServerStatus, () => getDevServerStatus())
 }

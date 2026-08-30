@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { searchUrlFor } from '@shared/ipc'
 import { BLOCK_LABELS, useShellStore, type BlockType, type DeckPreset } from '@/store'
 import { DeckIcon, PopOutIcon } from '@/components/icons'
 import { BookmarkControls, FindBar, ZoomControls } from '@/components/BrowserControls'
@@ -32,6 +33,15 @@ const PRESETS: { id: DeckPreset; label: string; hint: string }[] = [
 const LOCAL_HOST_PATTERN =
   /^(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\]|[^\s/]+\.localhost)(:\d+)?(\/.*)?$/i
 
+/** The search engine chosen in Settings — read synchronously, DuckDuckGo default. */
+function currentSearchEngine(): string {
+  try {
+    return window.agweb.appSettings.readSync().searchEngine || 'duckduckgo'
+  } catch {
+    return 'duckduckgo'
+  }
+}
+
 /** Turn address-bar input into a navigable URL (or a search query). */
 export function toNavigableUrl(input: string): string | null {
   const trimmed = input.trim()
@@ -40,7 +50,7 @@ export function toNavigableUrl(input: string): string | null {
   const bare = trimmed.replace(/^https?:\/\//, '')
   if (LOCAL_HOST_PATTERN.test(bare)) return `http://${bare}`
   if (/^[^\s]+\.[^\s/]+(\/.*)?$/.test(trimmed)) return `https://${bare}`
-  return `https://duckduckgo.com/?q=${encodeURIComponent(trimmed)}`
+  return searchUrlFor(currentSearchEngine(), trimmed)
 }
 
 /** Ensure the tab's WebContentsView exists, then load the URL into it. */
@@ -314,6 +324,7 @@ function ProfileButton(): React.JSX.Element {
     profiles: Array<{ id: string; name: string; color: string }>
     activeId: string
   } | null>(null)
+  const [google, setGoogle] = useState<Record<string, boolean>>({})
   const [adding, setAdding] = useState('')
   const ref = usePopover(
     open,
@@ -322,10 +333,20 @@ function ProfileButton(): React.JSX.Element {
 
   const refresh = useCallback(() => {
     void window.agweb.profiles.list().then(setState)
+    void window.agweb.profiles.googleStatus().then(setGoogle)
   }, [])
   useEffect(() => {
     if (open) refresh()
   }, [open, refresh])
+
+  // Sign a Google account into a specific profile: make it active, then open
+  // Google's own sign-in page in a tab of that profile's session.
+  const signInGoogle = async (profileId: string): Promise<void> => {
+    await window.agweb.profiles.setActive(profileId).then(setState)
+    useShellStore.getState().syncProfile(profileId)
+    useShellStore.getState().newTab('https://accounts.google.com/')
+    setOpen(false)
+  }
 
   const active = state?.profiles.find((p) => p.id === state.activeId)
 
@@ -350,58 +371,88 @@ function ProfileButton(): React.JSX.Element {
         )}
       </button>
       {open && state && (
-        <div className="glass absolute right-0 top-9 z-50 w-60 overflow-hidden rounded-[14px] p-1">
+        <div className="glass absolute right-0 top-9 z-50 w-72 overflow-hidden rounded-[14px] p-1">
           <p className="px-3 pb-1 pt-1.5 text-[10px] font-bold uppercase tracking-wider text-[var(--wd-dim)]">
-            Profiles
+            Google profiles
           </p>
-          {state.profiles.map((profile) => (
-            <div
-              key={profile.id}
-              className={`group flex items-center gap-2 rounded-lg px-2 py-1.5 ${
-                profile.id === state.activeId
-                  ? 'bg-[var(--wd-accent-soft)]'
-                  : 'hover:bg-[var(--wd-hover)]'
-              }`}
-            >
-              <button
-                onClick={() => {
-                  void window.agweb.profiles.setActive(profile.id).then(setState)
-                }}
-                className="flex min-w-0 flex-1 items-center gap-2 text-left"
+          {state.profiles.map((profile) => {
+            const signedIn = google[profile.id] ?? false
+            const incognito = profile.id === 'incognito'
+            return (
+              <div
+                key={profile.id}
+                className={`group rounded-lg px-2 py-1.5 ${
+                  profile.id === state.activeId
+                    ? 'bg-[var(--wd-accent-soft)]'
+                    : 'hover:bg-[var(--wd-hover)]'
+                }`}
               >
-                <span
-                  className="flex h-5 w-5 flex-none items-center justify-center rounded-full text-[10px] font-bold text-[var(--wd-accent-ink)]"
-                  style={{ background: profile.color }}
-                >
-                  {profile.name.charAt(0).toUpperCase()}
-                </span>
-                <span className="truncate text-[12px] text-[var(--wd-text)]">{profile.name}</span>
-                {profile.id === state.activeId && (
-                  <span className="ml-auto text-[9.5px] font-semibold text-[var(--wd-accent)]">
-                    ACTIVE
-                  </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => {
+                      void window.agweb.profiles.setActive(profile.id).then(setState)
+                      useShellStore.getState().syncProfile(profile.id)
+                    }}
+                    className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                  >
+                    <span
+                      className="flex h-6 w-6 flex-none items-center justify-center rounded-full text-[11px] font-bold text-[var(--wd-accent-ink)]"
+                      style={{ background: profile.color }}
+                    >
+                      {profile.name.charAt(0).toUpperCase()}
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block truncate text-[12px] text-[var(--wd-text)]">
+                        {profile.name}
+                      </span>
+                      <span
+                        className={`block text-[10px] ${
+                          signedIn ? 'text-emerald-500' : 'text-[var(--wd-dim)]'
+                        }`}
+                      >
+                        {incognito
+                          ? 'Private — nothing is saved'
+                          : signedIn
+                            ? '● Signed in to Google'
+                            : 'Not signed in'}
+                      </span>
+                    </span>
+                    {profile.id === state.activeId && (
+                      <span className="ml-auto text-[9.5px] font-semibold text-[var(--wd-accent)]">
+                        ACTIVE
+                      </span>
+                    )}
+                  </button>
+                  {profile.id !== 'default' && !incognito && (
+                    <button
+                      onClick={() => {
+                        void window.agweb
+                          .confirm(
+                            `Remove the “${profile.name}” profile? Its cookies, logins, and site data are permanently deleted.`
+                          )
+                          .then((ok) => {
+                            if (ok) void window.agweb.profiles.remove(profile.id).then(setState)
+                          })
+                      }}
+                      className="hidden flex-none text-[var(--wd-dim)] hover:text-rose-500 group-hover:block"
+                      title="Remove profile and its data"
+                      aria-label="Remove profile"
+                    >
+                      <CloseIcon size={13} />
+                    </button>
+                  )}
+                </div>
+                {!incognito && (
+                  <button
+                    onClick={() => void signInGoogle(profile.id)}
+                    className="mt-1 ml-8 text-[10.5px] font-medium text-[var(--wd-accent)] hover:underline"
+                  >
+                    {signedIn ? 'Manage Google account →' : 'Sign in to Google →'}
+                  </button>
                 )}
-              </button>
-              {profile.id !== 'default' && (
-                <button
-                  onClick={() => {
-                    void window.agweb
-                      .confirm(
-                        `Remove the “${profile.name}” profile? Its cookies, logins, and site data are permanently deleted.`
-                      )
-                      .then((ok) => {
-                        if (ok) void window.agweb.profiles.remove(profile.id).then(setState)
-                      })
-                  }}
-                  className="hidden flex-none text-[var(--wd-dim)] hover:text-rose-500 group-hover:block"
-                  title="Remove profile and its data"
-                  aria-label="Remove profile"
-                >
-                  <CloseIcon size={13} />
-                </button>
-              )}
-            </div>
-          ))}
+              </div>
+            )
+          })}
           <form
             onSubmit={(e) => {
               e.preventDefault()
@@ -432,12 +483,33 @@ function ProfileButton(): React.JSX.Element {
   )
 }
 
+const CHROME_WEB_STORE_URL = 'https://chromewebstore.google.com/'
+
 function ExtensionsButton(): React.JSX.Element {
   const [open, setOpen] = useState(false)
+  const [items, setItems] = useState<Array<{ id: string; name: string; version: string }>>([])
+  const [error, setError] = useState<string | null>(null)
   const ref = usePopover(
     open,
     useCallback(() => setOpen(false), [])
   )
+
+  const refresh = useCallback(() => {
+    void window.agweb.extensions.list().then(setItems)
+  }, [])
+  useEffect(() => {
+    if (open) refresh()
+  }, [open, refresh])
+
+  const afterLoad = (result: { error?: string }): void => {
+    if (result.error) setError(result.error)
+    else setError(null)
+    refresh()
+  }
+
+  const menuItem =
+    'block w-full rounded-lg px-3 py-1.5 text-left text-[12px] text-[var(--wd-muted)] hover:bg-[var(--wd-hover)] hover:text-[var(--wd-text)]'
+
   return (
     <div ref={ref} className="relative flex-none">
       <button
@@ -450,18 +522,62 @@ function ExtensionsButton(): React.JSX.Element {
         <ExtensionIcon />
       </button>
       {open && (
-        <div className="glass absolute right-0 top-9 z-50 w-64 overflow-hidden rounded-[14px] p-1">
+        <div className="glass absolute right-0 top-9 z-50 w-72 overflow-hidden rounded-[14px] p-1">
+          <p className="px-3 pb-1 pt-1.5 text-[10px] font-bold uppercase tracking-wider text-[var(--wd-dim)]">
+            Extensions · this profile
+          </p>
+
+          {items.length === 0 && (
+            <p className="px-3 py-1 text-[11px] text-[var(--wd-dim)]">None installed yet.</p>
+          )}
+          {items.map((ext) => (
+            <div
+              key={ext.id}
+              className="group flex items-center gap-2 rounded-lg px-3 py-1.5 hover:bg-[var(--wd-hover)]"
+            >
+              <span className="min-w-0 flex-1 truncate text-[12px] text-[var(--wd-text)]">
+                {ext.name}
+                {ext.version && (
+                  <span className="ml-1 text-[10px] text-[var(--wd-dim)]">v{ext.version}</span>
+                )}
+              </span>
+              <button
+                onClick={() => void window.agweb.extensions.remove(ext.id).then(refresh)}
+                className="hidden flex-none text-[var(--wd-dim)] hover:text-rose-500 group-hover:block"
+                title="Remove"
+                aria-label={`Remove ${ext.name}`}
+              >
+                <CloseIcon size={13} />
+              </button>
+            </div>
+          ))}
+
+          <div className="my-1 border-t border-[var(--wd-hairline)]" />
           <button
+            className={menuItem}
             onClick={() => {
               setOpen(false)
-              void window.agweb.extensions.load()
+              useShellStore.getState().newTab(CHROME_WEB_STORE_URL)
             }}
-            className="block w-full rounded-lg px-3 py-1.5 text-left text-[12px] text-[var(--wd-muted)] hover:bg-[var(--wd-hover)] hover:text-[var(--wd-text)]"
+          >
+            Browse the Chrome Web Store →
+          </button>
+          <button
+            className={menuItem}
+            onClick={() => void window.agweb.extensions.load().then(afterLoad)}
           >
             Load unpacked extension…
           </button>
-          <p className="px-3 py-1.5 text-[10.5px] leading-relaxed text-[var(--wd-dim)]">
-            Unpacked MV3 extensions load into the browser session only, never the shell.
+          <button
+            className={menuItem}
+            onClick={() => void window.agweb.extensions.loadPacked().then(afterLoad)}
+          >
+            Load a .crx or .zip…
+          </button>
+          {error && <p className="px-3 py-1 text-[10.5px] text-rose-500">{error}</p>}
+          <p className="px-3 py-1.5 text-[10px] leading-relaxed text-[var(--wd-dim)]">
+            The Web Store can’t install directly (Electron has no installer) — browse it, then load
+            an unpacked or packed extension. Extensions apply to the current profile only.
           </p>
         </div>
       )}

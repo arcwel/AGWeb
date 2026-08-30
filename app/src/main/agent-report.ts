@@ -1,6 +1,6 @@
 import { promises as fsp } from 'node:fs'
 import { join, resolve } from 'node:path'
-import { app } from 'electron'
+import { coreEnv } from '../core/env'
 import type { AgentLogEntry, AgentSessionInfo } from '@shared/agents'
 
 /**
@@ -12,7 +12,7 @@ import type { AgentLogEntry, AgentSessionInfo } from '@shared/agents'
  */
 
 export function artifactsRoot(): string {
-  return join(app.getPath('userData'), 'artifacts')
+  return join(coreEnv().userDataDir, 'artifacts')
 }
 
 export function reportPath(sessionId: string): string {

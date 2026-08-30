@@ -65,6 +65,11 @@ export function buildApplicationMenu(handlers: { openWorkspace: () => void }): v
           accelerator: 'CmdOrCtrl+Shift+N',
           click: () => send(IpcEvents.shellShortcut, 'app:new-window')
         },
+        {
+          label: 'New Incognito Tab',
+          accelerator: 'CmdOrCtrl+Shift+I',
+          click: () => send(IpcEvents.shellShortcut, 'app:new-incognito')
+        },
         { type: 'separator' },
         {
           label: 'Open Project Folder…',

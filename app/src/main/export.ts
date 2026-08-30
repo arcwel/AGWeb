@@ -32,6 +32,18 @@ export async function exportHtml(
   return { path }
 }
 
+/**
+ * Block script execution in the print window (P3-1). The caller HTML is rendered
+ * only to print-to-PDF; it never needs JS, and the window is sandboxed but still
+ * a live page, so a `script-src 'none'` CSP meta closes the gap. Images, styles,
+ * and fonts stay allowed so the document still lays out.
+ */
+function withScriptCsp(html: string): string {
+  const meta = `<meta http-equiv="Content-Security-Policy" content="script-src 'none'">`
+  if (/<head[^>]*>/i.test(html)) return html.replace(/<head[^>]*>/i, (open) => open + meta)
+  return `<!doctype html><html><head>${meta}</head><body>${html}</body></html>`
+}
+
 export async function exportPdf(
   owner: BrowserWindow | null,
   html: string,
@@ -43,10 +55,10 @@ export async function exportPdf(
     show: false,
     width: 900,
     height: 1200,
-    webPreferences: { sandbox: true, contextIsolation: true }
+    webPreferences: { sandbox: true, contextIsolation: true, javascript: false }
   })
   try {
-    await win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html))
+    await win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(withScriptCsp(html)))
     // Give layout (and any webfonts) a beat to settle before printing.
     await new Promise((resolve) => setTimeout(resolve, 300))
     const pdf = await win.webContents.printToPDF({ printBackground: true })

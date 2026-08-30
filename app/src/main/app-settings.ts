@@ -1,6 +1,9 @@
 import { app } from 'electron'
+import { coreEnv } from '../core/env'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { IpcChannels } from '@shared/ipc'
+import { core } from '../core/rpc'
 
 /**
  * Application-level settings — the Electron ones.
@@ -29,8 +32,12 @@ export interface AppSettings {
   doNotTrack: boolean
   /** Restore the previous session's tabs at launch. */
   restoreTabs: boolean
-  /** Where downloads go. Empty means ask each time. */
+  /** Where downloads go when not asked each time. Empty = OS Downloads. */
   downloadPath: string
+  /** Prompt for a location on every download (Chrome's "ask where to save"). */
+  askWhereToSave: boolean
+  /** Search-engine id used for address-bar queries. */
+  searchEngine: string
 }
 
 const DEFAULTS: AppSettings = {
@@ -40,11 +47,13 @@ const DEFAULTS: AppSettings = {
   askForPermissions: true,
   doNotTrack: false,
   restoreTabs: true,
-  downloadPath: ''
+  downloadPath: '',
+  askWhereToSave: false,
+  searchEngine: 'duckduckgo'
 }
 
 function file(): string {
-  return join(app.getPath('userData'), 'app-settings.json')
+  return join(coreEnv().userDataDir, 'app-settings.json')
 }
 
 let cache: AppSettings | null = null
@@ -70,7 +79,7 @@ export function readAppSettings(): AppSettings {
  * or wrong-typed values (e.g. a non-array `spellcheckLanguages`, which would
  * later be handed to `session.setSpellCheckerLanguages`) into persisted state.
  */
-function sanitizePatch(patch: Partial<AppSettings>): Partial<AppSettings> {
+export function sanitizePatch(patch: Partial<AppSettings>): Partial<AppSettings> {
   const clean: Partial<AppSettings> = {}
   const bool = (v: unknown): v is boolean => typeof v === 'boolean'
   if (bool(patch.hardwareAcceleration)) clean.hardwareAcceleration = patch.hardwareAcceleration
@@ -79,6 +88,8 @@ function sanitizePatch(patch: Partial<AppSettings>): Partial<AppSettings> {
   if (bool(patch.doNotTrack)) clean.doNotTrack = patch.doNotTrack
   if (bool(patch.restoreTabs)) clean.restoreTabs = patch.restoreTabs
   if (typeof patch.downloadPath === 'string') clean.downloadPath = patch.downloadPath
+  if (bool(patch.askWhereToSave)) clean.askWhereToSave = patch.askWhereToSave
+  if (typeof patch.searchEngine === 'string') clean.searchEngine = patch.searchEngine
   if (Array.isArray(patch.spellcheckLanguages)) {
     clean.spellcheckLanguages = patch.spellcheckLanguages.filter((l) => typeof l === 'string')
   }
@@ -133,4 +144,14 @@ export function applyPreReadySettings(): void {
 /** Push the current settings to every registered session listener. */
 export function initAppSettings(): void {
   notify(readAppSettings())
+}
+
+/** Register the app-settings store (read/write) with webdeck-core (P1).
+ *  readSync (boot), clearData (session) and chooseDownloadDir (dialog) stay
+ *  shell-side — see CHROMIUM_MIGRATION.md. */
+export function registerAppSettingsRpc(): void {
+  core.register(IpcChannels.appSettingsRead, () => readAppSettings())
+  core.register(IpcChannels.appSettingsWrite, (patch) =>
+    writeAppSettings((patch ?? {}) as Partial<AppSettings>)
+  )
 }

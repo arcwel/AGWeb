@@ -61,7 +61,7 @@ export const COLOR_TOKENS: ColorToken[] = [
   {
     token: 'wd-accent-2',
     label: 'Secondary',
-    hint: 'The second ambient glow and group colours',
+    hint: 'The second ambient glow and group colors',
     group: 'Accent'
   },
 
@@ -112,12 +112,76 @@ function persist(): void {
   }
 }
 
+/**
+ * The Tailwind `sky` scale, which the theme remaps to the accent, is what most
+ * buttons, tabs and rings are painted with (`bg-sky-500`, `hover:bg-sky-600`,
+ * …). Those utilities resolve to `--color-sky-*`, so changing only `--wd-accent`
+ * left every sky-based control on the original teal. When the accent is
+ * customised we regenerate the whole ramp from it, and the washes too, so the
+ * new colour actually reaches the buttons.
+ */
+const SKY_SHADES: Array<[number, number]> = [
+  // shade → mix amount: negative mixes toward white, positive toward black.
+  [50, -0.9],
+  [100, -0.8],
+  [200, -0.6],
+  [300, -0.4],
+  [400, -0.18],
+  [500, 0],
+  [600, 0.16],
+  [700, 0.3],
+  [800, 0.42],
+  [900, 0.52]
+]
+
+function mixToward(c: Rgba, amount: number): Rgba {
+  const target = amount < 0 ? 255 : 0
+  const t = Math.abs(amount)
+  const chan = (v: number): number => Math.round(v + (target - v) * t)
+  return { r: chan(c.r), g: chan(c.g), b: chan(c.b), a: 1 }
+}
+
+function applyAccentRamp(accent: Rgba): void {
+  const root = document.documentElement
+  for (const [shade, amount] of SKY_SHADES) {
+    root.style.setProperty(`--color-sky-${shade}`, toHex(mixToward(accent, amount)))
+  }
+}
+
+function clearAccentRamp(): void {
+  const root = document.documentElement
+  for (const [shade] of SKY_SHADES) root.style.removeProperty(`--color-sky-${shade}`)
+}
+
 /** Apply the overrides for a theme, clearing any that belong to the other. */
 export function applyColors(theme: 'light' | 'dark'): void {
   const root = document.documentElement
   for (const { token } of COLOR_TOKENS) root.style.removeProperty(`--${token}`)
   for (const [token, value] of Object.entries(overrides[theme] ?? {})) {
     root.style.setProperty(`--${token}`, value)
+  }
+
+  // When the accent is customised, propagate it to the Tailwind ramp and the
+  // washes so buttons, tabs and tinted surfaces follow — unless the user set
+  // those washes explicitly, in which case their choice wins.
+  const accentOverride = overrides[theme]?.['wd-accent']
+  if (accentOverride) {
+    const accent = parseColor(accentOverride)
+    applyAccentRamp(accent)
+    if (!hasOverride(theme, 'wd-accent-soft')) {
+      root.style.setProperty(
+        '--wd-accent-soft',
+        `rgba(${accent.r}, ${accent.g}, ${accent.b}, 0.14)`
+      )
+    }
+    if (!hasOverride(theme, 'wd-accent-line')) {
+      root.style.setProperty(
+        '--wd-accent-line',
+        `rgba(${accent.r}, ${accent.g}, ${accent.b}, 0.26)`
+      )
+    }
+  } else {
+    clearAccentRamp()
   }
 }
 

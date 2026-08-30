@@ -7,7 +7,7 @@ import {
   type TabGroup,
   type TabGroupColor
 } from '@/store'
-import { BlockTypeIcon, CloseIcon, GlobeIcon } from '@/components/icons'
+import { CloseIcon, DocIcon, GlobeIcon } from '@/components/icons'
 import { usePopover } from '@/popover'
 
 /**
@@ -53,7 +53,7 @@ export function TabStrip(): React.JSX.Element {
   return (
     <div
       data-testid="tab-strip"
-      className="drag-region flex min-w-0 items-center gap-1 overflow-hidden pt-2 pr-2 pb-0.5"
+      className="drag-region flex min-w-0 items-center gap-1 overflow-x-auto overflow-y-hidden pt-2 pr-2 pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       style={{ paddingLeft: 'var(--wd-titlebar-inset)' }}
       onDragOver={(event) => acceptDrag(event, 'end')}
       onDrop={(event) => finishDrop(event, null)}
@@ -105,10 +105,15 @@ export function TabStrip(): React.JSX.Element {
                   />
                 )}
                 {tab.kind === 'doc' ? (
-                  <BlockTypeIcon
-                    type="logs"
+                  <DocIcon
                     size={13}
                     className={`shrink-0 ${tab.id === activeTabId ? 'text-[var(--wd-accent)]' : 'text-[var(--wd-dim)]'}`}
+                  />
+                ) : tab.favicon ? (
+                  <img
+                    src={tab.favicon}
+                    alt=""
+                    className="h-[13px] w-[13px] shrink-0 rounded-[2px] object-contain"
                   />
                 ) : (
                   <GlobeIcon

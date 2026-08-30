@@ -10,7 +10,6 @@ import type {
   DeckSizes,
   DeckSyncState,
   DeckZone,
-  DockZone,
   RailEntry
 } from '@shared/deck'
 
@@ -26,6 +25,8 @@ export interface BrowserTab {
   title: string
   /** For tabs opened from a link: the URL to load on first mount. */
   initialUrl?: string
+  /** The page's favicon as a data: URL, mirrored from browser state. */
+  favicon?: string
   /** Document Studio tabs: the workspace-relative file being rendered. */
   docPath?: string
   /** True once a WebContentsView exists for this tab (first navigation). */
@@ -56,27 +57,10 @@ export const TAB_GROUP_COLORS: Record<TabGroupColor, { dot: string; chip: string
   slate: { dot: 'bg-slate-500', chip: 'bg-slate-500/15 text-slate-700 dark:text-slate-300' }
 }
 
-/** File types the Document Studio renders as styled documents. */
-export const DOC_EXTENSIONS = new Set([
-  'md',
-  'markdown',
-  'json',
-  'yaml',
-  'yml',
-  'toml',
-  'csv',
-  'tsv'
-])
-
-export function isDocFile(path: string): boolean {
-  const ext = path.split('.').pop()?.toLowerCase() ?? ''
-  return DOC_EXTENSIONS.has(ext)
-}
-
-/** *.slides.md files render as Reveal.js decks instead of Document Studio. */
-export function isSlidesFile(path: string): boolean {
-  return /\.slides\.md$/i.test(path)
-}
+// Canonical in @shared/ipc so the main process (browser-navigation interception)
+// and the renderer agree on what counts as a doc; re-exported here for the many
+// existing `@/store` importers.
+export { DOC_EXTENSIONS, isDocFile, isSlidesFile } from '@shared/ipc'
 
 /** Where a dragged block or group is dropped. */
 export type DropTarget =
@@ -274,18 +258,29 @@ function saveLayout(state: {
 
 /* ---- Bookmarks (localStorage, shared across projects) ---- */
 
-function loadBookmarks(): Array<{ url: string; title: string }> {
+/** Bookmarks are per profile, so switching profile switches the set (Chrome). */
+function bmKey(profileId: string): string {
+  return `agweb.bookmarks:${profileId}`
+}
+
+function loadBookmarks(profileId: string): Array<{ url: string; title: string }> {
   try {
-    const raw = localStorage.getItem('agweb.bookmarks')
+    // One-time migration: the old global bookmarks become the default profile's.
+    const legacy = localStorage.getItem('agweb.bookmarks')
+    if (legacy !== null && localStorage.getItem(bmKey('default')) === null) {
+      localStorage.setItem(bmKey('default'), legacy)
+      localStorage.removeItem('agweb.bookmarks')
+    }
+    const raw = localStorage.getItem(bmKey(profileId))
     return raw ? (JSON.parse(raw) as Array<{ url: string; title: string }>) : []
   } catch {
     return []
   }
 }
 
-function saveBookmarks(bookmarks: Array<{ url: string; title: string }>): void {
+function saveBookmarks(profileId: string, bookmarks: Array<{ url: string; title: string }>): void {
   try {
-    localStorage.setItem('agweb.bookmarks', JSON.stringify(bookmarks))
+    localStorage.setItem(bmKey(profileId), JSON.stringify(bookmarks))
   } catch {
     // storage unavailable — bookmarks just won't persist
   }
@@ -371,6 +366,15 @@ function withoutBlock(groups: BlockGroup[], blockId: string): BlockGroup[] {
     })
     .filter((g) => g.blockIds.length > 0)
 }
+
+/** A transient notification shown by the ToastHost (P2-13 and general use). */
+export type ToastTone = 'info' | 'warn' | 'error'
+export interface Toast {
+  id: string
+  message: string
+  tone: ToastTone
+}
+let nextToastId = 1
 
 interface ShellState {
   workspace: WorkspaceInfo | null
@@ -484,10 +488,16 @@ interface ShellState {
   setUtilitiesOpen(open: boolean): void
   setUtilitiesLocked(locked: boolean): void
 
-  /** Bookmarked pages, newest first. Persisted per install, not per project. */
+  /** The active browser profile id, mirrored from main so bookmarks follow it. */
+  activeProfileId: string
+  /** Switch the renderer to a profile: reload its bookmarks. */
+  syncProfile(profileId: string): void
+  /** Bookmarked pages for the active profile, newest first. */
   bookmarks: Array<{ url: string; title: string }>
   addBookmark(url: string, title: string): void
   removeBookmark(url: string): void
+  /** Merge an imported set into the active profile's bookmarks (deduped). */
+  importBookmarks(items: Array<{ url: string; title: string }>): number
   /** The page the Home button goes to. */
   homeUrl: string
   setHomeUrl(url: string): void
@@ -504,6 +514,9 @@ interface ShellState {
   /** Line the editor should scroll to after opening activeEditorPath. */
   pendingRevealLine: number | null
   clearPendingReveal(): void
+  toasts: Toast[]
+  pushToast(message: string, tone?: ToastTone): void
+  dismissToast(id: string): void
   /** Add a fresh block of `type` to the deck as its own group. */
   addBlock(type: BlockType): void
   /** An agent started a command in its own pty — surface it as a Terminal
@@ -632,20 +645,36 @@ export const useShellStore = create<ShellState>((set) => ({
     set({ utilitiesLocked: locked })
   },
 
-  bookmarks: loadBookmarks(),
+  activeProfileId: 'default',
+  syncProfile: (profileId) =>
+    set({ activeProfileId: profileId, bookmarks: loadBookmarks(profileId) }),
+  bookmarks: loadBookmarks('default'),
   addBookmark: (url, title) =>
     set((state) => {
       if (!url || state.bookmarks.some((b) => b.url === url)) return {}
-      const bookmarks = [{ url, title: title || url }, ...state.bookmarks].slice(0, 200)
-      saveBookmarks(bookmarks)
+      const bookmarks = [{ url, title: title || url }, ...state.bookmarks].slice(0, 500)
+      saveBookmarks(state.activeProfileId, bookmarks)
       return { bookmarks }
     }),
   removeBookmark: (url) =>
     set((state) => {
       const bookmarks = state.bookmarks.filter((b) => b.url !== url)
-      saveBookmarks(bookmarks)
+      saveBookmarks(state.activeProfileId, bookmarks)
       return { bookmarks }
     }),
+  importBookmarks: (items) => {
+    let added = 0
+    set((state) => {
+      const seen = new Set(state.bookmarks.map((b) => b.url))
+      const fresh = items.filter((i) => i.url && !seen.has(i.url))
+      added = fresh.length
+      if (fresh.length === 0) return {}
+      const bookmarks = [...state.bookmarks, ...fresh].slice(0, 2000)
+      saveBookmarks(state.activeProfileId, bookmarks)
+      return { bookmarks }
+    })
+    return added
+  },
   homeUrl: localStorage.getItem('agweb.home') ?? 'https://duckduckgo.com',
   setHomeUrl: (url) => {
     try {
@@ -791,7 +820,7 @@ export const useShellStore = create<ShellState>((set) => ({
       tabs: state.tabs.map((tab) => {
         if (tab.id !== browserState.tabId) return tab
         const title = browserState.title || hostOf(browserState.url) || 'New Tab'
-        return { ...tab, title, hasContent: true }
+        return { ...tab, title, favicon: browserState.favicon, hasContent: true }
       })
     })),
 
@@ -923,10 +952,14 @@ export const useShellStore = create<ShellState>((set) => ({
     set((state) => {
       const source = state.groups.find((g) => g.blockIds.includes(blockId))
       if (!source) return {}
-      const prevZone: DockZone = source.zone === 'floating' ? 'right' : source.zone
+      // Remember the real zone (floating included) and the group's position, so a
+      // restore returns the block exactly where it was, not appended as 'right' (P3-6).
       return {
         groups: withoutBlock(state.groups, blockId),
-        rail: [...state.rail, { blockId, prevZone }]
+        rail: [
+          ...state.rail,
+          { blockId, prevZone: source.zone, index: state.groups.indexOf(source) }
+        ]
       }
     }),
 
@@ -934,17 +967,27 @@ export const useShellStore = create<ShellState>((set) => ({
     set((state) => {
       const entry = state.rail.find((r) => r.blockId === blockId)
       if (!entry) return {}
-      return {
-        rail: state.rail.filter((r) => r.blockId !== blockId),
-        groups: [
-          ...state.groups,
-          { ...makeGroup(entry.prevZone, []), blockIds: [blockId], activeBlockId: blockId }
-        ]
+      const restored: BlockGroup = {
+        ...makeGroup(entry.prevZone, []),
+        blockIds: [blockId],
+        activeBlockId: blockId
       }
+      const groups = [...state.groups]
+      const at = Math.max(0, Math.min(entry.index ?? groups.length, groups.length))
+      groups.splice(at, 0, restored)
+      return { rail: state.rail.filter((r) => r.blockId !== blockId), groups }
     }),
 
   pendingRevealLine: null,
   clearPendingReveal: () => set({ pendingRevealLine: null }),
+
+  toasts: [],
+  pushToast: (message, tone = 'info') =>
+    set((state) => ({
+      // Cap the stack so a burst of denials can't grow it without bound.
+      toasts: [...state.toasts, { id: `toast-${nextToastId++}`, message, tone }].slice(-4)
+    })),
+  dismissToast: (id) => set((state) => ({ toasts: state.toasts.filter((t) => t.id !== id) })),
 
   openFile: (path, line) =>
     set((state) => ({

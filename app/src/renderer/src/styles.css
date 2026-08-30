@@ -40,7 +40,7 @@
   --wd-accent-soft: rgba(79, 212, 196, 0.13);
   --wd-accent-line: rgba(79, 212, 196, 0.24);
 
-  --wd-glass: rgba(255, 255, 255, 0.055);
+  --wd-glass: rgba(24, 28, 35, 0.95);
   --wd-glass-border: rgba(255, 255, 255, 0.09);
   --wd-hairline: rgba(255, 255, 255, 0.07);
   --wd-well: rgba(0, 0, 0, 0.3);
@@ -71,7 +71,7 @@
   --wd-accent-ink: #ffffff;
   --wd-accent-soft: rgba(23, 160, 143, 0.12);
   --wd-accent-line: rgba(23, 160, 143, 0.28);
-  --wd-glass: rgba(255, 255, 255, 0.72);
+  --wd-glass: rgba(255, 255, 255, 0.97);
   --wd-glass-border: rgba(15, 20, 26, 0.08);
   --wd-hairline: rgba(15, 20, 26, 0.08);
   --wd-well: rgba(255, 255, 255, 0.86);
@@ -203,15 +203,64 @@ body,
     inset 0.55s cubic-bezier(0.32, 0.72, 0, 1),
     border-radius 0.55s cubic-bezier(0.32, 0.72, 0, 1),
     box-shadow 0.55s ease;
+  /* Reverse order (P3-4): the stage moves first on reveal (0s) and settles back
+     last on hide (0.14s). Base delay = hide; .revealed delay = show. */
+  transition-delay: 0.14s;
 }
 .workspace.revealed .stage {
   inset: 6px calc(var(--deck-col-w) + 12px + var(--rail-w)) calc(var(--deck-dock-h) + 12px)
     calc(var(--deck-left-w) + 6px);
   border-radius: var(--wd-r-stage);
   box-shadow: 0 18px 46px rgba(0, 0, 0, 0.5);
+  transition-delay: 0s;
 }
 :root:not(.dark) .workspace.revealed .stage {
   box-shadow: 0 14px 34px rgba(15, 20, 26, 0.16);
+}
+
+/* Viewport chip (P3-4): an ambient label at the stage's top-left that fades in
+   once the stage lands (transition-delay ~= the reveal duration). It rides the
+   workspace layer over the frame; hidden entirely outside reveal. */
+.viewport-chip {
+  position: absolute;
+  top: 14px;
+  left: calc(var(--deck-left-w) + 14px);
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 340px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font:
+    500 11px/1.2 ui-sans-serif,
+    system-ui,
+    sans-serif;
+  color: var(--wd-dim);
+  background: var(--wd-glass);
+  border: 1px solid var(--wd-glass-border);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
+  opacity: 0;
+  transform: translateY(-4px);
+  pointer-events: none;
+  transition:
+    opacity 0.3s ease,
+    transform 0.3s ease;
+}
+.workspace.revealed .viewport-chip {
+  opacity: 1;
+  transform: translateY(0);
+  transition-delay: 0.45s;
+}
+.viewport-chip-sep {
+  opacity: 0.5;
+}
+.viewport-chip-state {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--wd-accent);
 }
 
 /* Right column of blocks: slides in just after the stage starts moving. */
@@ -299,10 +348,14 @@ body,
   display: flex;
   gap: 6px;
   transform: translateY(calc(100% + 12px));
-  transition: transform 0.55s cubic-bezier(0.32, 0.72, 0, 1) 0.14s;
+  /* Asymmetric delay: the destination state governs the transition, so the base
+     (hidden) delay runs on HIDE and the .revealed delay on SHOW. The dock rises
+     last on reveal (0.14s) but leaves first on hide (0s) — reverse order (P3-4). */
+  transition: transform 0.55s cubic-bezier(0.32, 0.72, 0, 1) 0s;
 }
 .workspace.revealed .deck-dock {
   transform: translateY(0);
+  transition-delay: 0.14s;
 }
 
 /* The rail: collapsed blocks as an icon strip on the right edge. */

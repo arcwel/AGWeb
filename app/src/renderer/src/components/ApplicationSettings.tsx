@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { AppInfo, AppSettings, ClearableData } from '@shared/ipc'
+import { SEARCH_ENGINES, type AppInfo, type AppSettings, type ClearableData } from '@shared/ipc'
 
 /**
  * The Electron application settings — the ones that configure the app itself
@@ -59,7 +59,10 @@ export function ApplicationSettings(): React.JSX.Element {
     }
   }, [])
 
-  const update = async (key: keyof AppSettings, value: boolean): Promise<void> => {
+  const update = async <K extends keyof AppSettings>(
+    key: K,
+    value: AppSettings[K]
+  ): Promise<void> => {
     const next = await window.agweb.appSettings.write({ [key]: value })
     setSettings(next)
     if (TOGGLES.find((t) => t.key === key)?.restart) {
@@ -105,8 +108,51 @@ export function ApplicationSettings(): React.JSX.Element {
         ))}
       </Section>
 
-      <Section title="Downloads">
+      <Section title="Search">
         <div className="flex items-center gap-2 px-2 py-1">
+          <span className="min-w-0 flex-1 text-[12px] text-[var(--wd-text)]">
+            Search engine
+            <span className="block text-[11px] text-[var(--wd-dim)]">
+              Used when you type a search into the address bar.
+            </span>
+          </span>
+          <select
+            value={settings.searchEngine}
+            onChange={(e) => void update('searchEngine', e.target.value)}
+            className="flex-none rounded-md border border-[var(--wd-glass-border)] bg-[var(--wd-field)] px-2 py-1 text-[11px] outline-none focus:border-[var(--wd-accent)]"
+            aria-label="Search engine"
+          >
+            {SEARCH_ENGINES.map((e) => (
+              <option key={e.id} value={e.id}>
+                {e.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      </Section>
+
+      <Section title="Downloads">
+        <label className="flex cursor-pointer items-start gap-2.5 rounded-lg px-2 py-1.5 hover:bg-[var(--wd-hover)]">
+          <input
+            type="checkbox"
+            className="mt-0.5 accent-[var(--wd-accent)]"
+            checked={settings.askWhereToSave}
+            onChange={(e) => void update('askWhereToSave', e.target.checked)}
+          />
+          <span className="min-w-0">
+            <span className="block font-medium text-[var(--wd-text)]">
+              Ask where to save each file
+            </span>
+            <span className="block text-[11px] text-[var(--wd-dim)]">
+              Choose a location every time, instead of saving to the folder below.
+            </span>
+          </span>
+        </label>
+        <div
+          className={`flex items-center gap-2 px-2 py-1 ${
+            settings.askWhereToSave ? 'pointer-events-none opacity-40' : ''
+          }`}
+        >
           <span className="min-w-0 flex-1 truncate text-[11px] text-[var(--wd-muted)]">
             {settings.downloadPath || 'Default location (your Downloads folder)'}
           </span>

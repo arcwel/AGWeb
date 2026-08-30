@@ -1,9 +1,12 @@
 import { BrowserWindow, Menu, WebContentsView, clipboard } from 'electron'
 import type { WebContents } from 'electron'
-import { IpcEvents } from '@shared/ipc'
+import { IpcEvents, searchUrlFor } from '@shared/ipc'
 import type { BrowserTabState, Rect } from '@shared/ipc'
 import { disposeAgentTabState } from './agent-browser'
 import { activePartition, sessionForProfile, activeProfile } from './profiles'
+import { readAppSettings } from './app-settings'
+import { getCurrentWorkspace } from './workspace'
+import { docNavTarget } from './doc-nav'
 
 /**
  * Owns the embedded Chromium views (one WebContentsView per browser tab).
@@ -18,6 +21,10 @@ import { activePartition, sessionForProfile, activeProfile } from './profiles'
 /** Shell-level combos reclaimed from focused pages (P1-14). */
 const SHELL_COMBOS = new Set(['mod+d', 'mod+t', 'mod+w', 'mod+shift+l'])
 
+/** Workspace-relative doc path for a `file:` navigation, or null. See doc-nav.ts. */
+const docFor = (url: string): string | null =>
+  docNavTarget(url, getCurrentWorkspace()?.path ?? null)
+
 let host: BrowserWindow | null = null
 const views = new Map<string, WebContentsView>()
 
@@ -27,6 +34,9 @@ export function initBrowser(window: BrowserWindow): void {
 
 /** Last failure per tab, cleared as soon as a navigation starts or succeeds. */
 const loadErrors = new Map<string, { code: number; description: string; url: string }>()
+/** Favicon per tab, as a data: URL — the renderer CSP forbids remote images,
+ *  so the icon is fetched here and inlined. */
+const favicons = new Map<string, string>()
 
 function sendState(tabId: string, wc: WebContents): void {
   if (!host || host.isDestroyed() || wc.isDestroyed()) return
@@ -37,9 +47,32 @@ function sendState(tabId: string, wc: WebContents): void {
     isLoading: wc.isLoading(),
     canGoBack: wc.navigationHistory.canGoBack(),
     canGoForward: wc.navigationHistory.canGoForward(),
+    favicon: favicons.get(tabId),
     loadError: loadErrors.get(tabId)
   }
   host.webContents.send(IpcEvents.browserState, state)
+}
+
+/**
+ * Fetch a favicon and inline it as a data: URL.
+ *
+ * The renderer's CSP allows `img-src 'self' data:` only, so a remote favicon
+ * URL can't be rendered directly — we fetch it in the main process (small, and
+ * capped) and hand the renderer a data URL it is allowed to paint.
+ */
+async function loadFavicon(tabId: string, url: string, wc: WebContents): Promise<void> {
+  try {
+    const res = await fetch(url)
+    if (!res.ok) return
+    const buf = Buffer.from(await res.arrayBuffer())
+    if (buf.length === 0 || buf.length > 120_000) return
+    const type = res.headers.get('content-type') || 'image/png'
+    favicons.set(tabId, `data:${type};base64,${buf.toString('base64')}`)
+    sendState(tabId, wc)
+  } catch {
+    // A favicon that won't load is not worth surfacing — the tab keeps its
+    // generic globe glyph.
+  }
 }
 
 /** Find-in-page (⌘F). `next` steps through matches without restarting. */
@@ -103,6 +136,15 @@ export function createBrowserTab(tabId: string): void {
   wc.on('did-start-loading', clearError)
   wc.on('did-finish-load', clearError)
 
+  // A new top-level navigation invalidates the old favicon until the new page
+  // reports one, so the strip never shows the previous site's icon.
+  wc.on('did-start-navigation', (_e, _url, _inPage, isMainFrame) => {
+    if (isMainFrame && favicons.delete(tabId)) push()
+  })
+  wc.on('page-favicon-updated', (_e, urls) => {
+    if (urls[0]) void loadFavicon(tabId, urls[0], wc)
+  })
+
   wc.on('found-in-page', (_event, result) => {
     host?.webContents.send(IpcEvents.browserFindResult, {
       tabId,
@@ -116,6 +158,15 @@ export function createBrowserTab(tabId: string): void {
   wc.on('did-navigate', push)
   wc.on('did-navigate-in-page', push)
   wc.on('page-title-updated', push)
+
+  // A file: link to a workspace doc renders as a styled view, not raw source (P3-3).
+  wc.on('will-navigate', (event, targetUrl) => {
+    const doc = docFor(targetUrl)
+    if (doc) {
+      event.preventDefault()
+      host?.webContents.send(IpcEvents.openDoc, doc)
+    }
+  })
 
   // A focused web page swallows renderer keydowns, so the shell's own
   // shortcuts (⌘D/⌘T/⌘W/⌘⇧L) would die the moment the user clicks a page.
@@ -184,7 +235,7 @@ export function createBrowserTab(tabId: string): void {
           click: () =>
             host?.webContents.send(
               IpcEvents.browserOpenTab,
-              `https://duckduckgo.com/?q=${encodeURIComponent(selectionText)}`
+              searchUrlFor(readAppSettings().searchEngine, selectionText)
             )
         },
         { type: 'separator' }
@@ -219,6 +270,8 @@ export function destroyBrowserTab(tabId: string): void {
   if (!view) return
   // Frame subscriptions and recorded frames must not outlive the tab (P2-4).
   disposeAgentTabState(tabId)
+  favicons.delete(tabId)
+  loadErrors.delete(tabId)
   views.delete(tabId)
   if (host && !host.isDestroyed()) host.contentView.removeChildView(view)
   if (!view.webContents.isDestroyed()) view.webContents.close()
@@ -236,6 +289,12 @@ export function getTabWebContents(tabId: string): WebContents | null {
 }
 
 export function navigate(tabId: string, url: string): void {
+  const doc = docFor(url)
+  if (doc) {
+    // A workspace doc reached from the URL bar renders styled, not raw (P3-3).
+    host?.webContents.send(IpcEvents.openDoc, doc)
+    return
+  }
   withTab(tabId, (view) => {
     view.webContents.loadURL(url).catch(() => {
       // Load failures (bad DNS, aborted loads) surface in-page via Chromium.

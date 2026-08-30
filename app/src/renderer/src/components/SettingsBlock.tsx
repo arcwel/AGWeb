@@ -31,7 +31,7 @@ const TABS: Array<{ scope: Scope; label: string; hint: string }> = [
     hint: 'Saved to .vscode/settings.json; wins over user settings.'
   },
   { scope: 'keybindings', label: 'Keybindings', hint: 'A JSON array, same shape as VS Code.' },
-  { scope: 'colors', label: 'Colours', hint: 'Every colour the app paints, as RGBA.' }
+  { scope: 'colors', label: 'Color', hint: 'Every color the app paints, as RGBA.' }
 ]
 
 /** Scopes that render a bespoke panel instead of the JSON editor. */

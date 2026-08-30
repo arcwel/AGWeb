@@ -663,6 +663,10 @@ try {
   // in the tab strip), clicked it, asserted on the DOM, and saved a screenshot.
   await window.waitForSelector('text=Agent Target', { timeout: 10000 })
   await window.waitForSelector('text=clicked-ok')
+  // Agent Vision (P0): the DOM said "clicked-ok", but the browser also saw a
+  // console error and a dead request — and the agent surfaced them on its own,
+  // without a human asking, in its verify step.
+  await window.waitForSelector('text=Agent Vision verified', { timeout: 10000 })
   await waitFor(
     () => statSync(join(workspace, 'agent-shot.png')).size > 1000,
     10000,

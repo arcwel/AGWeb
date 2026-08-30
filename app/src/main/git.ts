@@ -3,6 +3,9 @@ import { promisify } from 'node:util'
 import { resolve, sep } from 'node:path'
 import type { GitBlameLine, GitFileDiff, GitStatus, GitStatusEntry } from '@shared/git'
 import { getCurrentWorkspace } from './workspace'
+import { IpcChannels } from '@shared/ipc'
+import { core } from '../core/rpc'
+import { asString, asStringList } from '../core/coerce'
 
 /**
  * Source control (task 12.3).
@@ -237,4 +240,23 @@ export async function gitBlame(rel: string): Promise<{ lines: GitBlameLine[]; er
     }
   }
   return { lines }
+}
+
+/** Register the source-control domain with webdeck-core (P1). */
+export function registerGitRpc(): void {
+  core.register(IpcChannels.gitStatus, () => gitStatus())
+  core.register(IpcChannels.gitDiff, (path, staged) => {
+    const p = asString(path)
+    if (p === null) return { original: '', modified: '', error: 'bad arguments' }
+    return gitFileDiff(p, staged === true)
+  })
+  core.register(IpcChannels.gitStage, (paths) => gitStage(asStringList(paths)))
+  core.register(IpcChannels.gitUnstage, (paths) => gitUnstage(asStringList(paths)))
+  core.register(IpcChannels.gitCommit, (message) => gitCommit(asString(message) ?? ''))
+  core.register(IpcChannels.gitBranches, () => gitBranches())
+  core.register(IpcChannels.gitCheckout, (branch) => gitCheckout(asString(branch) ?? ''))
+  core.register(IpcChannels.gitBlame, (path) => {
+    const p = asString(path)
+    return p === null ? { lines: [], error: 'bad arguments' } : gitBlame(p)
+  })
 }

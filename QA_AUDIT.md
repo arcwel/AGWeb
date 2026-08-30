@@ -176,8 +176,27 @@ _two_ policy prompts, proving `browser_eval` is gated (P0-2); and the mode switc
 Secure is asserted against main (P1-4).
 
 Also folded in while in the same files: P2-1..P2-6, P2-8, and P2-10 (toolbar menus).
-Still open: P2-7 (three remaining one-shot fetches), P2-9, P2-11..P2-13, all of P3,
-and the test-gap backlog below.
+
+## Fix log (second pass)
+
+Cleared the remaining P2/P3 backlog, each verified by `typecheck + lint + build + smoke`:
+
+- **P2-7** — cancelled-guards added to the last three async setState sites (PolicyControls, PreviewBlock, NoWorkspace). ✅ FIXED
+- **P2-9** — FilesTree `toggleDir` side effects moved out of the setState updater. ✅ FIXED
+- **P2-11** — TabStrip scrolls instead of clipping past ~8-10 tabs. ✅ FIXED
+- **P2-12** — FilesTree and SearchBlock virtualized via `useVirtualRows`. ✅ FIXED
+- **P2-13** — policy changes broadcast to every window (PolicyControls no longer stale), and a reusable toast system (`ToastHost` + store) surfaces denied agent actions ("Policy auto-denied the agent's command"). ✅ FIXED
+- **P3-1** — PDF export runs with JS disabled + a `script-src 'none'` CSP. ✅ FIXED
+- **P3-2** — Document Studio scope aligned in `PRD.md`; graph/xml/conversion moved to a deferred roadmap. ✅ RESOLVED
+- **P3-3** — `file:` navigation to a workspace doc renders the styled view (URL bar + link clicks); `doc-nav.ts` + 10 security tests. ✅ FIXED
+- **P3-4** — reverse-order hide (asymmetric transition delays) + the viewport chip. ✅ FIXED
+- **P3-5** — header shows the active editor's file; `DESIGN.md` amended to the shipped shared-gutter resize model. ✅ RESOLVED
+- **P3-6** — rail restore returns a block to its exact zone (floating included) and index. ✅ FIXED
+- **P3-9** — dedicated doc-tab icon; `DESIGN.md` amended so OS-window floats are plain native panels. ✅ RESOLVED
+
+New regression tests this pass: `policy.test.ts` (13), `agent.test.ts` (10), `doc-nav.test.ts` (10) — the suite went 36 → 74.
+
+Still open: **P3-10** (idempotent StrictMode IPC — left as-is; a naive cleanup risks closing deck/float windows), and the test-gap backlog below (items 1–2 now covered by the new policy/agent tests). The whole P0–P3 defect list is otherwise closed.
 
 ## Suggested fix sequence
 

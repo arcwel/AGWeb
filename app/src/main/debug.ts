@@ -2,12 +2,14 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { connect, type Socket } from 'node:net'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
-import { app } from 'electron'
+import { coreEnv } from '../core/env'
 import { StreamMessageReader, StreamMessageWriter } from 'vscode-jsonrpc/node'
 import type { Message } from 'vscode-jsonrpc'
-import { IpcEvents } from '@shared/ipc'
+import { IpcChannels, IpcEvents } from '@shared/ipc'
 import { broadcast } from './windows'
 import { getCurrentWorkspace } from './workspace'
+import { core } from '../core/rpc'
+import { asString } from '../core/coerce'
 
 /**
  * Debugging over DAP (task 12.4).
@@ -49,7 +51,7 @@ const connections = new Map<string, Connection>()
 function adapterPath(): string | null {
   const candidates = [
     join(process.resourcesPath ?? '', 'js-debug', 'src', 'dapDebugServer.js'),
-    join(app.getAppPath(), 'resources', 'js-debug', 'src', 'dapDebugServer.js'),
+    join(coreEnv().appDir, 'resources', 'js-debug', 'src', 'dapDebugServer.js'),
     join(process.cwd(), 'resources', 'js-debug', 'src', 'dapDebugServer.js')
   ]
   return candidates.find((path) => path && existsSync(path)) ?? null
@@ -181,4 +183,22 @@ export function stopDebugSession(): void {
   adapter = null
   adapterPort = 0
   child?.kill()
+}
+
+/** Register the debugger domain with webdeck-core (P1). `debugSend` stays a
+ *  streaming ipcMain.on channel until the transport gains a notify path. */
+export function registerDebugRpc(): void {
+  core.register(IpcChannels.debugAvailable, () => isDebuggerAvailable())
+  core.register(IpcChannels.debugStart, () => startDebugSession())
+  core.register(IpcChannels.debugAttachChild, (sessionId) => {
+    const id = asString(sessionId)
+    return id ? attachDebugChild(id) : { error: 'bad arguments' }
+  })
+  core.register(IpcChannels.debugStop, () => stopDebugSession())
+  core.registerNotify(IpcChannels.debugSend, (sessionId, message) => {
+    const id = asString(sessionId)
+    if (id && message && typeof message === 'object') {
+      sendToDebugAdapter(id, message as Parameters<typeof sendToDebugAdapter>[1])
+    }
+  })
 }

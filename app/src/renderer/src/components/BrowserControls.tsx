@@ -9,6 +9,7 @@ import {
   ZoomInIcon
 } from '@/components/browser-icons'
 import { navigateTab } from '@/components/Toolbar'
+import { parseBookmarks } from '@/bookmarks-import'
 
 /**
  * The browser chrome a real browser has and this one was missing: bookmarks,
@@ -38,6 +39,16 @@ export function BookmarkControls({
   const removeBookmark = useShellStore((s) => s.removeBookmark)
   const setHomeUrl = useShellStore((s) => s.setHomeUrl)
   const [open, setOpen] = useState(false)
+
+  // Import a browser's exported bookmarks (HTML or Chrome JSON) into this
+  // profile. Main reads the file the user picks; parsing happens here where a
+  // DOMParser is available.
+  const importBookmarks = async (): Promise<void> => {
+    const result = await window.agweb.bookmarks.importFile()
+    if (!result.text) return
+    useShellStore.getState().importBookmarks(parseBookmarks(result.text))
+    setOpen(true)
+  }
   const ref = usePopover(
     open,
     useCallback(() => setOpen(false), [])
@@ -72,9 +83,23 @@ export function BookmarkControls({
         <div
           className={`absolute ${align === 'left' ? 'left-0' : 'right-0'} top-9 z-50 max-h-96 w-80 overflow-y-auto rounded-lg border border-slate-200 bg-white py-1 shadow-xl dark:border-slate-700 dark:bg-[#0e1420]`}
         >
+          <div className="flex items-center justify-between px-3 py-1">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+              Bookmarks · this profile
+            </span>
+            <button
+              onClick={() => {
+                setOpen(false)
+                void importBookmarks()
+              }}
+              className="text-[10.5px] font-medium text-sky-500 hover:underline"
+            >
+              Import…
+            </button>
+          </div>
           {bookmarks.length === 0 && (
             <div className="px-3 py-2 text-[11px] text-slate-400">
-              No bookmarks yet — the star saves the current page.
+              No bookmarks yet — the star saves the current page, or Import a browser export.
             </div>
           )}
           {bookmarks.map((bookmark) => (

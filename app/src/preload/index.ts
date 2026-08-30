@@ -7,6 +7,8 @@ import type {
   DownloadInfo,
   PermissionRequestInfo,
   PolicyPromptInfo,
+  PolicyDeniedInfo,
+  PolicyStatus,
   WorkspaceInfo
 } from '@shared/ipc'
 import type { DeckSyncState } from '@shared/deck'
@@ -70,6 +72,11 @@ const api: AgwebApi = {
         listener(payload.tabId, payload.url)
       ipcRenderer.on(IpcEvents.browserAdoptTab, handler)
       return () => ipcRenderer.removeListener(IpcEvents.browserAdoptTab, handler)
+    },
+    onOpenDoc: (listener) => {
+      const handler = (_event: unknown, path: string): void => listener(path)
+      ipcRenderer.on(IpcEvents.openDoc, handler)
+      return () => ipcRenderer.removeListener(IpcEvents.openDoc, handler)
     }
   },
   appSettings: {
@@ -88,7 +95,11 @@ const api: AgwebApi = {
     list: () => ipcRenderer.invoke(IpcChannels.profilesList),
     setActive: (id) => ipcRenderer.invoke(IpcChannels.profilesSetActive, id),
     create: (name) => ipcRenderer.invoke(IpcChannels.profilesCreate, name),
-    remove: (id) => ipcRenderer.invoke(IpcChannels.profilesRemove, id)
+    remove: (id) => ipcRenderer.invoke(IpcChannels.profilesRemove, id),
+    googleStatus: () => ipcRenderer.invoke(IpcChannels.profilesGoogleStatus)
+  },
+  bookmarks: {
+    importFile: () => ipcRenderer.invoke(IpcChannels.bookmarksImportFile)
   },
   windows: {
     newWindow: () => ipcRenderer.invoke(IpcChannels.windowNew),
@@ -153,6 +164,7 @@ const api: AgwebApi = {
     list: () => ipcRenderer.invoke(IpcChannels.agentList),
     keyStatus: () => ipcRenderer.invoke(IpcChannels.agentKeyStatus),
     setKey: (key) => ipcRenderer.invoke(IpcChannels.agentSetKey, key),
+    setModel: (model) => ipcRenderer.invoke(IpcChannels.agentSetModel, model),
     openReport: (id) => ipcRenderer.invoke(IpcChannels.agentOpenReport, id),
     clearFinished: () => ipcRenderer.invoke(IpcChannels.agentClearFinished),
     rename: (id, title) => ipcRenderer.invoke(IpcChannels.agentRename, id, title),
@@ -236,6 +248,7 @@ const api: AgwebApi = {
 
   extensions: {
     load: () => ipcRenderer.invoke(IpcChannels.extLoad),
+    loadPacked: () => ipcRenderer.invoke(IpcChannels.extLoadPacked),
     loadPath: (path) => ipcRenderer.invoke(IpcChannels.extLoadPath, path),
     list: () => ipcRenderer.invoke(IpcChannels.extList),
     remove: (id) => ipcRenderer.invoke(IpcChannels.extRemove, id)
@@ -291,6 +304,16 @@ const api: AgwebApi = {
       const handler = (_event: unknown, prompt: PolicyPromptInfo): void => listener(prompt)
       ipcRenderer.on(IpcEvents.policyPrompt, handler)
       return () => ipcRenderer.removeListener(IpcEvents.policyPrompt, handler)
+    },
+    onChanged: (listener) => {
+      const handler = (_event: unknown, status: PolicyStatus): void => listener(status)
+      ipcRenderer.on(IpcEvents.policyChanged, handler)
+      return () => ipcRenderer.removeListener(IpcEvents.policyChanged, handler)
+    },
+    onDenied: (listener) => {
+      const handler = (_event: unknown, info: PolicyDeniedInfo): void => listener(info)
+      ipcRenderer.on(IpcEvents.policyDenied, handler)
+      return () => ipcRenderer.removeListener(IpcEvents.policyDenied, handler)
     }
   },
   terminal: {

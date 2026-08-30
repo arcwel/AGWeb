@@ -1,6 +1,6 @@
-import { app } from 'electron'
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import { coreEnv } from '../core/env'
 
 /**
  * Minimal atomic JSON persistence in the app's userData directory.
@@ -13,9 +13,10 @@ export class JsonStore<T> {
   ) {}
 
   /** Resolved lazily: stores are constructed at module import, which runs
-   *  before index.ts applies the AGWEB_USER_DATA override via app.setPath. */
+   *  before setCoreEnv() wires the host (and before index.ts applies the
+   *  AGWEB_USER_DATA override the Electron adapter reflects via app.setPath). */
   private get file(): string {
-    return join(app.getPath('userData'), `${this.name}.json`)
+    return join(coreEnv().userDataDir, `${this.name}.json`)
   }
 
   read(): T {

@@ -15,6 +15,29 @@ export interface Shortcut {
 
 const registry = new Map<string, Shortcut[]>()
 
+// A cached, reactive snapshot so views (the Start page) can subscribe and
+// re-render as shortcuts register/unregister, instead of reading a stale list
+// once during first paint (P3-8). Recomputed only on change, so the reference is
+// stable between changes — required for useSyncExternalStore.
+const listeners = new Set<() => void>()
+let snapshot: Shortcut[] = []
+
+function recompute(): void {
+  snapshot = [...registry.values()].map((stack) => stack[stack.length - 1])
+  for (const listener of listeners) listener()
+}
+
+/** Subscribe to registry changes. Returns an unsubscribe fn. */
+export function subscribeShortcuts(listener: () => void): () => void {
+  listeners.add(listener)
+  return () => listeners.delete(listener)
+}
+
+/** The current shortcuts — a stable reference until the registry changes. */
+export function getShortcuts(): Shortcut[] {
+  return snapshot
+}
+
 const IS_MAC = navigator.platform.toUpperCase().includes('MAC')
 
 function normalize(combo: string): string {
@@ -42,16 +65,14 @@ export function registerShortcut(shortcut: Shortcut): () => void {
   const stack = registry.get(key) ?? []
   stack.push(shortcut)
   registry.set(key, stack)
+  recompute()
   return () => {
     const current = registry.get(key) ?? []
     const index = current.indexOf(shortcut)
     if (index >= 0) current.splice(index, 1)
     if (current.length === 0) registry.delete(key)
+    recompute()
   }
-}
-
-export function listShortcuts(): Shortcut[] {
-  return [...registry.values()].map((stack) => stack[stack.length - 1])
 }
 
 export function useShortcut(

@@ -6,6 +6,7 @@ import { Stage } from '@/components/Stage'
 import { Deck } from '@/components/Deck'
 import { PermissionPrompts } from '@/components/PermissionPrompts'
 import { SettingsOverlay } from '@/components/SettingsOverlay'
+import { ToastHost } from '@/components/ToastHost'
 import { useShellStore } from '@/store'
 import { useThemeEffect } from '@/theme'
 import { useShortcut } from '@/shortcuts'
@@ -26,9 +27,17 @@ export default function App(): React.JSX.Element {
   const newTab = useShellStore((s) => s.newTab)
   const closeTab = useShellStore((s) => s.closeTab)
   const setTheme = useShellStore((s) => s.setTheme)
+  const applyPreset = useShellStore((s) => s.applyPreset)
 
   useThemeEffect()
   useWindowReconciler()
+
+  // Load the active profile's bookmarks at boot (they are stored per profile).
+  useEffect(() => {
+    void window.agweb.profiles.list().then((state) => {
+      useShellStore.getState().syncProfile(state.activeId)
+    })
+  }, [])
 
   // Route embedded-browser events into the store: live navigation state, and
   // pages requesting a new window become new browser tabs.
@@ -40,11 +49,37 @@ export default function App(): React.JSX.Element {
     const offAdopt = window.agweb.browser.onAdoptTab((tabId) => {
       useShellStore.getState().adoptBrowserTab(tabId)
     })
+    // A file: navigation to a workspace doc renders it in Document Studio (P3-3).
+    const offDoc = window.agweb.browser.onOpenDoc((path) => {
+      useShellStore.getState().openDoc(path)
+    })
     return () => {
       offState()
       offOpen()
       offAdopt()
+      offDoc()
     }
+  }, [])
+
+  // Surface denied agent actions as a toast, so a silently-blocked action isn't
+  // invisible — especially an automatic policy deny with no prompt (P2-13).
+  useEffect(() => {
+    return window.agweb.policy.onDenied((info) => {
+      const what =
+        info.kind === 'file_write'
+          ? 'file write'
+          : info.kind === 'command'
+            ? 'command'
+            : 'navigation'
+      useShellStore
+        .getState()
+        .pushToast(
+          info.byUser
+            ? `Denied the agent's ${what} — it was told.`
+            : `Policy auto-denied the agent's ${what}.`,
+          'warn'
+        )
+    })
   }, [])
 
   useShortcut(
@@ -72,6 +107,22 @@ export default function App(): React.JSX.Element {
       setTheme(useShellStore.getState().theme === 'dark' ? 'light' : 'dark')
     }, [setTheme])
   )
+  // Layout presets — one keystroke swaps the whole Dev Deck arrangement (P3-7).
+  useShortcut(
+    'mod+1',
+    'Layout preset: Browsing',
+    useCallback(() => applyPreset('browsing'), [applyPreset])
+  )
+  useShortcut(
+    'mod+2',
+    'Layout preset: Building',
+    useCallback(() => applyPreset('building'), [applyPreset])
+  )
+  useShortcut(
+    'mod+3',
+    'Layout preset: Debugging',
+    useCallback(() => applyPreset('debugging'), [applyPreset])
+  )
 
   // Commands the native menu sends. They ride the same registry as keyboard
   // combos — a menu item and its accelerator are then one handler, not two
@@ -92,6 +143,7 @@ export default function App(): React.JSX.Element {
       <UtilitiesBar />
       <PermissionPrompts />
       <SettingsOverlay />
+      <ToastHost />
       <div
         className={`workspace ${revealed ? 'revealed' : ''} ${hasRail ? 'has-rail' : ''} ${
           dockEmpty ? 'dock-empty' : ''
@@ -110,7 +162,42 @@ export default function App(): React.JSX.Element {
       >
         <Stage />
         {deckMode === 'attached' && <Deck />}
+        <ViewportChip />
       </div>
+    </div>
+  )
+}
+
+/**
+ * The viewport chip (P3-4): a small ambient label that fades in on the spotlit
+ * stage once it lands, naming what you're building around — "localhost:5173 ·
+ * inspecting". Visibility and the land-timed fade are driven by the `.revealed`
+ * parent in CSS; this only supplies the label for the active tab.
+ */
+function ViewportChip(): React.JSX.Element | null {
+  const activeTabId = useShellStore((s) => s.activeTabId)
+  const url = useShellStore((s) => s.browserStates[s.activeTabId]?.url)
+  const activeTab = useShellStore((s) => s.tabs.find((t) => t.id === activeTabId))
+
+  let label = ''
+  let state = 'inspecting'
+  if (activeTab?.kind === 'doc') {
+    label = (activeTab.docPath ?? '').split('/').pop() ?? 'document'
+    state = 'reading'
+  } else if (url) {
+    try {
+      label = new URL(url).host
+    } catch {
+      label = ''
+    }
+  }
+  if (!label) return null
+
+  return (
+    <div className="viewport-chip" aria-hidden="true">
+      <span className="truncate">{label}</span>
+      <span className="viewport-chip-sep">·</span>
+      <span className="viewport-chip-state">{state}</span>
     </div>
   )
 }

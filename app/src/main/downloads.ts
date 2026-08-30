@@ -28,6 +28,19 @@ function downloadDir(): string {
   return process.env.AGWEB_DOWNLOAD_DIR ?? app.getPath('downloads')
 }
 
+/**
+ * Where to auto-save, or null to let Electron prompt.
+ *
+ * When "ask where to save" is on we return null and skip `setSavePath`, which
+ * makes Electron show its native Save dialog for the download. The test
+ * override always forces a directory so the smoke test stays non-interactive.
+ */
+function autoSaveDir(): string | null {
+  if (process.env.AGWEB_DOWNLOAD_DIR) return process.env.AGWEB_DOWNLOAD_DIR
+  if (readAppSettings().askWhereToSave) return null
+  return downloadDir()
+}
+
 /** hello.txt → hello (2).txt until the name is free. */
 function availablePath(dir: string, filename: string): string {
   const dot = filename.lastIndexOf('.')
@@ -63,14 +76,20 @@ export function attachDownloadHandler(ses: Session): void {
   hookedSessions.add(ses)
   ses.on('will-download', (_event, item) => {
     const id = `download-${nextDownloadId++}`
-    const savePath = availablePath(downloadDir(), item.getFilename() || 'download')
-    item.setSavePath(savePath)
+    // With a fixed folder we pick a collision-safe path; with "ask where to
+    // save" we leave the path unset so Electron shows its native Save dialog,
+    // and read the chosen path back from the item afterwards.
+    const dir = autoSaveDir()
+    if (dir) item.setSavePath(availablePath(dir, item.getFilename() || 'download'))
+
+    const currentPath = (): string =>
+      item.getSavePath() || availablePath(downloadDir(), item.getFilename() || 'download')
 
     const snapshot = (): DownloadInfo => ({
       id,
-      filename: basename(savePath),
+      filename: basename(currentPath()),
       url: item.getURL(),
-      path: savePath,
+      path: currentPath(),
       state: stateOf(item),
       receivedBytes: item.getReceivedBytes(),
       totalBytes: item.getTotalBytes()
