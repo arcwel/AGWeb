@@ -1,5 +1,11 @@
 @import 'tailwindcss';
 
+/* Scan this directory explicitly. Tailwind v4 otherwise infers the scan root
+   from the Vite root, which differs between the Electron renderer build and the
+   chrome://webdeck bundle — and a wrong root silently emits CSS with no
+   utilities at all, which looks like the app lost its entire layout. */
+@source './';
+
 @custom-variant dark (&:where(.dark, .dark *));
 
 /* The accent was written as Tailwind's `sky` throughout the app before the

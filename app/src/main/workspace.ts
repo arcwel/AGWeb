@@ -1,8 +1,9 @@
-import { dialog } from 'electron'
 import { statSync } from 'node:fs'
-import { basename, resolve, sep } from 'node:path'
+import { basename, join, resolve, sep } from 'node:path'
 import { IpcChannels, type RecentProject, type WorkspaceInfo } from '@shared/ipc'
+import { coreEnv } from '../core/env'
 import { core } from '../core/rpc'
+import { asString } from '../core/coerce'
 import { JsonStore } from './json-store'
 
 const MAX_RECENT = 20
@@ -92,10 +93,29 @@ export function getRecentProjects(): RecentProject[] {
   })
 }
 
+/**
+ * Expand a leading `~` to the user's home directory.
+ *
+ * `resolve()` treats `~` as an ordinary directory name, so `~/code/thing` came
+ * out as `<cwd>/~/code/thing` and the open failed. Under Electron that never
+ * showed, because nobody types a path — they use the folder picker. On the fork
+ * there is no picker, so typing the path *is* the way in, and both fallbacks
+ * (StartPage, FilesTree) prompt with `~/code/my-project`.
+ *
+ * Only a leading `~` on its own or before a separator: `~someone` is a different
+ * user's home on Unix and not ours to guess at.
+ */
+export function expandHome(rawPath: string, home: string): string {
+  if (rawPath === '~') return home
+  if (rawPath.startsWith('~/') || rawPath.startsWith('~\\')) return join(home, rawPath.slice(2))
+  return rawPath
+}
+
 export function openWorkspacePath(rawPath: string): WorkspaceInfo | null {
-  // Normalize (trailing slashes, '..'): the fs layer's inside-workspace
-  // prefix check assumes a canonical root.
-  const path = resolve(rawPath)
+  // Normalize (leading `~`, trailing slashes, '..'): the fs layer's
+  // inside-workspace prefix check assumes a canonical root. The `~` test comes
+  // first so that a path without one never needs the host env at all.
+  const path = resolve(rawPath.startsWith('~') ? expandHome(rawPath, coreEnv().homeDir) : rawPath)
   try {
     if (!statSync(path).isDirectory()) return null
   } catch {
@@ -114,13 +134,47 @@ export function openWorkspacePath(rawPath: string): WorkspaceInfo | null {
   return current
 }
 
+/**
+ * A host folder-picker: returns the chosen absolute path, or null if cancelled.
+ * Injected by the shell (Electron's `dialog` today; the Chromium fork's host
+ * later) so this CORE domain imports no Electron — the picker is the only reason
+ * it ever did.
+ */
+export type FolderPicker = () => Promise<string | null>
+
+let folderPicker: FolderPicker | null = null
+
+/** Wire the host folder-picker. Call once at startup, before open-workspace. */
+export function setWorkspaceFolderPicker(pick: FolderPicker): void {
+  folderPicker = pick
+}
+
+/**
+ * Fired after a project is opened, so the host can run its own side effects
+ * (re-arm the file watcher, stop the previous project's dev server, update the
+ * native menu). Injected, because those differ per host — but *opening* the
+ * project is core logic and must work headless, or the fork cannot open a
+ * project at all.
+ */
+let onOpened: ((workspace: WorkspaceInfo) => void) | null = null
+export function setWorkspaceOpenedHook(fn: (workspace: WorkspaceInfo) => void): void {
+  onOpened = fn
+}
+
+/** Open a project by path and fire the host's side effects. */
+export function openWorkspaceAndNotify(path: string): WorkspaceInfo | null {
+  const workspace = openWorkspacePath(path)
+  if (workspace) onOpened?.(workspace)
+  return workspace
+}
+
 export async function openWorkspaceDialog(): Promise<WorkspaceInfo | null> {
-  const result = await dialog.showOpenDialog({
-    title: 'Open Project Folder',
-    properties: ['openDirectory', 'createDirectory']
-  })
-  if (result.canceled || result.filePaths.length === 0) return null
-  return openWorkspacePath(result.filePaths[0])
+  if (!folderPicker) {
+    throw new Error('folder picker not wired — call setWorkspaceFolderPicker() at startup')
+  }
+  const path = await folderPicker()
+  if (!path) return null
+  return openWorkspacePath(path)
 }
 
 /** Register the workspace *read* surface with webdeck-core (P1).
@@ -131,7 +185,24 @@ export async function openWorkspaceDialog(): Promise<WorkspaceInfo | null> {
  * calls these state functions and then fires those effects.
  */
 export function registerWorkspaceRpc(): void {
+  core.register(IpcChannels.workspaceOpenPath, (path) => {
+    const p = asString(path)
+    return p ? openWorkspaceAndNotify(p) : null
+  })
   core.register(IpcChannels.workspaceCurrent, () => getCurrentWorkspace())
   core.register(IpcChannels.workspaceRoots, () => workspaceRoots())
   core.register(IpcChannels.workspaceRecent, () => getRecentProjects())
+  // Multi-root, by path. Electron reached these through a native folder picker
+  // and so they were treated as host-only — but only the PICKER needed the
+  // host: granting and revoking a root are plain path operations the core has
+  // always been able to do. Taking the path as an argument makes them work on
+  // both hosts, and leaves the picker (or a path box) as a UI concern.
+  core.register(IpcChannels.workspaceAddRoot, (path) => {
+    const p = asString(path)
+    return p ? addWorkspaceRoot(expandHome(p, coreEnv().homeDir)) : workspaceRoots()
+  })
+  core.register(IpcChannels.workspaceRemoveRoot, (path) => {
+    const p = asString(path)
+    return p ? removeWorkspaceRoot(p) : workspaceRoots()
+  })
 }

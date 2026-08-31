@@ -3,7 +3,7 @@ import type { FSWatcher } from 'node:fs'
 import { isAbsolute, resolve, sep } from 'node:path'
 import { IpcChannels, IpcEvents } from '@shared/ipc'
 import type { FsEntry } from '@shared/ipc'
-import { broadcast } from './windows'
+import { coreBroadcast } from '../core/notify'
 import { isGrantedFile, workspaceRoots } from './workspace'
 import { core } from '../core/rpc'
 import { asString } from '../core/coerce'
@@ -167,9 +167,18 @@ export async function createEntry(
   }
 }
 
-export async function renameEntry(fromRel: string, toRel: string): Promise<{ error?: string }> {
-  const from = resolveInWorkspace(fromRel)
-  const to = resolveInWorkspace(toRel)
+export async function renameEntry(
+  fromRel: string,
+  toRel: string,
+  root?: string | null
+): Promise<{ error?: string }> {
+  // `root` is the caller's pin, and it matters most for the agent: writeFile
+  // has always taken one, while this did not — so an agent confined to one
+  // project could still move files across every OTHER granted root, which is
+  // the confinement failing silently. BOTH ends are pinned: moving a file out
+  // of the pin is as much an escape as moving one in.
+  const from = resolveInWorkspace(fromRel, root)
+  const to = resolveInWorkspace(toRel, root)
   if (!from || !to) return { error: 'no workspace' }
   if (from === to) return {}
   try {
@@ -188,8 +197,10 @@ export async function renameEntry(fromRel: string, toRel: string): Promise<{ err
   }
 }
 
-export async function deleteEntry(rel: string): Promise<{ error?: string }> {
-  const full = resolveInWorkspace(rel)
+export async function deleteEntry(rel: string, root?: string | null): Promise<{ error?: string }> {
+  // Pinned for the same reason as renameEntry, and it bites harder here:
+  // file_write is `allow` in the DEFAULT mode, and rm is recursive.
+  const full = resolveInWorkspace(rel, root)
   // Refuse to delete a root itself — any root, not just the primary one. With
   // multi-root (3B.4) a granted folder is as much a boundary as the project is.
   if (!full || workspaceRoots().some((root) => root.path === full)) {
@@ -217,7 +228,7 @@ export function watchWorkspace(root: string | null): void {
       const top = String(filename ?? '').split(sep)[0]
       if (IGNORED.has(top)) return
       if (notifyTimer) clearTimeout(notifyTimer)
-      notifyTimer = setTimeout(() => broadcast(IpcEvents.fsChanged, null, null), 150)
+      notifyTimer = setTimeout(() => coreBroadcast(IpcEvents.fsChanged, null, null), 150)
     })
   } catch (error) {
     console.warn('workspace watcher unavailable:', error)

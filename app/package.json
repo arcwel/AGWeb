@@ -8,6 +8,8 @@
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
+    "build:webui": "vite build --config vite.webui.config.ts",
+    "pack:webui": "npm run build:webui && node scripts/pack-webui.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "start": "electron-vite preview",
     "lint": "eslint . && prettier --check .",
@@ -17,7 +19,15 @@
     "dist:mac": "electron-vite build && electron-builder --mac --dir",
     "dist:mac:dmg": "electron-vite build && electron-builder --mac",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "build:core": "node scripts/build-core.mjs",
+    "verify:core": "node scripts/verify-core-binary.mjs",
+    "verify:fork": "node scripts/verify-fork.mjs",
+    "verify:session": "node scripts/verify-session-mode.mjs",
+    "verify:hardening": "node scripts/verify-hardening.mjs",
+    "upstream:check": "node scripts/upstream-check.mjs",
+    "verify:patches": "node scripts/verify-patches.mjs",
+    "verify:fork:all": "npm run verify:patches && npm run verify:fork && npm run verify:hardening"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.122.0",
@@ -88,6 +98,7 @@
     "eslint-plugin-react-hooks": "^7.1.1",
     "jsdom": "^25.0.1",
     "playwright-core": "^1.62.1",
+    "postject": "^1.0.0-alpha.6",
     "prettier": "^3.9.6",
     "tailwindcss": "^4.1.10",
     "typescript-eslint": "^8.68.0",

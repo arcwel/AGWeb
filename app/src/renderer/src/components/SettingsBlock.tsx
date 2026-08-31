@@ -5,6 +5,7 @@ import { useShellStore } from '@/store'
 import { ColorSettings } from '@/components/ColorSettings'
 import { ApplicationSettings } from '@/components/ApplicationSettings'
 import { AiSettings } from '@/components/AiSettings'
+import { SyncSettings } from '@/components/SyncSettings'
 
 /**
  * Settings and keybindings (task 12.6).
@@ -19,11 +20,16 @@ import { AiSettings } from '@/components/AiSettings'
  * an existing VS Code configuration paste in and just work.
  */
 
-type Scope = 'application' | 'ai' | 'user' | 'workspace' | 'keybindings' | 'colors'
+type Scope = 'application' | 'ai' | 'sync' | 'user' | 'workspace' | 'keybindings' | 'colors'
 
 const TABS: Array<{ scope: Scope; label: string; hint: string }> = [
   { scope: 'application', label: 'Application', hint: 'How WebDeck itself behaves.' },
   { scope: 'ai', label: 'AI', hint: 'Provider API keys for the agent.' },
+  {
+    scope: 'sync',
+    label: 'Sync',
+    hint: 'Sync settings across machines via a file you keep in your own cloud folder.'
+  },
   { scope: 'user', label: 'Editor', hint: 'VS Code user settings; applies to every project.' },
   {
     scope: 'workspace',
@@ -35,7 +41,7 @@ const TABS: Array<{ scope: Scope; label: string; hint: string }> = [
 ]
 
 /** Scopes that render a bespoke panel instead of the JSON editor. */
-const PANEL_SCOPES = ['application', 'ai', 'colors'] as const
+const PANEL_SCOPES = ['application', 'ai', 'sync', 'colors'] as const
 function isPanelScope(scope: Scope): boolean {
   return (PANEL_SCOPES as readonly string[]).includes(scope)
 }
@@ -192,6 +198,7 @@ export function SettingsBlock(): React.JSX.Element {
       <div className="min-h-0 flex-1 overflow-y-auto">
         {scope === 'application' && <ApplicationSettings />}
         {scope === 'ai' && <AiSettings />}
+        {scope === 'sync' && <SyncSettings />}
         {scope === 'colors' && <ColorSettings />}
         {/* The editor container is always in the DOM — only hidden behind a
             panel — so Monaco can be created once at mount. Rendering it

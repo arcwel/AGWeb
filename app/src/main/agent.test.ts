@@ -15,11 +15,10 @@ import { IpcChannels } from '@shared/ipc'
 
 // A mutable holder the mock factories read lazily (getCurrentWorkspace runs long
 // after the dir is filled in below). vi.hoisted keeps it visible to the hoisted
-// vi.mock calls; the two shell-facing imports are stubbed so the agent graph
-// pulls no Electron.
+// vi.mock call. Only the workspace needs stubbing now: the agent domain reaches
+// events and browser tools through injected ports, so it pulls no Electron.
 const h = vi.hoisted(() => ({ dir: '' }))
 
-vi.mock('./windows', () => ({ broadcast: () => {} }))
 vi.mock('./workspace', () => ({
   getCurrentWorkspace: () => ({ path: h.dir, name: 'test' })
 }))

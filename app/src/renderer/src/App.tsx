@@ -82,6 +82,14 @@ export default function App(): React.JSX.Element {
     })
   }, [])
 
+  // A pull applied settings from another device — never silent, since one of the
+  // synced sections is the agent's permission policy (the security gate).
+  useEffect(() => {
+    return window.agweb.sync.onPulled(() => {
+      useShellStore.getState().pushToast('Settings updated from a synced device.', 'info')
+    })
+  }, [])
+
   useShortcut(
     'mod+d',
     'Reveal / hide the Dev Deck',
@@ -136,11 +144,17 @@ export default function App(): React.JSX.Element {
       {/* Chrome is flush with the top of the window and shares its ground, so
           there is no seam between the app and its title bar. Tabs occupy the
           title-bar row itself, inline with the traffic lights. */}
-      <div className="wd-chrome flex flex-none flex-col">
-        <TabStrip />
-        <Toolbar />
-      </div>
-      <UtilitiesBar />
+      {/* Under the Chromium fork the page sits inside a real browser tab, so
+          Chromium already draws the tab strip and address bar. Drawing ours too
+          would stack a second, non-functional copy beneath the working one —
+          and the user would reach for whichever is nearer the content. */}
+      {!window.agweb.host.ownsBrowserChrome && (
+        <div className="wd-chrome flex flex-none flex-col">
+          <TabStrip />
+          <Toolbar />
+        </div>
+      )}
+      {!window.agweb.host.ownsBrowserChrome && <UtilitiesBar />}
       <PermissionPrompts />
       <SettingsOverlay />
       <ToastHost />

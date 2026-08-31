@@ -69,10 +69,21 @@ export interface ProfilesState {
   activeId: string
 }
 
+/** Where API keys come from: WebDeck's encrypted store, or your password manager. */
+export type SecretSourceMode = 'stored' | 'command'
+
+export interface SecretSourceConfig {
+  mode: SecretSourceMode
+  /** Per-provider command, e.g. `op read op://Private/anthropic/key`. */
+  commands: Record<string, string>
+}
+
 export interface SecretsStatus {
   /** True when the OS keychain is usable; false means keys cannot be saved. */
   encryptionAvailable: boolean
   configured: Record<AiProvider, boolean>
+  /** The active source. In `command` mode WebDeck stores no key at all. */
+  source: SecretSourceConfig
 }
 
 export interface AppInfo {
@@ -139,8 +150,29 @@ export interface PermissionRequestInfo {
   permission: string
 }
 
-/** Permission policy (Phase 9): the gate for agent-driven actions. */
-export type PermissionMode = 'secure' | 'review' | 'agent' | 'custom'
+/**
+ * Permission policy (Phase 9): the gate for agent-driven actions.
+ *
+ * Ordered by how much the agent may do without asking. `autonomous` is the top
+ * rung — nothing is confirmed, everything is audited — and it exists because
+ * `agent` still stops to confirm navigation to any host outside the allowlist,
+ * which is not autonomy when the task is "go and find out".
+ *
+ * It matters most in combination with the agent using the user's own browser
+ * session: under `autonomous` the agent acts as the user with no interruption,
+ * so the audit log is the only record of what was done in their name.
+ */
+export type PermissionMode = 'secure' | 'review' | 'agent' | 'autonomous' | 'custom'
+
+/**
+ * Which browser the agent drives.
+ *
+ * `session` is the user's own browser: real tabs in their window, their cookies
+ * and logins, watched live — the agent acting as them, which is the point.
+ * `isolated` is a throwaway profile with no ambient authority, for work on
+ * pages that are not trusted (scraping something unknown, testing a build).
+ */
+export type AgentBrowserMode = 'session' | 'isolated'
 export type PolicyActionKind = 'file_write' | 'command' | 'browser_navigate'
 export type PolicyDecision = 'allow' | 'confirm' | 'deny'
 
@@ -154,9 +186,34 @@ export interface CustomPolicyRules {
   allowedHosts: string[]
 }
 
+/**
+ * A standing decision for one site, made when the user answered a prompt with
+ * "always" — or added it by hand.
+ *
+ * Per SITE, deliberately. The old "always" answer granted the whole action kind
+ * for the rest of the session, so approving one navigation let the agent go
+ * anywhere. A grant should be no broader than the thing the user was looking at
+ * when they gave it.
+ */
+export interface SitePermission {
+  /** Host the decision covers, subdomains included. */
+  host: string
+  decision: 'allow' | 'deny'
+  /** ISO timestamp — so the UI can show and prune stale grants. */
+  grantedAt: string
+}
+
 export interface PolicyStatus {
   mode: PermissionMode
   custom: CustomPolicyRules
+  /** Standing per-site decisions. Outrank the mode in both directions. */
+  sites: SitePermission[]
+  /**
+   * Ask before the agent acts on a high-consequence site, even under full
+   * autonomy. On by default. The built-in list is a seed, not coverage — see
+   * SENSITIVE_HOSTS in policy.ts.
+   */
+  blockSensitiveSites: boolean
 }
 
 /** A gated agent action waiting on the user's confirmation. */
@@ -222,6 +279,7 @@ export const IpcChannels = {
   secretsList: 'secrets:list',
   secretsSet: 'secrets:set',
   secretsClear: 'secrets:clear',
+  secretsSetSource: 'secrets:set-source',
   profilesList: 'profiles:list',
   profilesSetActive: 'profiles:set-active',
   profilesCreate: 'profiles:create',
@@ -308,7 +366,15 @@ export const IpcChannels = {
   policyGet: 'policy:get',
   policySetMode: 'policy:set-mode',
   policySetCustom: 'policy:set-custom',
-  policyRespond: 'policy:respond'
+  policySetSite: 'policy:set-site',
+  policyClearSite: 'policy:clear-site',
+  policySetSensitive: 'policy:set-sensitive',
+  policyRespond: 'policy:respond',
+  syncStatus: 'sync:status',
+  syncChooseFile: 'sync:choose-file',
+  syncSetEnabled: 'sync:set-enabled',
+  syncPushNow: 'sync:push-now',
+  syncPullNow: 'sync:pull-now'
 } as const
 
 /** One project-search match. */
@@ -347,8 +413,25 @@ export const IpcEvents = {
   policyDenied: 'event:policy-denied',
   openDoc: 'event:open-doc',
   shellShortcut: 'event:shell-shortcut',
-  terminalAdopt: 'event:terminal-adopt'
+  terminalAdopt: 'event:terminal-adopt',
+  syncStatusChanged: 'event:sync-status',
+  syncPulled: 'event:sync-pulled',
+  themeChanged: 'event:theme-changed'
 } as const
+
+/** WebDeck Sync (settings sync via a local-first file) status for the UI. */
+export interface SyncStatus {
+  /** Whether auto-sync is on (requires a chosen file). */
+  enabled: boolean
+  /** Absolute path of the sync document, or null if none chosen yet. */
+  filePath: string | null
+  /** Last successful push/pull, ISO string, or null. */
+  lastSyncedAt: string | null
+  /** Last error message, or null. */
+  error: string | null
+  /** Section keys currently participating (theme, settings, policy, model…). */
+  sections: string[]
+}
 
 /** File types the Document Studio renders as styled documents. Shared so main
  *  (browser navigation interception) and the renderer agree on what a doc is. */
@@ -379,7 +462,38 @@ export interface FsEntry {
 }
 
 /** The API surface exposed on `window.agweb` by the preload bridge. */
+/**
+ * What the *host* provides, as opposed to what WebDeck draws itself.
+ *
+ * Electron gives WebDeck an empty window, so the app draws its own browser
+ * chrome — tab strip, address bar, downloads, profiles, extensions, zoom, find.
+ * The Chromium fork is already a browser: it owns all of that natively, and the
+ * WebDeck UI is a page inside one of its tabs.
+ *
+ * The renderer needs to know which it is on. Papering over the difference with
+ * benign stubs was the wrong instinct: it turns a missing capability into a
+ * control that looks enabled and silently does nothing, which is worse than one
+ * that isn't there. Components read these flags and render accordingly.
+ */
+export interface HostCapabilities {
+  /** 'electron' draws its own browser chrome; 'chromium' is inside a real browser. */
+  kind: 'electron' | 'chromium'
+  /** The host owns tabs, navigation and the address bar. */
+  ownsBrowserChrome: boolean
+  /** The host owns downloads, profiles, extensions, bookmarks, zoom and find. */
+  ownsBrowserFeatures: boolean
+  /** The host can open additional OS windows (detached deck, floating blocks). */
+  canOpenWindows: boolean
+  /** A native file/folder picker is reachable. */
+  canPickPaths: boolean
+  /** Export to HTML/PDF/PNG is available. */
+  canExport: boolean
+}
+
 export interface AgwebApi {
+  /** What this host provides. Read it before rendering host-owned controls. */
+  host: HostCapabilities
+
   getAppInfo(): Promise<AppInfo>
   /** Electron-level application settings. */
   appSettings: {
@@ -399,6 +513,8 @@ export interface AgwebApi {
     list(): Promise<SecretsStatus>
     set(provider: AiProvider, key: string): Promise<boolean>
     clear(provider: AiProvider): Promise<boolean>
+    /** Choose where keys come from: WebDeck's store, or a password-manager command. */
+    setSource(config: Partial<SecretSourceConfig>): Promise<SecretSourceConfig>
   }
   /** Browser profiles, for keeping separate signed-in accounts. */
   profiles: {
@@ -429,7 +545,13 @@ export interface AgwebApi {
    */
   workspaceRoots(): Promise<WorkspaceInfo[]>
   /** Show a picker and grant the chosen folder. Returns the new root list. */
-  addWorkspaceRoot(): Promise<WorkspaceInfo[]>
+  /**
+   * Grant another folder to this session.
+   *
+   * A path is required on a host with no native folder picker; Electron opens
+   * a picker when none is given.
+   */
+  addWorkspaceRoot(path?: string): Promise<WorkspaceInfo[]>
   removeWorkspaceRoot(path: string): Promise<WorkspaceInfo[]>
 
   /** Embedded Chromium browser views, keyed by the renderer's tab id. */
@@ -681,7 +803,16 @@ export interface AgwebApi {
     get(): Promise<PolicyStatus>
     setMode(mode: PermissionMode): Promise<PolicyStatus>
     setCustom(rules: CustomPolicyRules): Promise<PolicyStatus>
-    /** Answer a pending action prompt; `always` grants the session+kind. */
+    /** Record a standing decision for one site (subdomains included). */
+    setSite(host: string, decision: 'allow' | 'deny'): Promise<PolicyStatus>
+    /** Forget a site's standing decision, returning it to the mode. */
+    clearSite(host: string): Promise<PolicyStatus>
+    /** Ask before acting on high-consequence sites, even under full autonomy. */
+    setSensitive(enabled: boolean): Promise<PolicyStatus>
+    /**
+     * Answer a pending action prompt. For a navigation, `always` records a
+     * standing decision for THAT SITE — not a blanket grant for the session.
+     */
     respond(id: string, allow: boolean, always: boolean): Promise<void>
     onPrompt(listener: (prompt: PolicyPromptInfo) => void): () => void
     /** Policy mode/rules changed (possibly in another window). */
@@ -689,6 +820,22 @@ export interface AgwebApi {
     /** An agent action was denied — surface it so the block isn't silent. */
     onDenied(listener: (info: PolicyDeniedInfo) => void): () => void
   }
+
+  /** WebDeck Sync: settings sync via a local-first file. */
+  sync: {
+    status(): Promise<SyncStatus>
+    /** Open the native picker to choose/create the sync file; returns new status. */
+    chooseFile(): Promise<SyncStatus>
+    setEnabled(enabled: boolean): Promise<SyncStatus>
+    pushNow(): Promise<SyncStatus>
+    pullNow(): Promise<SyncStatus>
+    onChanged(listener: (status: SyncStatus) => void): () => void
+    /** A pull just applied newer settings — re-read anything cached in the UI. */
+    onPulled(listener: () => void): () => void
+  }
+
+  /** A synced theme change arrived from another device — adopt it in the store. */
+  onThemeChanged(listener: (theme: 'light' | 'dark') => void): () => void
 
   /** Terminal sessions, keyed by block id; they outlive renderer mounts. */
   terminal: {

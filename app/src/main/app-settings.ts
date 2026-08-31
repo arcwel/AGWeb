@@ -1,4 +1,3 @@
-import { app } from 'electron'
 import { coreEnv } from '../core/env'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -134,11 +133,12 @@ function notify(settings: AppSettings): void {
 /**
  * Settings that must be decided before `app.whenReady()`.
  *
- * Electron ignores `disableHardwareAcceleration` after the app is ready, so
- * this is called at the top of the main entry point — before anything else.
+ * Electron ignores `disableHardwareAcceleration` after the app is ready, so the
+ * shell reads this at the top of its entry point — before anything else. Kept as
+ * a pure predicate so this store imports no Electron (the shell owns the call).
  */
-export function applyPreReadySettings(): void {
-  if (!readAppSettings().hardwareAcceleration) app.disableHardwareAcceleration()
+export function shouldDisableHardwareAcceleration(): boolean {
+  return !readAppSettings().hardwareAcceleration
 }
 
 /** Push the current settings to every registered session listener. */

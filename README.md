@@ -1,5 +1,8 @@
 <p align="center">
-  <img src="assets/arcwel-icon.png" alt="Arcwel" width="88" />
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/webdeck-lockup-dark.svg" />
+    <img src="assets/webdeck-lockup-light.svg" alt="Arcwel WebDeck" width="320" />
+  </picture>
 </p>
 
 <h1 align="center">Arcwel WebDeck</h1>
@@ -84,7 +87,7 @@ npm run dev
 
 Open a project folder, browse to something, and press <kbd>⌘D</kbd>.
 
-To give the agent a task you'll need an Anthropic API key. Add it in **Settings → AI**, where it's encrypted into the OS keychain (Keychain / libsecret / DPAPI) rather than written as plaintext — or set `ANTHROPIC_API_KEY`. Keys for OpenAI and Gemini can be stored the same way.
+To give the agent a task you'll need an Anthropic API key. **Settings → AI** offers two ways to supply it: store it in WebDeck (encrypted into the OS keychain — Keychain / libsecret / DPAPI — never plaintext), or point WebDeck at your **password manager** (`op read`, `pass show`, `security find-generic-password`, `vault read`), in which case WebDeck stores nothing at all. `ANTHROPIC_API_KEY` also works. Keys for OpenAI and Gemini are handled the same way.
 
 Verify a build the way CI does:
 

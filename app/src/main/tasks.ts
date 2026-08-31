@@ -2,7 +2,7 @@ import fsp from 'node:fs/promises'
 import { join } from 'node:path'
 import type { TaskDefinition, TaskProblem, TaskRun } from '@shared/tasks'
 import { IpcChannels, IpcEvents } from '@shared/ipc'
-import { broadcast } from './windows'
+import { coreBroadcast } from '../core/notify'
 import { getCurrentWorkspace } from './workspace'
 import { runInTerminal, stopTerminal } from './terminal'
 import { core } from '../core/rpc'
@@ -204,7 +204,7 @@ export async function runTask(name: string): Promise<TaskRun> {
   const { sessionId, done } = runInTerminal(task.command, root, () => {})
   const run: TaskRun = { task: name, terminalId: sessionId, problems: [] }
   runs.set(name, run)
-  broadcast(IpcEvents.taskUpdate, run, null)
+  coreBroadcast(IpcEvents.taskUpdate, run, null)
 
   void done.then(({ code, output }) => {
     const finished: TaskRun = {
@@ -213,7 +213,7 @@ export async function runTask(name: string): Promise<TaskRun> {
       problems: parseProblems(output, task.matcher)
     }
     runs.set(name, finished)
-    broadcast(IpcEvents.taskUpdate, finished, null)
+    coreBroadcast(IpcEvents.taskUpdate, finished, null)
   })
 
   return run

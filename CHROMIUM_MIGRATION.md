@@ -134,15 +134,30 @@ print-to-PDF, page capture), not IPC at all.
 - [x] P1 · remaining hybrids triaged — `agentOpenReport`/`slidesOpen` were pure
   core (migrated); `export*` + native dialogs are genuinely shell (become native
   browser features under the fork)
-- [~] P1 · make CORE domains Electron-free — **CoreEnv seam landed**
-  (`src/core/env.ts` + `src/main/core-env.ts`). secrets, app-settings (store),
-  agent, terminal, debug, policy, agent-report and json-store now read host facts
-  (`userDataDir`, `homeDir`, `appDir`, `secrets`) through an injected env, not
-  `electron`. This unblocked direct unit tests of the policy gate and agent
-  lifecycle (`policy.test.ts`, `agent.test.ts`). Remaining before a standalone
-  `webdeck-core`: the reverse core→shell notify (`BrowserWindow` broadcast in
-  policy/dev-servers) and a Node adapter (keystore + config paths) to replace the
-  Electron one. *(finishes at P2 — the fork provides the Node host.)*
+- [x] P1 · make CORE domains Electron-free — **CoreEnv seam landed**
+  (`src/core/env.ts` + `src/main/core-env.ts`), and the **reverse core→shell
+  notify is now injectable too** (`src/core/notify.ts` — `coreBroadcast` with the
+  Electron `broadcast` signature; tasks/lsp/debug/terminal/fs/agent swapped onto
+  it, the shell injects the real sink at startup). `app-settings` shed its last
+  `electron` import (the pre-ready hardware-accel hook is now a pure predicate the
+  shell calls). Every CORE domain except `agent` (still bound to `agent-browser →`
+  the shell's `WebContents`) now loads and runs with no Electron.
+- [x] P0/P2 · **`webdeck-core` runs standalone** — `src/core/node-env.ts` (Node
+  `CoreEnv`) + `src/core/server.ts` (`startWebdeckCore`) boot the CORE domains
+  under the WebSocket transport with zero Electron; `src/core/server.test.ts`
+  drives real domain calls over a WS client with no electron mock.
+- [x] P2 · **all domains headless, agent included** — the agent reaches browser
+  tabs through an injected `AgentBrowserPort` (`src/core/agent-browser-port.ts`;
+  Electron impl in `src/main/agent-browser-adapter.ts`), so `agent.ts` imports no
+  shell module. `checkAction` also works headless now: an *allowed* action no
+  longer requires a UI, only a `confirm` does, and a prompt fails closed if the
+  last client disconnects rather than hanging the agent.
+- [x] P2 · **packaged binary** — `npm run build:core` emits
+  `out/core/webdeck-core.cjs` (~115 KB, 28 modules) and **fails the build if
+  Electron enters the graph**. `npm run verify:core` builds it, runs it as a
+  plain Node process, and drives real domain calls over the socket; CI runs it.
+  Remaining: a Node keystore for `secrets` (reported unavailable in the
+  standalone core, so its API key comes from the environment for now).
 - [~] P0 · Chromium build spike — see [P0_SPIKE_RUNBOOK.md](P0_SPIKE_RUNBOOK.md).
   Bridge deliverable done (`ws-server.ts`, green); a real macOS arm64 Chromium
   build is running on a case-sensitive APFS volume (target M153 / 153.0.8010.12).

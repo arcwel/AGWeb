@@ -5,7 +5,7 @@ import { createRequire } from 'node:module'
 import { createInterface } from 'node:readline'
 import { join } from 'node:path'
 import { IpcEvents } from '@shared/ipc'
-import { broadcast } from './windows'
+import { coreBroadcast } from '../core/notify'
 import { getCurrentWorkspace } from './workspace'
 import { IpcChannels } from '@shared/ipc'
 import { core } from '../core/rpc'
@@ -103,7 +103,7 @@ function pushData(id: string, data: string): void {
   const session = sessions.get(id)
   if (!session) return
   session.buffer = (session.buffer + data).slice(-BUFFER_LIMIT)
-  broadcast(IpcEvents.termData, { id, data }, null)
+  coreBroadcast(IpcEvents.termData, { id, data }, null)
 }
 
 function endSession(id: string, code: number): void {
@@ -112,7 +112,7 @@ function endSession(id: string, code: number): void {
   session.running = false
   session.exitCode = code
   session.proc = undefined
-  broadcast(IpcEvents.termExit, { id, code }, null)
+  coreBroadcast(IpcEvents.termExit, { id, code }, null)
 }
 
 export function createTerminal(
@@ -148,7 +148,7 @@ export function createTerminal(
     // No native pty and no system node to host one: surface a dead session
     // instead of a silently blank terminal marked running.
     sessions.set(id, { backend: 'child', buffer: '', running: false })
-    broadcast(
+    coreBroadcast(
       IpcEvents.termData,
       {
         id,
@@ -156,7 +156,7 @@ export function createTerminal(
       },
       null
     )
-    broadcast(IpcEvents.termExit, { id, code: -1 }, null)
+    coreBroadcast(IpcEvents.termExit, { id, code: -1 }, null)
     return
   }
   sessions.set(id, { backend: 'child', buffer: '', running: true })

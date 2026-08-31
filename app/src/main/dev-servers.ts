@@ -1,8 +1,9 @@
 import { spawn } from 'node:child_process'
 import type { ChildProcess } from 'node:child_process'
 import { createServer } from 'node:http'
+import { hostAllowed, mintServerToken, takeToken } from './local-server-auth'
 import type { Server } from 'node:http'
-import { createReadStream, existsSync, readFileSync, statSync } from 'node:fs'
+import { createReadStream, existsSync, readFileSync, realpathSync, statSync } from 'node:fs'
 import { extname, join, normalize, sep } from 'node:path'
 import type { BrowserWindow } from 'electron'
 import { IpcEvents } from '@shared/ipc'
@@ -10,6 +11,7 @@ import type { DevServerStatus } from '@shared/ipc'
 import { getCurrentWorkspace } from './workspace'
 import { IpcChannels } from '@shared/ipc'
 import { core } from '../core/rpc'
+import { coreBroadcast } from '../core/notify'
 
 /**
  * Workspace dev server for the Preview block (Phase 4.1). Two modes:
@@ -25,7 +27,6 @@ const URL_PATTERN = /https?:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0)(?::\d+)?[^
 const LOG_TAIL = 12
 const HEALTH_TIMEOUT_MS = 30_000
 
-let host: BrowserWindow | null = null
 let child: ChildProcess | null = null
 let staticServer: Server | null = null
 let generation = 0
@@ -38,13 +39,13 @@ let status: DevServerStatus = {
   logTail: []
 }
 
-export function initDevServers(window: BrowserWindow): void {
-  host = window
-}
+/** Kept for the shell's startup sequence; status now fans out through the
+ *  injected core broadcaster, so no window reference is needed. */
+export function initDevServers(_window: BrowserWindow): void {}
 
 function push(update: Partial<DevServerStatus>): void {
   status = { ...status, ...update, script: detectScript() }
-  if (host && !host.isDestroyed()) host.webContents.send(IpcEvents.devServerUpdate, status)
+  coreBroadcast(IpcEvents.devServerUpdate, status, null)
 }
 
 function appendLog(chunk: string): void {
@@ -153,26 +154,29 @@ const CONTENT_TYPES: Record<string, string> = {
   '.woff2': 'font/woff2'
 }
 
-/** Reject non-loopback Host headers so a rebound DNS name can't read
- *  workspace files through this server (P1-2). */
-function staticHostAllowed(header: string | undefined, port: number): boolean {
-  if (!header) return false
-  const host = header.toLowerCase()
-  return host === `127.0.0.1:${port}` || host === `localhost:${port}` || host === `[::1]:${port}`
-}
-
 async function startStatic(workspacePath: string): Promise<DevServerStatus> {
   const gen = generation
   push({ state: 'starting', mode: 'static', url: null, logTail: [] })
 
   let servedPort = 0
+  // A capability in the URL. The Host check below stops a rebound DNS name
+  // reaching us through the user's browser; it does nothing about the threat
+  // that actually applies to a loopback port — any other process running as
+  // this user could set the right Host and read the whole workspace root.
+  const token = mintServerToken()
   staticServer = createServer((req, res) => {
-    if (!staticHostAllowed(req.headers.host, servedPort)) {
+    if (!hostAllowed(req.headers.host, servedPort)) {
       res.writeHead(403)
       res.end('Forbidden')
       return
     }
-    const rel = decodeURIComponent((req.url ?? '/').split('?')[0])
+    const path = takeToken(req.url ?? '/', token)
+    if (path === null) {
+      res.writeHead(404)
+      res.end('Not found')
+      return
+    }
+    const rel = decodeURIComponent(path)
     // normalize + prefix check keeps requests inside the workspace root
     const resolved = normalize(join(workspacePath, rel))
     if (resolved !== workspacePath && !resolved.startsWith(workspacePath + sep)) {
@@ -184,6 +188,22 @@ async function startStatic(workspacePath: string): Promise<DevServerStatus> {
     try {
       if (statSync(file).isDirectory()) file = join(file, 'index.html')
       statSync(file)
+      // Resolve symlinks BEFORE serving. The prefix check above is textual, so
+      // a link inside the workspace pointing at ~/.ssh or /etc passes it and
+      // then gets streamed. That is not hypothetical for a cloned repo: the
+      // link ships in someone else's source, and opening their project is
+      // enough.
+      // Compare against the RESOLVED root: on macOS the workspace itself often
+      // sits under /var, which is a symlink to /private/var, so comparing a
+      // resolved path to an unresolved root rejects the workspace's own files.
+      const realRoot = realpathSync(workspacePath)
+      const real = realpathSync(file)
+      if (real !== realRoot && !real.startsWith(realRoot + sep)) {
+        res.writeHead(403)
+        res.end()
+        return
+      }
+      file = real
     } catch {
       res.writeHead(404)
       res.end('Not found')
@@ -200,7 +220,9 @@ async function startStatic(workspacePath: string): Promise<DevServerStatus> {
   if (gen !== generation) return getDevServerStatus()
   const address = staticServer?.address()
   servedPort = address && typeof address === 'object' ? address.port : 0
-  const url = servedPort ? `http://127.0.0.1:${servedPort}` : null
+  // The token is part of the URL, so everything relative inside the served
+  // pages resolves under it without rewriting a thing.
+  const url = servedPort ? `http://127.0.0.1:${servedPort}/${token}/` : null
   push({
     state: url ? 'running' : 'error',
     url,

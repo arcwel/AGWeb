@@ -1,0 +1,163 @@
+name: Fork verification (manual)
+
+# The three gates that CANNOT run on a hosted runner, and why this workflow is
+# shaped the way it is.
+#
+#   verify:patches    needs the Chromium checkout   (~80 GB, external drive)
+#   verify:fork       needs the BUILT browser       (macOS arm64 component build)
+#   verify:hardening  needs the built browser AND the checkout's `gn`
+#
+# Today the fork builds in exactly one place: a macOS arm64 machine with the
+# checkout at the path recorded in chromium/fork.json (an external drive — see
+# chromium/README.md). GitHub's hosted macOS runners have neither the checkout
+# nor the ~1 hour build, so a push/PR-triggered job for these would be red on
+# every single run. A permanently-red gate is worse than no gate: it teaches
+# everyone to ignore red, which is how the "everything passes and the fork is
+# broken" failures in this repo happened in the first place. So:
+#
+#   * This workflow is workflow_dispatch ONLY. It never runs on push or PR.
+#     Nothing here can go red on someone else's unrelated change.
+#   * There is NO self-hosted runner registered for this repo today. The
+#     `runner` input defaults to the label `self-hosted`, which is the label
+#     GitHub gives every self-hosted runner automatically — but until someone
+#     registers the Mac that has the build, a dispatch will sit queued and must
+#     be cancelled. That is the honest failure mode: visibly pending, never
+#     falsely green. Set the input to a narrower label once a runner exists.
+#   * The everyday gate is local, not CI. Before pushing anything that touches
+#     chromium/, on the machine with the build:
+#         npm --prefix app run verify:fork:all
+#     which runs verify:patches, verify:fork and verify:hardening in order and
+#     stops at the first failure. This workflow is the same three checks, run
+#     on demand with the results attached to a run.
+#
+# Exit codes are NOT swallowed anywhere below. Each script uses
+# 0 = pass · 1 = broken · 2 = could not check, and 2 fails this job exactly like
+# 1 does. "The browser wasn't there so we skipped it" is not a pass.
+
+on:
+  workflow_dispatch:
+    inputs:
+      runner:
+        description: 'Runner label. Must be a machine with the Chromium checkout AND a built fork (macOS arm64). "self-hosted" only resolves if such a runner is registered.'
+        required: true
+        default: 'self-hosted'
+      browser:
+        description: 'Path to the built browser binary. Leave empty to use the default baked into the verify scripts.'
+        required: false
+        default: ''
+      checkout:
+        description: 'Path to the Chromium src checkout. Leave empty to use "checkout" from chromium/fork.json.'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  # One at a time: these launch a real browser and bind fixed debug ports
+  # (9333, 9335). Two concurrent runs on the same machine would fight.
+  group: fork-verify-${{ inputs.runner }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Fork gates on ${{ inputs.runner }}
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: app
+    env:
+      BROWSER_PATH: ${{ inputs.browser }}
+      CHECKOUT_PATH: ${{ inputs.checkout }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # No `npm ci`: all three scripts import only Node builtins. Skipping the
+      # install keeps this job about the fork and not about node_modules.
+
+      - name: Preflight — is the checkout actually here?
+        id: preflight
+        # Fails the job when the drive is unmounted, rather than letting three
+        # checks each fail later with the same root cause. The browser path is
+        # deliberately NOT re-derived here: the scripts own their default and
+        # exit 2 with the path they looked at, which is the message you want.
+        run: |
+          src="$CHECKOUT_PATH"
+          if [ -z "$src" ]; then
+            src=$(node -p "JSON.parse(require('fs').readFileSync('../chromium/fork.json','utf8')).checkout || ''")
+          fi
+          echo "checkout: $src"
+          if [ -z "$src" ] || [ ! -d "$src/.git" ]; then
+            echo "::error title=No Chromium checkout::'$src' is not a git checkout. The external drive is probably not mounted. See chromium/README.md."
+            exit 2
+          fi
+          echo "src=$src" >> "$GITHUB_OUTPUT"
+
+      - name: verify:patches — does the repo still describe the fork?
+        if: steps.preflight.outcome == 'success'
+        run: |
+          args=()
+          if [ -n "$CHECKOUT_PATH" ]; then args+=(--checkout "$CHECKOUT_PATH"); fi
+          set +e
+          npm run verify:patches -- "${args[@]}"
+          code=$?
+          set -e
+          case "$code" in
+            0) echo "- verify:patches — **PASS**" >> "$GITHUB_STEP_SUMMARY" ;;
+            1) echo "- verify:patches — **FAIL** (chromium/patches no longer describes the checkout)" >> "$GITHUB_STEP_SUMMARY" ;;
+            *) echo "- verify:patches — **COULD NOT CHECK** (exit $code). Not a pass." >> "$GITHUB_STEP_SUMMARY" ;;
+          esac
+          exit $code
+
+      - name: verify:fork — does chrome://webdeck actually work?
+        if: steps.preflight.outcome == 'success'
+        run: |
+          args=(--screenshot "$RUNNER_TEMP/fork.png")
+          if [ -n "$BROWSER_PATH" ]; then args+=(--browser "$BROWSER_PATH"); fi
+          set +e
+          npm run verify:fork -- "${args[@]}"
+          code=$?
+          set -e
+          case "$code" in
+            0) echo "- verify:fork — **PASS**" >> "$GITHUB_STEP_SUMMARY" ;;
+            1) echo "- verify:fork — **FAIL** (the fork is broken)" >> "$GITHUB_STEP_SUMMARY" ;;
+            *) echo "- verify:fork — **COULD NOT CHECK** (exit $code, usually: no built browser at that path). Not a pass." >> "$GITHUB_STEP_SUMMARY" ;;
+          esac
+          exit $code
+
+      - name: verify:hardening — is the sandbox and site isolation still on?
+        if: steps.preflight.outcome == 'success'
+        run: |
+          args=()
+          if [ -n "$BROWSER_PATH" ]; then args+=(--browser "$BROWSER_PATH"); fi
+          set +e
+          npm run verify:hardening -- "${args[@]}"
+          code=$?
+          set -e
+          case "$code" in
+            0) echo "- verify:hardening — **PASS**" >> "$GITHUB_STEP_SUMMARY" ;;
+            1) echo "- verify:hardening — **FAIL** (a load-bearing defence is off)" >> "$GITHUB_STEP_SUMMARY" ;;
+            *) echo "- verify:hardening — **COULD NOT CHECK** (exit $code; the script also returns 2 when a security-critical property could not be measured at all). Not a pass." >> "$GITHUB_STEP_SUMMARY" ;;
+          esac
+          exit $code
+
+      - name: Upload verify:fork screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: webdeck-fork-verify
+          path: ${{ runner.temp }}/fork.png
+          if-no-files-found: warn
+
+      - name: Note when the gates did not run
+        if: always() && steps.preflight.outcome != 'success'
+        run: |
+          {
+            echo "### Fork gates did NOT run"
+            echo
+            echo "Preflight failed, so verify:patches / verify:fork / verify:hardening were skipped."
+            echo "**Nothing about the fork was verified by this run.**"
+          } >> "$GITHUB_STEP_SUMMARY"

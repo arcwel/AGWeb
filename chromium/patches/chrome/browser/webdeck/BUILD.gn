@@ -1,0 +1,17 @@
+# Copyright 2026 Arcwel. All rights reserved.
+
+assert(is_win || is_mac || is_linux)
+
+source_set("core_service") {
+  sources = [
+    "webdeck_core_service.cc",
+    "webdeck_core_service.h",
+  ]
+
+  deps = [
+    "//base",
+    "//chrome/common:constants",
+    # So the core can report which browser build it belongs to.
+    "//components/version_info",
+  ]
+}

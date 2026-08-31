@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 552 176" width="552" height="176" role="img" aria-label="WebDeck by Arcwel">
+  <g transform="scale(0.171875)">
+  <defs>
+    <linearGradient id="tile" gradientUnits="userSpaceOnUse" x1="120" y1="0" x2="904" y2="1024">
+      <stop offset="0" stop-color="#33409B"></stop>
+      <stop offset="0.55" stop-color="#1B2044"></stop>
+      <stop offset="1" stop-color="#0F1119"></stop>
+    </linearGradient>
+    <linearGradient id="bezel" gradientUnits="userSpaceOnUse" x1="140" y1="40" x2="884" y2="984">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.6"></stop>
+      <stop offset="0.48" stop-color="#7B2BFF" stop-opacity="0.4"></stop>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0.2"></stop>
+    </linearGradient>
+    <linearGradient id="sheen" gradientUnits="userSpaceOnUse" x1="60" y1="0" x2="700" y2="620">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.26"></stop>
+      <stop offset="0.32" stop-color="#FFFFFF" stop-opacity="0.03"></stop>
+      <stop offset="0.55" stop-color="#FFFFFF" stop-opacity="0"></stop>
+    </linearGradient>
+    <linearGradient id="sweep" gradientUnits="userSpaceOnUse" x1="0" y1="820" x2="1080" y2="-40">
+      <stop offset="0" stop-color="#A62BFF" stop-opacity="0.9"></stop>
+      <stop offset="0.18" stop-color="#A62BFF" stop-opacity="1"></stop>
+      <stop offset="0.55" stop-color="#8A33FF" stop-opacity="1"></stop>
+      <stop offset="0.8" stop-color="#6633FF" stop-opacity="0.4"></stop>
+      <stop offset="1" stop-color="#6633FF" stop-opacity="0"></stop>
+    </linearGradient>
+    <clipPath id="clip"><rect x="5" y="5" width="1014" height="1014" rx="253"></rect></clipPath>
+    <clipPath id="behind"><rect x="400" y="0" width="624" height="1024"></rect></clipPath>
+    <clipPath id="front"><rect x="0" y="0" width="400" height="1024"></rect></clipPath>
+  </defs>
+  <g clip-path="url(#clip)">
+    <rect x="0" y="0" width="1024" height="1024" rx="256" fill="url(#tile)"></rect>
+    <g clip-path="url(#behind)"><path d="M -120 795 A 1228.8 1228.8 0 0 1 1120 55" fill="none" stroke="url(#sweep)" stroke-width="41" stroke-linecap="round"></path></g>
+    <g fill="none" stroke="#FFFFFF" stroke-width="6.4">
+      <rect x="133" y="133" width="548" height="548" rx="46" stroke-opacity="0.62"></rect>
+      <rect x="717" y="133" width="174" height="548" rx="46" stroke-opacity="0.4"></rect>
+      <rect x="133" y="717" width="758" height="174" rx="46" stroke-opacity="0.4"></rect>
+    </g>
+    <g clip-path="url(#front)"><path d="M -120 795 A 1228.8 1228.8 0 0 1 1120 55" fill="none" stroke="url(#sweep)" stroke-width="41" stroke-linecap="round"></path></g>
+    <rect x="0" y="0" width="1024" height="1024" rx="256" fill="url(#sheen)"></rect>
+  </g>
+  <rect x="5" y="5" width="1014" height="1014" rx="253" fill="none" stroke="url(#bezel)" stroke-width="10"></rect>
+</g>
+  <text x="220" y="98" font-family="Futura, 'Avenir Next', 'Century Gothic', 'URW Gothic', 'Trebuchet MS', sans-serif" font-size="64" font-weight="600" letter-spacing="0.5" fill="#E6E8EA">WebDeck</text>
+  <text x="223" y="132" font-family="Futura, 'Avenir Next', 'Century Gothic', 'URW Gothic', 'Trebuchet MS', sans-serif" font-size="20" font-weight="500" letter-spacing="5" fill="#8B9198">BY ARCWEL</text>
+</svg>

@@ -1,0 +1,246 @@
+name: Upstream watch
+
+# `npm run upstream:check` answers two questions and exits 1 for BOTH of them:
+#
+#   1. Has our pinned Chromium base fallen behind upstream?
+#      This is NORMAL. Upstream ships every week; we do not. Failing a build
+#      because Chrome released again would make this check noise within a
+#      fortnight, and noise is how a gate stops being a gate.
+#
+#   2. Does a tracked patch no longer apply?
+#      This is NOT normal. It means the fork can no longer be rebuilt from its
+#      own patches — the exact silent rot chromium/patches exists to prevent.
+#
+# So this workflow separates them by reading the script's own --json output
+# instead of its exit code:
+#
+#   behind upstream      -> opens/updates ONE tracking issue. Job stays green.
+#   patch conflict       -> opens/updates the same issue AND fails the job.
+#   exit 2 (cannot run)  -> fails the job. A check that did not run is not a
+#                          pass, and this is the one thing here that must never
+#                          be mistaken for "all clear".
+#   back to current      -> closes the tracking issue, so it cannot rot open.
+#
+# The patch half needs a Chromium checkout, which ubuntu-latest does not have —
+# on the scheduled run it reports "patch set: NOT CHECKED" with the reason, and
+# that is printed in the summary and the issue body rather than being quietly
+# omitted. To actually run it, dispatch this workflow with `runner` set to a
+# self-hosted label on the machine that has the checkout (see fork-verify.yml
+# for why no such runner is registered by default).
+
+on:
+  schedule:
+    # Mondays, 09:00 UTC. Weekly is the right cadence: upstream stable moves
+    # about that often, and a daily issue-bumping job is a job people mute.
+    - cron: '0 9 * * 1'
+  workflow_dispatch:
+    inputs:
+      runner:
+        description: 'Runner label. Use a self-hosted label with the Chromium checkout to make the patch-applicability half actually run.'
+        required: false
+        default: 'ubuntu-latest'
+      channel:
+        description: 'Upstream channel to compare against (stable | beta | dev). Empty uses chromium/fork.json.'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: upstream-watch
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ${{ inputs.runner || 'ubuntu-latest' }}
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: app
+    env:
+      ISSUE_TITLE: '[upstream-watch] Chromium fork needs attention'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # No `npm ci`: upstream-check.mjs is deliberately dependency-free.
+
+      - name: Run upstream:check
+        id: run
+        # Never fails here — the verdict is decided from the JSON below, so that
+        # "behind" and "patch conflict" can be told apart. The exit code is kept
+        # and used; it is not discarded.
+        run: |
+          args=(--json)
+          if [ -n "${{ inputs.channel }}" ]; then args+=(--channel "${{ inputs.channel }}"); fi
+          set +e
+          node scripts/upstream-check.mjs "${args[@]}" > "$RUNNER_TEMP/upstream.json"
+          echo $? > "$RUNNER_TEMP/upstream.code"
+          set -e
+          cat "$RUNNER_TEMP/upstream.json"
+          echo "upstream-check exit code: $(cat "$RUNNER_TEMP/upstream.code")"
+
+      - name: Interpret the result
+        id: verdict
+        run: |
+          cat > "$RUNNER_TEMP/summarize.mjs" <<'MJS'
+          import { appendFileSync, readFileSync, writeFileSync } from 'node:fs'
+
+          const [jsonPath, codePath, bodyPath] = process.argv.slice(2)
+          const exitCode = Number((readFileSync(codePath, 'utf8') || '').trim())
+
+          let result = null
+          try {
+            result = JSON.parse(readFileSync(jsonPath, 'utf8'))
+          } catch {
+            result = null
+          }
+
+          const out = (key, value) =>
+            appendFileSync(process.env.GITHUB_OUTPUT, key + '=' + value + '\n')
+          const lines = []
+          const say = (line) => lines.push(line)
+
+          // ── the check itself could not run ──────────────────────────────────
+          if (!result || result.ok === false) {
+            const why =
+              (result && result.error) ||
+              'upstream-check produced no parseable JSON (exit ' + exitCode + ')'
+            say('### upstream-check: COULD NOT RUN')
+            say('')
+            say('```')
+            say(why)
+            say('```')
+            say('')
+            say('This is **not** an all-clear. Neither the version delta nor the patch set was checked.')
+            appendFileSync(process.env.GITHUB_STEP_SUMMARY, lines.join('\n') + '\n')
+            writeFileSync(bodyPath, '')
+            out('fail', 'true')
+            out('failReason', 'upstream-check could not run')
+            out('notify', 'false')
+            out('resolved', 'false')
+            process.exit(0)
+          }
+
+          const patches = result.patches || { checked: false, reason: 'no patch data' }
+          const conflicts = patches.checked ? patches.conflicts : 0
+          const behind = result.status === 'behind'
+
+          const patchLine = patches.checked
+            ? conflicts > 0
+              ? '**' + conflicts + ' of ' + patches.files.length + ' tracked patches NO LONGER APPLY**'
+              : 'all ' + patches.files.length + ' tracked patches still apply (against ' +
+                (patches.checkoutVersion || 'an unknown checkout version') + ')'
+            : '**NOT CHECKED** — ' + (patches.reason || 'no reason given') +
+              '. This half of the check did not run; it is not a pass.'
+
+          say('### Chromium fork vs upstream ' + result.channel + ' (' + result.platform + ')')
+          say('')
+          say('| | |')
+          say('| --- | --- |')
+          say('| our pin | `' + result.pinned.version + '` (M' + result.pinned.milestone + ') |')
+          say('| upstream | `' + result.upstream.version + '` (M' + result.upstream.milestone + ') |')
+          say('| status | **' + result.status + '**' +
+              (behind ? ' — ' + result.delta.milestones + ' milestone(s) behind. Expected; not a build failure.' : '') + ' |')
+          say('| patch set | ' + patchLine + ' |')
+          say('')
+          if (!patches.checked) {
+            say('> The patch-applicability half needs the Chromium checkout, which this runner does not have.')
+            say('> Dispatch this workflow with `runner` set to the machine that has it, or run')
+            say('> `npm --prefix app run upstream:check` there.')
+            say('')
+          }
+
+          appendFileSync(process.env.GITHUB_STEP_SUMMARY, lines.join('\n') + '\n')
+
+          // ── the issue body ──────────────────────────────────────────────────
+          const body = []
+          body.push('Automated by `.github/workflows/upstream-watch.yml`. Updated on every run;')
+          body.push('closed automatically by a run that checked BOTH halves and found the pin')
+          body.push('current with no patch conflicts. A run that could not check the patch set')
+          body.push('never closes this issue.')
+          body.push('')
+          body.push('- **our pin:** `' + result.pinned.version + '` (from `chromium/fork.json`)')
+          body.push('- **upstream ' + result.channel + ' / ' + result.platform + ':** `' + result.upstream.version + '`')
+          body.push('- **status:** ' + result.status)
+          body.push('- **patch set:** ' + patchLine)
+          body.push('')
+          if (conflicts > 0) {
+            body.push('### Conflicting patches — act on this one')
+            body.push('')
+            for (const file of patches.files.filter((f) => f.status === 'conflict')) {
+              body.push('- `' + file.path + '` — ' + (file.detail || 'does not apply'))
+            }
+            body.push('')
+            body.push('The fork can no longer be rebuilt from `chromium/patches/`. Re-cut the patch')
+            body.push('from the checkout and re-run `npm --prefix app run verify:patches`.')
+            body.push('')
+          }
+          if (behind) {
+            body.push('### Behind upstream')
+            body.push('')
+            body.push('Normal, and deliberately not a build failure. Rebase when it is worth the')
+            body.push('~1 h build (see `chromium/README.md`), then set `base` and `branch` in')
+            body.push('`chromium/fork.json` — this check is only as honest as that number.')
+            body.push('')
+          }
+          body.push('<sub>run: ' + (process.env.RUN_URL || 'n/a') + '</sub>')
+          writeFileSync(bodyPath, body.join('\n') + '\n')
+
+          const notify = behind || conflicts > 0
+          // Only close the issue on a run that actually checked BOTH halves.
+          // A hosted run has no checkout, so it can be "current, no conflicts
+          // found" purely because it never looked — closing on that would let
+          // an unverified half silently resolve a real patch conflict found by
+          // an earlier run on the machine that does have the checkout.
+          out('fail', conflicts > 0 ? 'true' : 'false')
+          out('failReason', conflicts > 0 ? conflicts + ' tracked patch(es) no longer apply' : '')
+          out('notify', notify ? 'true' : 'false')
+          out('resolved', !notify && patches.checked ? 'true' : 'false')
+          out('summary', result.status + ' / patches ' + (patches.checked ? conflicts + ' conflicts' : 'not checked'))
+          MJS
+          node "$RUNNER_TEMP/summarize.mjs" \
+            "$RUNNER_TEMP/upstream.json" \
+            "$RUNNER_TEMP/upstream.code" \
+            "$RUNNER_TEMP/issue-body.md"
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+      - name: Open or update the tracking issue
+        if: steps.verdict.outputs.notify == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          existing=$(gh issue list --state open --limit 50 --json number,title \
+            --jq "map(select(.title == \"$ISSUE_TITLE\")) | .[0].number // empty")
+          if [ -n "$existing" ]; then
+            gh issue edit "$existing" --body-file "$RUNNER_TEMP/issue-body.md"
+            gh issue comment "$existing" --body "Re-checked: ${{ steps.verdict.outputs.summary }}"
+            echo "updated issue #$existing"
+          else
+            gh issue create --title "$ISSUE_TITLE" --body-file "$RUNNER_TEMP/issue-body.md"
+          fi
+
+      # Only fires when the run checked both halves. A hosted run (no checkout)
+      # leaves an open issue alone rather than closing it on half a check.
+      - name: Close the tracking issue when it is resolved
+        if: steps.verdict.outputs.resolved == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          existing=$(gh issue list --state open --limit 50 --json number,title \
+            --jq "map(select(.title == \"$ISSUE_TITLE\")) | .[0].number // empty")
+          if [ -n "$existing" ]; then
+            gh issue close "$existing" --comment "Resolved: ${{ steps.verdict.outputs.summary }}"
+          fi
+
+      - name: Fail only on the loud cases
+        if: always() && steps.verdict.outputs.fail == 'true'
+        # Being behind upstream never reaches here. A patch that no longer
+        # applies, or a check that could not run at all, does.
+        run: |
+          echo "::error title=upstream-watch::${{ steps.verdict.outputs.failReason }}"
+          exit 1

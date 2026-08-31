@@ -402,14 +402,46 @@ function WorkspaceTree(): React.JSX.Element {
           </div>
         ))}
 
-        <button
-          onClick={() => void window.agweb.addWorkspaceRoot().then(refreshRoots)}
-          className="mt-2 w-full rounded border border-dashed border-slate-300 px-2 py-1 text-[10px] font-semibold text-slate-400 hover:border-slate-400 hover:text-slate-600 dark:border-slate-700 dark:hover:text-slate-300"
-          title="Grant another folder to this session. Not remembered after a restart."
-          data-testid="add-workspace-root"
-        >
-          + folder
-        </button>
+        {/* On a host with a native picker this opens one. Without it, the
+            button had nothing to open and its promise rejected with nothing on
+            screen — so ask for the path instead of offering a dead control. */}
+        {window.agweb.host.canPickPaths ? (
+          <button
+            onClick={() =>
+              // The picker and the grant are separate concerns: the host opens
+              // a folder chooser, the core adds the path. That split is what
+              // lets both hosts grant roots with one implementation.
+              void window.agweb.pickPaths('dir').then((paths) => {
+                if (!paths[0]) return
+                void window.agweb.addWorkspaceRoot(paths[0]).then(() => refreshRoots())
+              })
+            }
+            className="mt-2 w-full rounded border border-dashed border-slate-300 px-2 py-1 text-[10px] font-semibold text-slate-400 hover:border-slate-400 hover:text-slate-600 dark:border-slate-700 dark:hover:text-slate-300"
+            title="Grant another folder to this session. Not remembered after a restart."
+            data-testid="add-workspace-root"
+          >
+            + folder
+          </button>
+        ) : (
+          <input
+            aria-label="Grant another folder by path"
+            placeholder="+ folder — type a path"
+            spellCheck={false}
+            data-testid="add-workspace-root"
+            title="Grant another folder to this session. Not remembered after a restart."
+            onKeyDown={(e) => {
+              if (e.key !== 'Enter') return
+              const path = e.currentTarget.value.trim()
+              if (!path) return
+              const field = e.currentTarget
+              void window.agweb.addWorkspaceRoot(path).then(() => {
+                void refreshRoots()
+                field.value = ''
+              })
+            }}
+            className="mt-2 w-full rounded border border-dashed border-slate-300 bg-transparent px-2 py-1 text-[10px] font-semibold text-slate-400 outline-none placeholder:text-slate-400 focus:border-sky-500 dark:border-slate-700"
+          />
+        )}
       </div>
     </div>
   )
@@ -419,6 +451,7 @@ function NoWorkspace(): React.JSX.Element {
   const workspace = useShellStore((s) => s.workspace)
   const setWorkspace = useShellStore((s) => s.setWorkspace)
   const [recent, setRecent] = useState<RecentProject[]>([])
+  const [pathError, setPathError] = useState('')
 
   useEffect(() => {
     let cancelled = false
@@ -433,16 +466,43 @@ function NoWorkspace(): React.JSX.Element {
 
   return (
     <div className="flex h-full flex-col gap-2 overflow-y-auto p-3 text-xs">
-      <button
-        onClick={() =>
-          void window.agweb.openWorkspace().then((ws) => {
-            if (ws) setWorkspace(ws)
-          })
-        }
-        className="rounded-md bg-sky-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-sky-500"
-      >
-        Open Project Folder…
-      </button>
+      {window.agweb.host.canPickPaths ? (
+        <button
+          onClick={() =>
+            void window.agweb.openWorkspace().then((ws) => {
+              if (ws) setWorkspace(ws)
+            })
+          }
+          className="rounded-md bg-sky-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-sky-500"
+        >
+          Open Project Folder…
+        </button>
+      ) : (
+        // No native picker on this host — offer the path directly rather than a
+        // button that cannot do anything. See StartPage for the same trade.
+        <>
+          <input
+            aria-label="Open a project by path"
+            placeholder="~/code/my-project"
+            spellCheck={false}
+            onKeyDown={(e) => {
+              if (e.key !== 'Enter') return
+              const path = e.currentTarget.value.trim()
+              if (!path) return
+              setPathError('')
+              // A rejected path resolves to null, and without this the field
+              // just sat there looking accepted — the same silent nothing the
+              // picker-less button used to give. StartPage says so; so does this.
+              void window.agweb.openWorkspacePath(path).then((ws) => {
+                if (ws) setWorkspace(ws)
+                else setPathError(`Could not open “${path}” — check the path and try again.`)
+              })
+            }}
+            className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs dark:border-slate-600 dark:bg-slate-900"
+          />
+          {pathError && <div className="text-[11px] text-rose-500">{pathError}</div>}
+        </>
+      )}
       <div className="text-slate-500">No project open.</div>
       {recent.length > 0 && (
         <>

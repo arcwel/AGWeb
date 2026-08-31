@@ -1,0 +1,34 @@
+commit be97bc0bebd68d5d98717b1c18707228398cfd68
+Author: Arcwel <dev@arcwel.tech>
+Date:   Sun Aug 30 06:23:07 2026 -0700
+
+    webdeck: rebrand Chromium -> Arcwel WebDeck
+    
+    First patch in the WebDeck fork's patch set. Renames the product,
+    company, copyright, and macOS bundle id (tech.arcwel.webdeck) so the
+    build ships as Arcwel WebDeck rather than Chromium. Verified:
+    `--version` reports 'Arcwel WebDeck 153.0.8010.12', app bundle renamed.
+
+diff --git a/chrome/app/theme/chromium/BRANDING b/chrome/app/theme/chromium/BRANDING
+index f8363d5b294fe..f0dd80f04699a 100644
+--- a/chrome/app/theme/chromium/BRANDING
++++ b/chrome/app/theme/chromium/BRANDING
+@@ -1,10 +1,10 @@
+-COMPANY_FULLNAME=The Chromium Authors
+-COMPANY_SHORTNAME=The Chromium Authors
+-PRODUCT_FULLNAME=Chromium
+-PRODUCT_SHORTNAME=Chromium
+-PRODUCT_INSTALLER_FULLNAME=Chromium Installer
+-PRODUCT_INSTALLER_SHORTNAME=Chromium Installer
+-COPYRIGHT=Copyright @LASTCHANGE_YEAR@ The Chromium Authors. All rights reserved.
+-MAC_BUNDLE_ID=org.chromium.Chromium
++COMPANY_FULLNAME=Arcwel
++COMPANY_SHORTNAME=Arcwel
++PRODUCT_FULLNAME=Arcwel WebDeck
++PRODUCT_SHORTNAME=WebDeck
++PRODUCT_INSTALLER_FULLNAME=Arcwel WebDeck Installer
++PRODUCT_INSTALLER_SHORTNAME=WebDeck Installer
++COPYRIGHT=Copyright @LASTCHANGE_YEAR@ Arcwel. All rights reserved.
++MAC_BUNDLE_ID=tech.arcwel.webdeck
+ MAC_CREATOR_CODE=Cr24
+ MAC_TEAM_ID=

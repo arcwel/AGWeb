@@ -9,6 +9,11 @@ const MODES: { id: PermissionMode; label: string; hint: string }[] = [
     hint: 'Workspace writes auto-approve; the rest confirms'
   },
   { id: 'agent', label: 'Agent-driven', hint: 'Autonomous in the workspace and allowlisted hosts' },
+  {
+    id: 'autonomous',
+    label: 'Full autonomy',
+    hint: 'Never asks. Acts as you in your browser session — the audit log is the record'
+  },
   { id: 'custom', label: 'Custom', hint: 'Your rules below' }
 ]
 
@@ -113,6 +118,57 @@ export function PolicyControls(): React.JSX.Element | null {
             className="min-w-40 flex-1 rounded border border-slate-300 bg-transparent px-1.5 py-0.5 outline-none focus:border-sky-500 dark:border-slate-600"
           />
         </div>
+      )}
+      {/* Standing per-site decisions. A grant the user cannot see is a grant
+          they cannot revoke, and these are made from a prompt in the middle of
+          a task — exactly when nobody is keeping track. */}
+      {policy.sites.length > 0 && (
+        <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px]">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+            Sites
+          </span>
+          {policy.sites.map((site) => (
+            <span
+              key={site.host}
+              className={`inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 ${
+                site.decision === 'allow'
+                  ? 'border-emerald-500/40 text-emerald-600 dark:text-emerald-400'
+                  : 'border-rose-500/40 text-rose-600 dark:text-rose-400'
+              }`}
+              title={`${site.decision === 'allow' ? 'Always allowed' : 'Always denied'} — set ${new Date(
+                site.grantedAt
+              ).toLocaleString()}`}
+            >
+              {site.host}
+              <button
+                onClick={() => void window.agweb.policy.clearSite(site.host).then(setPolicy)}
+                aria-label={`Forget ${site.host}`}
+                className="opacity-60 hover:opacity-100"
+              >
+                ×
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+      {/* Only where it changes something. In secure and review every
+          navigation confirms anyway, so the sensitive-site check is redundant
+          there and this row is pure noise in a strip this tight — it made the
+          panel overflow onto the composer. */}
+      {(policy.mode === 'agent' || policy.mode === 'autonomous') && (
+        <label className="mt-1.5 flex items-center gap-1.5 text-[11px] text-slate-500">
+          <input
+            type="checkbox"
+            checked={policy.blockSensitiveSites}
+            onChange={(e) =>
+              void window.agweb.policy.setSensitive(e.target.checked).then(setPolicy)
+            }
+          />
+          Ask before acting on banking, payment and password sites
+          {policy.mode === 'autonomous' && (
+            <span className="text-slate-400">— applies even under full autonomy</span>
+          )}
+        </label>
       )}
     </div>
   )

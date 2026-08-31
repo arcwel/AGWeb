@@ -1,0 +1,328 @@
+#!/usr/bin/env node
+// Builds `webdeck-core` — the standalone IDE/agent service the Chromium fork
+// spawns — as a signable, self-contained macOS executable.
+//
+// Output (out/core by default):
+//
+//   webdeck-core                     a Mach-O Single Executable Application
+//   webdeck-core-runtime/            the parts that cannot live inside it
+//     node_modules/node-pty/…          native addon (pty.node, spawn-helper)
+//     node_modules/reveal.js/…         data files slides.ts require.resolve()s
+//     resources/…                      pty host, vendored js-debug adapter
+//   webdeck-core.cjs                 the intermediate bundle (kept for debugging)
+//
+// WHY A SINGLE EXECUTABLE APPLICATION, and not the alternatives:
+//
+//   * A shell script running the user's Node (what shipped before) cannot be
+//     notarized. Every executable inside a signed bundle must be sealed and
+//     carry the same Team ID, and Chrome signs with `library` validation, which
+//     forbids loading anything else. It also assumed a Homebrew install.
+//   * `node --build-snapshot` produces a *blob*, not an executable. It still
+//     needs a `node` to run it, so it solves nothing on its own. (SEA can embed
+//     a snapshot; see useSnapshot below for why we don't.)
+//   * Shipping a `node` binary beside a loose .cjs works, but leaves our code
+//     outside the code signature — sealed as a bundle resource at best — and
+//     needs a second Mach-O launcher because `node` has no way to be invoked as
+//     `webdeck-core`. SEA puts the JS *inside* the signed binary.
+//   * Bun/Deno `compile` would swap the runtime under a service written against
+//     Node APIs, for no signing benefit.
+//
+// The base runtime is fetched from nodejs.org rather than taken from the build
+// machine — see scripts/fetch-node-runtime.mjs for why that is not optional.
+//
+// Usage: node scripts/build-core.mjs [--outdir path] [--no-sea] [--json]
+import { build } from 'esbuild'
+import { execFileSync } from 'node:child_process'
+import {
+  chmodSync,
+  cpSync,
+  readdirSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync
+} from 'node:fs'
+import { fileURLToPath } from 'node:url'
+import { dirname, join, resolve } from 'node:path'
+import { ensureNodeRuntime, nodeRuntimeVersion } from './fetch-node-runtime.mjs'
+
+const root = dirname(dirname(fileURLToPath(import.meta.url)))
+
+function flag(name) {
+  const index = process.argv.indexOf(`--${name}`)
+  return index !== -1 && process.argv[index + 1] ? process.argv[index + 1] : undefined
+}
+
+const outdir = flag('outdir') ? resolve(flag('outdir')) : join(root, 'out', 'core')
+const bundleFile = join(outdir, 'webdeck-core.cjs')
+const exeFile = join(outdir, 'webdeck-core')
+const runtimeDir = join(outdir, 'webdeck-core-runtime')
+const wantSea = !process.argv.includes('--no-sea')
+const asJson = process.argv.includes('--json')
+
+/**
+ * node-pty is the one dependency that cannot go inside the executable: it is a
+ * native addon, and a `.node` file has to exist on disk for dlopen. It ships in
+ * the runtime directory instead and is signed as its own part.
+ *
+ * `electron` is listed so a build that somehow reached Electron fails loudly
+ * here rather than at runtime on the fork; bufferutil/utf-8-validate are ws's
+ * optional native speedups, which ws already require()s inside a try/catch.
+ */
+const EXTERNAL = ['electron', 'node-pty', 'bufferutil', 'utf-8-validate']
+
+/**
+ * Packages the core resolves from disk at runtime rather than importing, so
+ * esbuild cannot inline them. reveal.js is load-bearing: slides.ts calls
+ * `require.resolve('reveal.js')` at module scope, so the core does not boot at
+ * all without it.
+ */
+const RUNTIME_PACKAGES = [
+  {
+    name: 'node-pty',
+    include: ['package.json', 'lib', `prebuilds/${process.platform}-${process.arch}`]
+  },
+  { name: 'reveal.js', include: ['package.json', 'dist', 'plugin'] }
+]
+
+/**
+ * Prologue injected ahead of the bundle inside the SEA.
+ *
+ * Two jobs, both of which have to happen before any bundled module runs:
+ *
+ * 1. Give the bundle a real `require`. Inside a SEA, the ambient `require`
+ *    resolves builtins only — `require('node-pty')` and
+ *    `require.resolve('reveal.js')` both throw. Node's documented remedy is to
+ *    rebind it with createRequire; we root it in the runtime directory so bare
+ *    specifiers resolve there instead of wherever the executable happens to sit.
+ *
+ * 2. Act as a plain `node` when asked. Several call sites spawn
+ *    `process.execPath` with a script path (the language server, the debug
+ *    adapter). Under a SEA that would re-launch the core. Honouring
+ *    ELECTRON_RUN_AS_NODE — which those call sites already set, because they
+ *    were written for Electron — makes the executable behave exactly like the
+ *    `node` it was built from, so no call site has to change.
+ */
+const SEA_PROLOGUE = `
+const { createRequire } = require('node:module')
+const __wdPath = require('node:path')
+const __wdRuntime =
+  process.env.WEBDECK_CORE_RUNTIME ||
+  __wdPath.join(__wdPath.dirname(process.execPath), 'webdeck-core-runtime')
+process.env.WEBDECK_CORE_RUNTIME = __wdRuntime
+require = createRequire(__wdPath.join(__wdRuntime, 'noop.cjs'))
+
+if (process.env.ELECTRON_RUN_AS_NODE === '1' && process.argv[1]) {
+  const script = __wdPath.resolve(process.argv[1])
+  process.argv.splice(1, 1, script)
+  delete process.env.ELECTRON_RUN_AS_NODE
+  if (/\\.mjs$/.test(script)) {
+    import(require('node:url').pathToFileURL(script).href)
+  } else {
+    require(script)
+  }
+} else {
+`
+const SEA_EPILOGUE = '\n}\n'
+
+/* ---------- 1. bundle ---------- */
+
+const result = await build({
+  entryPoints: [join(root, 'src', 'core', 'main.ts')],
+  outfile: bundleFile,
+  bundle: true,
+  platform: 'node',
+  target: 'node22',
+  // CJS, not ESM: the external deps (node-pty) are CJS with subpath entries
+  // that Node's ESM resolver rejects, a Node service gains nothing from ESM
+  // output, and the SEA `require` rebinding above only works in a CJS scope.
+  format: 'cjs',
+  sourcemap: true,
+  // Sources written for ESM (electron-vite's format) use `import.meta.url` to
+  // resolve bundled tools; in CJS output that is undefined, so map it to the
+  // equivalent file URL of the bundle itself.
+  define: { 'import.meta.url': '__wdModuleUrl' },
+  banner: {
+    js: "const __wdModuleUrl = require('node:url').pathToFileURL(__filename).href;"
+  },
+  external: EXTERNAL,
+  alias: {
+    '@shared': join(root, 'src', 'shared')
+  },
+  logLevel: asJson ? 'silent' : 'info',
+  metafile: true
+})
+
+// A build that pulled in Electron would be broken on the fork — catch it here
+// rather than at runtime on someone's machine.
+const inputs = Object.keys(result.metafile.inputs)
+const electronish = inputs.filter((f) => /(^|\/)electron(\/|$)|electron\.ts$/.test(f))
+if (electronish.length > 0) {
+  console.error('webdeck-core bundle pulled in Electron:', electronish)
+  process.exit(1)
+}
+
+if (existsSync(bundleFile)) chmodSync(bundleFile, 0o755)
+
+if (!wantSea) {
+  if (!asJson) {
+    console.log(`webdeck-core -> ${bundleFile} (${inputs.length} modules, Electron-free)`)
+  }
+  process.exit(0)
+}
+
+/* ---------- 2. runtime payload ---------- */
+
+rmSync(runtimeDir, { recursive: true, force: true })
+mkdirSync(join(runtimeDir, 'node_modules'), { recursive: true })
+// createRequire needs a file path to anchor on; it is never read.
+writeFileSync(join(runtimeDir, 'noop.cjs'), '// anchor for module resolution\n')
+
+for (const pkg of RUNTIME_PACKAGES) {
+  const from = join(root, 'node_modules', pkg.name)
+  if (!existsSync(from)) {
+    console.error(`webdeck-core needs ${pkg.name} in node_modules; run npm ci`)
+    process.exit(1)
+  }
+  for (const entry of pkg.include) {
+    const src = join(from, entry)
+    if (!existsSync(src)) continue
+    cpSync(src, join(runtimeDir, 'node_modules', pkg.name, entry), { recursive: true })
+  }
+}
+
+// node-pty's spawn-helper is exec'd, and Google Drive strips the execute bit on
+// checkout (see scripts/postinstall.mjs). Restore it on the copy too.
+const spawnHelper = join(
+  runtimeDir,
+  'node_modules',
+  'node-pty',
+  'prebuilds',
+  `${process.platform}-${process.arch}`,
+  'spawn-helper'
+)
+if (existsSync(spawnHelper)) chmodSync(spawnHelper, 0o755)
+
+// resources/ is looked up relative to appDir, which the core points at the
+// runtime directory. js-debug is vendored at install time and may be absent.
+mkdirSync(join(runtimeDir, 'resources'), { recursive: true })
+for (const entry of ['pty-host.cjs', 'js-debug']) {
+  const src = join(root, 'resources', entry)
+  if (existsSync(src)) cpSync(src, join(runtimeDir, 'resources', entry), { recursive: true })
+}
+
+// js-debug ships prebuilt native addons for every platform it supports, so the
+// mac runtime picks up Windows PE and Linux ELF `.node` files it will never
+// load. They are dead weight, and worse for release: a foreign executable
+// inside a macOS app is not a Mach-O codesign can seal, so it reads as unsigned
+// code and complicates notarization. Keep only this platform's, matched by the
+// platform token in the filename (js-debug names them e.g. `*.win32-x64-msvc`,
+// `*.linux-x64`, `*.darwin-arm64`).
+const keepToken = `${process.platform}-`
+const foreignPlatforms = ['win32-', 'linux-', 'darwin-', 'android-'].filter(
+  (token) => token !== keepToken
+)
+function pruneForeignNative(dir) {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = join(dir, entry.name)
+    if (entry.isDirectory()) {
+      pruneForeignNative(full)
+    } else if (
+      entry.name.endsWith('.node') &&
+      foreignPlatforms.some((t) => entry.name.includes(t))
+    ) {
+      rmSync(full, { force: true })
+    }
+  }
+}
+pruneForeignNative(join(runtimeDir, 'resources'))
+
+/* ---------- 3. single executable ---------- */
+
+const baseNode = await ensureNodeRuntime({ quiet: asJson })
+const seaDir = join(outdir, '.sea')
+rmSync(seaDir, { recursive: true, force: true })
+mkdirSync(seaDir, { recursive: true })
+
+const seaMain = join(seaDir, 'main.cjs')
+writeFileSync(seaMain, SEA_PROLOGUE + readFileSync(bundleFile, 'utf8') + SEA_EPILOGUE)
+
+const seaBlob = join(seaDir, 'sea-prep.blob')
+writeFileSync(
+  join(seaDir, 'sea-config.json'),
+  JSON.stringify(
+    {
+      main: seaMain,
+      output: seaBlob,
+      // The warning goes to stderr on every launch and the browser inherits it.
+      disableExperimentalSEAWarning: true,
+      // A startup snapshot would shave the parse cost, but it runs the bundle's
+      // top level at build time — and this bundle opens sockets and touches the
+      // filesystem there. Code cache gets most of the win with none of that.
+      useSnapshot: false,
+      useCodeCache: true
+    },
+    null,
+    2
+  )
+)
+
+// Generate the blob with the SAME runtime we are about to inject it into: the
+// blob carries a format version that the embedding Node checks.
+execFileSync(baseNode, ['--experimental-sea-config', join(seaDir, 'sea-config.json')], {
+  cwd: seaDir,
+  stdio: asJson ? 'ignore' : 'inherit'
+})
+
+rmSync(exeFile, { force: true })
+cpSync(baseNode, exeFile)
+chmodSync(exeFile, 0o755)
+
+// postject rewrites the Mach-O load commands, which invalidates whatever
+// signature the download carried. Strip it first, re-sign after — this is the
+// sequence Node's own SEA documentation prescribes on macOS.
+execFileSync('codesign', ['--remove-signature', exeFile], { stdio: 'inherit' })
+execFileSync(
+  process.execPath,
+  [
+    join(root, 'node_modules', 'postject', 'dist', 'cli.js'),
+    exeFile,
+    'NODE_SEA_BLOB',
+    seaBlob,
+    '--sentinel-fuse',
+    'NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2',
+    '--macho-segment-name',
+    'NODE_SEA'
+  ],
+  { stdio: asJson ? 'ignore' : 'inherit' }
+)
+// Ad-hoc only. A real Developer ID signature is applied later by Chromium's
+// sign_chrome.py, which re-signs every part of the bundle anyway; signing here
+// just proves the binary is well-formed enough to sign at all, and leaves it
+// runnable (an unsigned, load-command-edited Mach-O is killed by the kernel on
+// arm64).
+execFileSync('codesign', ['--sign', '-', exeFile], { stdio: 'inherit' })
+
+rmSync(seaDir, { recursive: true, force: true })
+
+const size = statSync(exeFile).size
+const summary = {
+  executable: exeFile,
+  runtimeDir,
+  bundle: bundleFile,
+  modules: inputs.length,
+  bytes: size,
+  nodeVersion: nodeRuntimeVersion(baseNode),
+  electronFree: true
+}
+if (asJson) {
+  console.log(JSON.stringify(summary))
+} else {
+  console.log(
+    `webdeck-core -> ${exeFile} (${(size / 1e6).toFixed(1)} MB, ${inputs.length} modules, ` +
+      `Node ${summary.nodeVersion}, Electron-free)`
+  )
+  console.log(`webdeck-core runtime -> ${runtimeDir}`)
+}

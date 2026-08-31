@@ -191,6 +191,9 @@ const forbidden = mkdtempSync(join(tmpdir(), 'agweb-forbidden-'))
 writeFileSync(join(forbidden, 'secret.txt'), 'must never be readable\n')
 
 const userData = mkdtempSync(join(tmpdir(), 'agweb-data-'))
+// WebDeck Sync: point the engine at a file (headless — no native picker) so the
+// full push/pull loop can be driven from the test.
+const syncFile = join(userData, 'webdeck-sync.json')
 const app = await electron.launch({
   args: ['out/main/index.js', '--no-sandbox'],
   cwd: new URL('..', import.meta.url).pathname,
@@ -200,6 +203,7 @@ const app = await electron.launch({
     AGWEB_USER_DATA: userData,
     AGWEB_DOWNLOAD_DIR: downloadDir,
     AGWEB_EXTRA_ROOTS: extraRoot,
+    AGWEB_SYNC_FILE: syncFile,
     // Deterministic offline agent provider: same plan/approve/execute flow,
     // no API key or network.
     AGWEB_AGENT_MOCK: '1'
@@ -449,6 +453,63 @@ try {
       ),
     10000,
     'workspace settings were not written to .vscode/settings.json'
+  )
+
+  // WebDeck Sync: settings sync via a local-first file. With AGWEB_SYNC_FILE set,
+  // the engine pushed the current settings at boot — assert the file exists and
+  // carries the registered sections.
+  await waitForAsync(
+    async () => {
+      if (!existsSync(syncFile)) return false
+      const doc = JSON.parse(readFileSync(syncFile, 'utf8'))
+      return (
+        doc.sections?.settings && doc.sections?.policy && doc.sections?.model && doc.sections?.theme
+      )
+    },
+    10000,
+    'sync did not push settings/policy/model/theme to the sync file at boot'
+  )
+  // The Sync panel renders and shows the chosen file.
+  await window.click('[data-testid="settings-tab-sync"]')
+  await window.waitForSelector('[data-testid="sync-settings"]', { timeout: 10000 })
+  await window.waitForSelector('[data-testid="sync-file"]:has-text("webdeck-sync.json")', {
+    timeout: 5000
+  })
+  // Pull: another device edits the file (newer timestamp on the settings section).
+  // The app watches the file, pulls, and applies it — verified on disk via the
+  // app's own app-settings.json.
+  const app0Theme = await window.evaluate(() =>
+    document.documentElement.classList.contains('dark') ? 'dark' : 'light'
+  )
+  {
+    const doc = JSON.parse(readFileSync(syncFile, 'utf8'))
+    const bump = 60000
+    doc.sections.settings = {
+      value: { ...doc.sections.settings.value, doNotTrack: true },
+      updatedAt: doc.sections.settings.updatedAt + bump,
+      device: 'other-machine'
+    }
+    // Flip the theme too, to prove the renderer-owned section round-trips.
+    doc.sections.theme = {
+      value: app0Theme === 'dark' ? 'light' : 'dark',
+      updatedAt: doc.sections.theme.updatedAt + bump,
+      device: 'other-machine'
+    }
+    writeFileSync(syncFile, JSON.stringify(doc, null, 2))
+  }
+  await waitForAsync(
+    async () => {
+      const p = join(userData, 'app-settings.json')
+      return existsSync(p) && JSON.parse(readFileSync(p, 'utf8')).doNotTrack === true
+    },
+    10000,
+    'sync did not pull the externally-edited setting and apply it locally'
+  )
+  // The theme section is renderer-owned: a pull must reach the DOM.
+  await window.waitForFunction(
+    (was) => (document.documentElement.classList.contains('dark') ? 'dark' : 'light') !== was,
+    app0Theme,
+    { timeout: 10000 }
   )
 
   // Tasks (12.5): run a task and check its output becomes an editor

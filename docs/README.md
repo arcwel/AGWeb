@@ -12,6 +12,7 @@ the page you're already looking at.
 | **[Permission Modes](permission-modes.md)** | How the agent is gated — Secure / Review / Agent / Custom — the decision table, confirmation prompts, and the audit log. |
 | **[Agent Workflows](agent-workflows.md)** | The plan → approve → execute → verify loop, the composer, and managing conversations. |
 | **[Document Studio](document-studio.md)** | Styled Markdown and data documents, Mermaid and math, slide decks, and exporting. |
+| **[Settings Sync](settings-sync.md)** | Keep settings, policy, model, and theme the same across machines via a local-first file — no account, no server. |
 
 New here? Start with **[Getting Started](getting-started.md)**.
 

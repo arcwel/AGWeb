@@ -98,12 +98,14 @@ export function AiSettings(): React.JSX.Element {
         </p>
       </section>
 
-      {status && !status.encryptionAvailable && (
+      {status && !status.encryptionAvailable && status.source.mode === 'stored' && (
         <p className="rounded-lg bg-amber-500/10 px-3 py-2 text-[11px] text-amber-600 dark:text-amber-400">
           This system has no OS keychain available, so API keys can’t be stored securely and saving
-          is disabled. Set the provider’s environment variable instead.
+          is disabled. Use a password manager below, or set the provider’s environment variable.
         </p>
       )}
+
+      <KeySource status={status} onChange={refresh} />
 
       {PROVIDERS.map((provider) => (
         <ProviderRow
@@ -111,6 +113,8 @@ export function AiSettings(): React.JSX.Element {
           provider={provider}
           configured={status?.configured[provider.id] ?? false}
           canSave={status?.encryptionAvailable ?? false}
+          commandMode={status?.source.mode === 'command'}
+          command={status?.source.commands[provider.id] ?? ''}
           onChange={refresh}
         />
       ))}
@@ -133,16 +137,36 @@ function ProviderRow({
   provider,
   configured,
   canSave,
+  commandMode,
+  command,
   onChange
 }: {
   provider: ProviderMeta
   configured: boolean
   canSave: boolean
+  commandMode: boolean
+  command: string
   onChange: () => void
 }): React.JSX.Element {
   const [value, setValue] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Reset the draft when the saved command changes, without an effect — this is
+  // React's "adjust state during render" pattern, and it avoids the cascading
+  // render an effect-based reset would cause.
+  const [draftCommand, setDraftCommand] = useState(command)
+  const [savedCommand, setSavedCommand] = useState(command)
+  if (command !== savedCommand) {
+    setSavedCommand(command)
+    setDraftCommand(command)
+  }
+
+  const saveCommand = async (): Promise<void> => {
+    setBusy(true)
+    await window.agweb.secrets.setSource({ commands: { [provider.id]: draftCommand } })
+    setBusy(false)
+    onChange()
+  }
 
   const save = async (): Promise<void> => {
     setBusy(true)
@@ -185,35 +209,132 @@ function ProviderRow({
       </div>
       <p className="mt-0.5 text-[11px] text-[var(--wd-dim)]">{provider.hint}</p>
 
-      <div className="mt-2 flex items-center gap-1.5">
-        <input
-          type="password"
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          placeholder={configured ? 'Replace saved key…' : `${provider.keyPrefix}…`}
-          disabled={!canSave}
-          className="min-w-0 flex-1 rounded-md border border-[var(--wd-glass-border)] bg-[var(--wd-field)] px-2 py-1 text-[11px] outline-none focus:border-[var(--wd-accent)] disabled:opacity-40"
-          autoComplete="off"
-          spellCheck={false}
-        />
-        <button
-          onClick={() => void save()}
-          disabled={!canSave || busy || value.trim() === ''}
-          className="rounded-md bg-[var(--wd-accent)] px-2.5 py-1 text-[11px] font-semibold text-[var(--wd-accent-ink)] disabled:opacity-40"
-        >
-          {busy ? 'Saving…' : 'Save'}
-        </button>
-        {configured && (
+      {commandMode ? (
+        <div className="mt-2 flex items-center gap-1.5">
+          <input
+            type="text"
+            value={draftCommand}
+            onChange={(e) => setDraftCommand(e.target.value)}
+            placeholder={`e.g. op read op://Private/${provider.id}/key`}
+            className="min-w-0 flex-1 rounded-md border border-[var(--wd-glass-border)] bg-[var(--wd-field)] px-2 py-1 font-mono text-[11px] outline-none focus:border-[var(--wd-accent)]"
+            autoComplete="off"
+            spellCheck={false}
+            data-testid={`secret-command-${provider.id}`}
+          />
           <button
-            onClick={() => void clear()}
-            className="rounded-md px-2 py-1 text-[11px] font-medium text-[var(--wd-dim)] hover:text-rose-500"
+            onClick={() => void saveCommand()}
+            disabled={busy || draftCommand === command}
+            className="rounded-md bg-[var(--wd-accent)] px-2.5 py-1 text-[11px] font-semibold text-[var(--wd-accent-ink)] disabled:opacity-40"
           >
-            Remove
+            {busy ? 'Checking…' : 'Use'}
           </button>
-        )}
-      </div>
+        </div>
+      ) : (
+        <div className="mt-2 flex items-center gap-1.5">
+          <input
+            type="password"
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            placeholder={configured ? 'Replace saved key…' : `${provider.keyPrefix}…`}
+            disabled={!canSave}
+            className="min-w-0 flex-1 rounded-md border border-[var(--wd-glass-border)] bg-[var(--wd-field)] px-2 py-1 text-[11px] outline-none focus:border-[var(--wd-accent)] disabled:opacity-40"
+            autoComplete="off"
+            spellCheck={false}
+          />
+          <button
+            onClick={() => void save()}
+            disabled={!canSave || busy || value.trim() === ''}
+            className="rounded-md bg-[var(--wd-accent)] px-2.5 py-1 text-[11px] font-semibold text-[var(--wd-accent-ink)] disabled:opacity-40"
+          >
+            {busy ? 'Saving…' : 'Save'}
+          </button>
+          {configured && (
+            <button
+              onClick={() => void clear()}
+              className="rounded-md px-2 py-1 text-[11px] font-medium text-[var(--wd-dim)] hover:text-rose-500"
+            >
+              Remove
+            </button>
+          )}
+        </div>
+      )}
 
       {error && <p className="mt-1 text-[11px] text-rose-500">{error}</p>}
+    </section>
+  )
+}
+
+/**
+ * Where keys come from. This is a security choice, not a preference, so the
+ * panel says plainly what each option means rather than leaving the user to
+ * guess — and recommends the password manager, because it is genuinely better.
+ */
+function KeySource({
+  status,
+  onChange
+}: {
+  status: SecretsStatus | null
+  onChange: () => void
+}): React.JSX.Element {
+  const mode = status?.source.mode ?? 'stored'
+
+  const choose = async (next: 'stored' | 'command'): Promise<void> => {
+    await window.agweb.secrets.setSource({ mode: next })
+    onChange()
+  }
+
+  return (
+    <section className="rounded-lg bg-[var(--wd-well)] px-3 py-2.5" data-testid="key-source">
+      <h3 className="text-[11px] font-semibold text-[var(--wd-text)]">Where keys come from</h3>
+      <div className="mt-1.5 flex flex-col gap-1.5">
+        <label className="flex items-start gap-2">
+          <input
+            type="radio"
+            checked={mode === 'stored'}
+            onChange={() => void choose('stored')}
+            className="mt-0.5"
+            data-testid="key-source-stored"
+          />
+          <span className="text-[11px]">
+            <span className="font-medium text-[var(--wd-text)]">Store in WebDeck</span>
+            <span className="text-[var(--wd-dim)]">
+              {' '}
+              — encrypted with your OS keychain. Simple, and the key sits on this machine.
+            </span>
+          </span>
+        </label>
+        <label className="flex items-start gap-2">
+          <input
+            type="radio"
+            checked={mode === 'command'}
+            onChange={() => void choose('command')}
+            className="mt-0.5"
+            data-testid="key-source-command"
+          />
+          <span className="text-[11px]">
+            <span className="font-medium text-[var(--wd-text)]">
+              Use my password manager <span className="text-emerald-500">(recommended)</span>
+            </span>
+            <span className="text-[var(--wd-dim)]">
+              {' '}
+              — WebDeck stores nothing and runs a command you choose to fetch the key. Your vault
+              keeps gating, auditing, and rotating it, and a leaked WebDeck data folder holds no key
+              at all.
+            </span>
+          </span>
+        </label>
+      </div>
+      {mode === 'command' && (
+        <p className="mt-2 text-[10.5px] text-[var(--wd-dim)]">
+          Enter one command per provider below. Examples:{' '}
+          <code className="font-mono">op read op://Private/anthropic/key</code>,{' '}
+          <code className="font-mono">pass show ai/anthropic</code>,{' '}
+          <code className="font-mono">security find-generic-password -w -s anthropic</code>. The
+          command runs without a shell, so <code className="font-mono">;</code> and{' '}
+          <code className="font-mono">|</code> are literal. This setting is never synced between
+          machines.
+        </p>
+      )}
     </section>
   )
 }

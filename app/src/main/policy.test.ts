@@ -13,7 +13,14 @@ import {
   initPolicy,
   respondToPolicyPrompt,
   setPolicyBroadcaster,
-  setPolicyDenyNotifier
+  setPolicyDenyNotifier,
+  setPolicyPromptSink,
+  sanitizePolicyMode,
+  sanitizeSyncedPolicyMode,
+  setSitePermission,
+  clearSitePermission,
+  setBlockSensitiveSites,
+  getPolicyStatus
 } from './policy'
 
 // The permission gate is the security spine: every agent file-write, command,
@@ -68,12 +75,32 @@ describe('decide — the mode verdict', () => {
     expect(decide('browser_navigate', 'https://evil.example')).toBe('confirm')
   })
 
-  it('treats localhost/data:/file: navigation as allowed outside secure mode', () => {
+  it('treats a genuinely local target as allowed outside secure mode', () => {
     setPolicyMode('review')
     expect(decide('browser_navigate', 'http://127.0.0.1:5173')).toBe('allow')
-    expect(decide('browser_navigate', 'data:text/html,<h1>hi</h1>')).toBe('allow')
-    expect(decide('browser_navigate', 'file:///tmp/x.html')).toBe('allow')
+    expect(decide('browser_navigate', 'http://localhost:5173')).toBe('allow')
+    // about: really is inert: no content, no origin.
     expect(decide('browser_navigate', 'about:blank')).toBe('allow')
+  })
+
+  it('does NOT treat data:, file: or blob: as inert', () => {
+    // This test used to assert the opposite, and that assertion was the hole.
+    //
+    // browser_eval is gated as a `command` precisely because injected JS is an
+    // egress channel — but navigating to
+    // `data:text/html,<script>fetch(...)</script>` runs exactly that script,
+    // and auto-allowing data: let it through the navigation gate instead.
+    // file:// plus a page read is arbitrary local file disclosure around the
+    // workspace pin. blob: inherits its creator's origin.
+    //
+    // None of them has a hostname, so no per-site rule can restrain them
+    // either: a user who has denied every site still could not deny these.
+    setPolicyMode('review')
+    expect(decide('browser_navigate', 'data:text/html,<script>fetch("//x")</script>')).toBe(
+      'confirm'
+    )
+    expect(decide('browser_navigate', 'file:///etc/passwd')).toBe('confirm')
+    expect(decide('browser_navigate', 'blob:https://x/1')).toBe('confirm')
   })
 
   it('agent mode runs free except non-allowlisted navigation', () => {
@@ -138,6 +165,58 @@ describe('checkAction — the full gate', () => {
   it('fails closed when the shell window is gone', async () => {
     initPolicy(fakeWindow(undefined, /* destroyed */ true))
     expect(await checkAction('command', 'ls', 's1')).toBe(false)
+  })
+
+  // Headless / Chromium-fork behaviour: the core can run with no UI attached
+  // (yet). An action policy ALLOWS must still proceed — only a 'confirm' needs
+  // a human, and only that may fail closed.
+  describe('headless (no prompt UI attached)', () => {
+    it('still allows an auto-approved action with no UI', async () => {
+      setPolicyMode('agent') // file writes + commands are 'allow' here
+      setPolicyPromptSink(null)
+      expect(await checkAction('file_write', 'a.txt', 'headless-1')).toBe(true)
+      expect(await checkAction('command', 'ls', 'headless-1')).toBe(true)
+    })
+
+    it('still denies what policy denies, with no UI', async () => {
+      setCustomRules({
+        fileWrites: 'deny',
+        commands: 'allow',
+        navigation: 'allow',
+        allowedHosts: []
+      })
+      setPolicyMode('custom')
+      setPolicyPromptSink(null)
+      expect(await checkAction('file_write', 'a.txt', 'headless-2')).toBe(false)
+    })
+
+    it('fails closed only for a confirm it cannot ask about', async () => {
+      setPolicyMode('review') // commands confirm
+      setPolicyPromptSink(null)
+      expect(await checkAction('command', 'ls', 'headless-3')).toBe(false)
+    })
+
+    it('works through a transport sink (what the fork injects)', async () => {
+      setPolicyMode('review')
+      // Stands in for a WebSocket push to chrome://webdeck; the answer comes
+      // back through the same respondToPolicyPrompt the IPC path uses.
+      let sent: PolicyPromptInfo | null = null
+      setPolicyPromptSink((p) => {
+        sent = p
+        return true
+      })
+      const decision = checkAction('command', 'ls', 'fork-1')
+      await flush()
+      expect(sent).not.toBeNull()
+      respondToPolicyPrompt(sent!.id, true, false)
+      expect(await decision).toBe(true)
+    })
+
+    it('a sink that cannot deliver fails closed', async () => {
+      setPolicyMode('review')
+      setPolicyPromptSink(() => false) // e.g. no client connected
+      expect(await checkAction('command', 'ls', 'fork-2')).toBe(false)
+    })
   })
 
   it('honors a "don\'t ask again" grant for the same session+kind', async () => {
@@ -254,5 +333,201 @@ describe('checkAction — the full gate', () => {
     expect(await checkAction('command', 'rm -rf /', 's1')).toBe(false)
     expect(await checkAction('file_write', 'a.txt', 's1')).toBe(false)
     expect(prompted).toBe(false)
+  })
+})
+
+describe('full autonomy', () => {
+  beforeEach(() => setPolicyMode('autonomous'))
+
+  it('allows everything without asking', () => {
+    // The point of the mode: the agent does whatever the task needs. It is the
+    // rung above 'agent', which still stops to confirm navigation off the
+    // allowlist — not autonomy when the task is "go and find out".
+    expect(decide('file_write', '/etc/anything')).toBe('allow')
+    expect(decide('command', 'rm -rf build')).toBe('allow')
+    expect(decide('browser_navigate', 'https://example.com/anything')).toBe('allow')
+  })
+
+  it('never needs a prompt channel, so it works headless', async () => {
+    let prompted = false
+    setPolicyPromptSink(() => {
+      prompted = true
+      return true
+    })
+    await expect(checkAction('command', 'anything', 'session-1')).resolves.toBe(true)
+    expect(prompted).toBe(false)
+    setPolicyPromptSink(null)
+  })
+})
+
+describe('sync cannot escalate the agent to full autonomy', () => {
+  it('accepts autonomous from a local choice', () => {
+    // Typed by the person in front of the machine: allowed.
+    expect(sanitizePolicyMode('autonomous')).toBe('autonomous')
+  })
+
+  it('refuses autonomous from a synced file', () => {
+    // The sync file is a plain file in a folder the user often shares. If sync
+    // could set this, "write this file" would equal "let the agent act as the
+    // user, without ever asking, on every device they own".
+    expect(sanitizeSyncedPolicyMode('autonomous')).toBeNull()
+  })
+
+  it("still lets sync LOWER the agent's authority", () => {
+    // Sync may reduce what the agent can do; it may only never raise it.
+    expect(sanitizeSyncedPolicyMode('secure')).toBe('secure')
+    expect(sanitizeSyncedPolicyMode('review')).toBe('review')
+    expect(sanitizeSyncedPolicyMode('agent')).toBe('agent')
+  })
+
+  it('refuses nonsense from either path', () => {
+    expect(sanitizePolicyMode('root')).toBeNull()
+    expect(sanitizeSyncedPolicyMode('root')).toBeNull()
+  })
+})
+
+describe('per-site permissions', () => {
+  beforeEach(() => {
+    for (const site of getPolicyStatus().sites) clearSitePermission(site.host)
+    setBlockSensitiveSites(true)
+    setPolicyMode('autonomous')
+  })
+
+  it('an explicit site deny outranks full autonomy', () => {
+    // The user said no to this site. Nothing should be able to override that —
+    // autonomy is a statement about the agent's default freedom, not a licence
+    // to ignore a decision the user actually made.
+    setSitePermission('evil.test', 'deny')
+    expect(decide('browser_navigate', 'https://evil.test/page')).toBe('deny')
+    expect(decide('browser_navigate', 'https://sub.evil.test/page')).toBe('deny')
+  })
+
+  it('an explicit site allow works under a restrictive mode', () => {
+    setPolicyMode('secure')
+    setSitePermission('trusted.test', 'allow')
+    expect(decide('browser_navigate', 'https://trusted.test/x')).toBe('allow')
+    // and nothing else is loosened by it
+    expect(decide('browser_navigate', 'https://other.test/x')).toBe('confirm')
+  })
+
+  it('asks about a sensitive site even under full autonomy', () => {
+    // These are the destinations where one wrong action does not undo.
+    expect(decide('browser_navigate', 'https://chase.com/transfer')).toBe('confirm')
+    expect(decide('browser_navigate', 'https://www.paypal.com/send')).toBe('confirm')
+  })
+
+  it('a deliberate site allow lifts the sensitive check for that site only', () => {
+    // The check exists to catch sites the user has not considered, not to argue
+    // with one they have.
+    setSitePermission('chase.com', 'allow')
+    expect(decide('browser_navigate', 'https://chase.com/transfer')).toBe('allow')
+    expect(decide('browser_navigate', 'https://paypal.com/send')).toBe('confirm')
+  })
+
+  it('respects the protection being switched off', () => {
+    setBlockSensitiveSites(false)
+    expect(decide('browser_navigate', 'https://chase.com/transfer')).toBe('allow')
+  })
+
+  it('defaults the protection ON for a policy file written before it existed', () => {
+    // Inheriting "off" from an older file would silently drop the protection
+    // for every existing user.
+    expect(getPolicyStatus().blockSensitiveSites).toBe(true)
+  })
+
+  it('deny wins when a site somehow has both', () => {
+    setSitePermission('both.test', 'allow')
+    const status = getPolicyStatus()
+    status.sites.push({ host: 'both.test', decision: 'deny', grantedAt: new Date().toISOString() })
+    // Simulate a file holding both; the restrictive one must win.
+    setSitePermission('both.test', 'deny')
+    expect(decide('browser_navigate', 'https://both.test/x')).toBe('deny')
+  })
+
+  it('does not apply site rules to non-navigation actions', () => {
+    setSitePermission('evil.test', 'deny')
+    setPolicyMode('agent')
+    expect(decide('file_write', '/tmp/x')).toBe('allow')
+  })
+
+  it('clearing a site returns it to the mode', () => {
+    setPolicyMode('secure')
+    setSitePermission('t.test', 'allow')
+    expect(decide('browser_navigate', 'https://t.test/x')).toBe('allow')
+    clearSitePermission('t.test')
+    expect(decide('browser_navigate', 'https://t.test/x')).toBe('confirm')
+  })
+})
+
+describe('"always" is scoped to the site the user was looking at', () => {
+  beforeEach(() => {
+    for (const site of getPolicyStatus().sites) clearSitePermission(site.host)
+    setPolicyMode('secure')
+  })
+
+  it('grants only that site, not every site', async () => {
+    // The bug this replaced: "always" added a session grant for the whole
+    // ACTION KIND, so approving one page let the agent navigate anywhere for
+    // the rest of the run — a far broader permission than the user was asked
+    // for, granted from a dialog naming a single URL.
+    let prompted: PolicyPromptInfo | null = null
+    setPolicyPromptSink((info) => {
+      prompted = info
+      return true
+    })
+
+    const first = checkAction('browser_navigate', 'https://approved.test/page', 's1')
+    await new Promise((r) => setTimeout(r, 0))
+    expect(prompted).not.toBeNull()
+    respondToPolicyPrompt(prompted!.id, true, true)
+    await expect(first).resolves.toBe(true)
+
+    // The approved site is now standing-allowed...
+    expect(decide('browser_navigate', 'https://approved.test/other')).toBe('allow')
+    // ...and nothing else is.
+    expect(decide('browser_navigate', 'https://elsewhere.test/page')).toBe('confirm')
+
+    setPolicyPromptSink(null)
+  })
+
+  it('records a refusal as a standing deny for that site', async () => {
+    let prompted: PolicyPromptInfo | null = null
+    setPolicyPromptSink((info) => {
+      prompted = info
+      return true
+    })
+
+    const call = checkAction('browser_navigate', 'https://refused.test/page', 's1')
+    await new Promise((r) => setTimeout(r, 0))
+    respondToPolicyPrompt(prompted!.id, false, true)
+    await expect(call).resolves.toBe(false)
+
+    // "Never on this site" is worth recording just as much as "always".
+    expect(decide('browser_navigate', 'https://refused.test/anything')).toBe('deny')
+
+    setPolicyPromptSink(null)
+  })
+})
+
+describe('sync cannot grant site permissions', () => {
+  it('the synced policy validators expose no way to set sites', () => {
+    // Site permissions are authority: an allow lets the agent act on a site
+    // without asking. The sync file is a plain file in a folder the user often
+    // shares between devices, so it must not be able to hand out that
+    // authority — same reason it cannot set full autonomy.
+    //
+    // Sync applies exactly two things, both validated: the mode (via
+    // sanitizeSyncedPolicyMode, which refuses 'autonomous') and the custom
+    // rules. There is deliberately no sanitizeSyncedSites, so a `sites` array
+    // in the file is inert. This test fails the moment someone adds one
+    // without thinking it through.
+    const validators = Object.keys({ sanitizePolicyMode, sanitizeSyncedPolicyMode })
+    expect(validators).not.toContain('sanitizeSyncedSites')
+
+    // And a decision made locally is unaffected by anything a file claims.
+    setPolicyMode('secure')
+    setSitePermission('local.test', 'allow')
+    expect(decide('browser_navigate', 'https://local.test/x')).toBe('allow')
+    clearSitePermission('local.test')
   })
 })

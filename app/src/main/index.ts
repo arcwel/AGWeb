@@ -8,11 +8,11 @@ import {
   addWorkspaceRoot,
   getCurrentWorkspace,
   grantFile,
-  removeWorkspaceRoot,
   registerWorkspaceRpc,
-  workspaceRoots,
   openWorkspaceDialog,
-  openWorkspacePath
+  openWorkspacePath,
+  setWorkspaceFolderPicker,
+  setWorkspaceOpenedHook
 } from './workspace'
 import {
   createBrowserTab,
@@ -51,14 +51,19 @@ import {
 import { registerSecretsRpc } from './secrets'
 import { core } from '../core/rpc'
 import { setCoreEnv } from '../core/env'
+import { setCoreBroadcaster } from '../core/notify'
+import { setAgentBrowserPort } from '../core/agent-browser-port'
+import { electronAgentBrowser } from './agent-browser-adapter'
 import { electronCoreEnv } from './core-env'
 import { electronTransport } from '../core/transports/electron'
 import {
-  applyPreReadySettings,
+  shouldDisableHardwareAcceleration,
   initAppSettings,
+  onAppSettingsChanged,
   readAppSettings,
   registerAppSettingsRpc,
   writeAppSettings,
+  type AppSettings,
   type ClearableData
 } from './app-settings'
 import { registerSearchRpc } from './search'
@@ -69,7 +74,13 @@ import { registerDebugRpc, stopDebugSession } from './debug'
 import { registerSettingsRpc } from './settings'
 import { registerGitRpc } from './git'
 import { registerLspRpc, stopAllLanguageServers } from './lsp'
-import { initAgents, registerAgentRpc } from './agent'
+import {
+  getAgentModel,
+  initAgents,
+  registerAgentRpc,
+  setAgentModel,
+  setAgentModelChangeNotifier
+} from './agent'
 import type { WorkspaceInfo } from '@shared/ipc'
 import {
   listExtensions,
@@ -85,11 +96,28 @@ import { initPermissions, respondToPermission } from './permissions'
 import { initDevServers, registerDevServersRpc, stopDevServer } from './dev-servers'
 import { registerSlidesRpc, stopSlideServer } from './slides'
 import {
+  getPolicyStatus,
   initPolicy,
   registerPolicyRpc,
+  sanitizeCustomRules,
+  sanitizeSyncedPolicyMode,
+  setCustomRules,
   setPolicyBroadcaster,
-  setPolicyDenyNotifier
+  setPolicyDenyNotifier,
+  setPolicyMode
 } from './policy'
+import type { PolicyStatus } from '@shared/ipc'
+import {
+  getSyncStatus,
+  initSync,
+  registerSyncRpc,
+  registerSyncSection,
+  setSyncBroadcaster,
+  setSyncFile,
+  setSyncPulledNotifier,
+  syncTouch
+} from './sync'
+import { getUiTheme, setUiTheme } from './ui-prefs'
 
 import { readFileSync as _readFileSync } from 'node:fs'
 function readFileSyncUtf8(path: string): string {
@@ -194,7 +222,10 @@ function createMainWindow(): void {
   initPolicy(mainWindow)
   // Fan policy changes out to every window so a PolicyControls in another window
   // never shows stale mode/rules (P2-13).
-  setPolicyBroadcaster((status) => broadcast(IpcEvents.policyChanged, status, null))
+  setPolicyBroadcaster((status) => {
+    broadcast(IpcEvents.policyChanged, status, null)
+    syncTouch() // a policy change is a synced-settings change → auto-push
+  })
   setPolicyDenyNotifier((info) => broadcast(IpcEvents.policyDenied, info, null))
   void restoreExtensions()
 
@@ -209,6 +240,23 @@ function registerIpcHandlers(): void {
   // Wire the platform seam before any CORE domain runs. Under the Chromium fork
   // this is the only line that changes — a Node adapter replaces the Electron one.
   setCoreEnv(electronCoreEnv())
+  // The reverse bridge: CORE domains emit events through this sink. On Electron
+  // it's the BrowserWindow broadcast; the standalone core injects a WS push.
+  setCoreBroadcaster(broadcast)
+  // The agent's browser tools. In-process WebContentsView here; under the fork,
+  // a proxy to the browser process over the transport.
+  setAgentBrowserPort(electronAgentBrowser())
+
+  // The workspace domain's only host affordance: a native folder picker. Inject
+  // the Electron one here; the fork supplies its own, keeping workspace.ts
+  // Electron-free.
+  setWorkspaceFolderPicker(async () => {
+    const result = await dialog.showOpenDialog({
+      title: 'Open Project Folder',
+      properties: ['openDirectory', 'createDirectory']
+    })
+    return result.canceled || result.filePaths.length === 0 ? null : result.filePaths[0]
+  })
 
   ipcMain.handle(IpcChannels.appInfo, (): AppInfo => {
     return {
@@ -234,12 +282,10 @@ function registerIpcHandlers(): void {
     return workspace
   })
 
-  ipcMain.handle(IpcChannels.workspaceOpenPath, (_event, path: unknown) => {
-    if (typeof path !== 'string') return null
-    const workspace = openWorkspacePath(path)
-    applyWorkspace(workspace)
-    return workspace
-  })
+  // workspaceOpenPath is a CORE method now (the fork must be able to open a
+  // project without a native picker); the shell contributes its side effects
+  // through this hook rather than a second handler.
+  setWorkspaceOpenedHook(applyWorkspace)
 
   // The native menu's Open Project Folder… goes through applyWorkspace, the
   // same path as the in-app control — a second way in, not a second
@@ -253,27 +299,20 @@ function registerIpcHandlers(): void {
   // Multi-root (3B.4). A root is granted only through this picker: there is no
   // path-taking variant, so nothing but a human choosing a folder can widen
   // what the app — or the agent inside it — can reach.
-  ipcMain.handle(IpcChannels.workspaceAddRoot, async () => {
-    if (!mainWindow) return workspaceRoots()
-    const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
-      title: 'Grant another folder to this session',
-      properties: ['openDirectory']
-    })
-    if (canceled || !filePaths[0]) return workspaceRoots()
-    const roots = addWorkspaceRoot(filePaths[0])
-    broadcast(IpcEvents.fsChanged, null, null)
-    return roots
-  })
-  ipcMain.handle(IpcChannels.workspaceRemoveRoot, (_e, path: unknown) => {
-    const p = str(path)
-    const roots = p ? removeWorkspaceRoot(p) : workspaceRoots()
-    broadcast(IpcEvents.fsChanged, null, null)
-    return roots
-  })
-
+  // workspace:add-root and workspace:remove-root are served by the CORE now
+  // (workspace.ts), because they are plain path operations that both hosts can
+  // do. Only the PICKER needed the host — the renderer opens one through
+  // dialog:pick-paths and passes the chosen path in. Registering them here as
+  // well threw "a second handler for 'workspace:add-root'" at startup, which
+  // took the whole window with it.
   ipcMain.handle(IpcChannels.themeSet, (_event, source: unknown) => {
     if (source === 'system' || source === 'light' || source === 'dark') {
       nativeTheme.themeSource = source as ThemeSource
+    }
+    // Mirror the renderer-owned theme so WebDeck Sync can read/push it.
+    if (source === 'light' || source === 'dark') {
+      setUiTheme(source)
+      syncTouch()
     }
   })
 
@@ -504,6 +543,68 @@ function registerIpcHandlers(): void {
   registerWorkspaceRpc()
   registerSlidesRpc()
 
+  // WebDeck Sync (settings sync via a local-first file). Register the syncable
+  // sections, wire the shell affordances (status broadcast, native file picker),
+  // and touch the engine whenever a synced setting changes so it auto-pushes.
+  registerSyncSection({
+    key: 'settings',
+    read: () => readAppSettings(),
+    apply: (v) => writeAppSettings((v ?? {}) as Partial<AppSettings>)
+  })
+  registerSyncSection({
+    key: 'policy',
+    read: () => getPolicyStatus(),
+    apply: (v) => {
+      // The policy is the agent's security gate, and the sync file may be in a
+      // shared folder — so validate exactly as the IPC path does (no raw cast),
+      // and drop anything malformed rather than partially applying it.
+      const s = (v ?? {}) as Partial<PolicyStatus>
+      // Synced, so it may lower the agent's authority but never raise it to
+      // full autonomy — see sanitizeSyncedPolicyMode.
+      const mode = sanitizeSyncedPolicyMode(s.mode)
+      const custom = sanitizeCustomRules(s.custom)
+      if (mode) setPolicyMode(mode)
+      if (custom) setCustomRules(custom)
+    }
+  })
+  registerSyncSection({
+    key: 'model',
+    read: () => getAgentModel(),
+    apply: (v) => {
+      if (typeof v === 'string') setAgentModel(v)
+    }
+  })
+  registerSyncSection({
+    key: 'theme',
+    read: () => getUiTheme(),
+    apply: (v) => {
+      if (v === 'light' || v === 'dark') {
+        setUiTheme(v)
+        nativeTheme.themeSource = v
+        broadcast(IpcEvents.themeChanged, v, null) // renderer adopts it into its store
+      }
+    }
+  })
+  registerSyncRpc()
+  setSyncBroadcaster((s) => broadcast(IpcEvents.syncStatusChanged, s, null))
+  // After a pull applies new settings, tell renderers to re-read them.
+  setSyncPulledNotifier(() => broadcast(IpcEvents.syncPulled, null, null))
+  // Local settings changes → debounced auto-push.
+  onAppSettingsChanged(() => syncTouch())
+  setAgentModelChangeNotifier(() => syncTouch())
+
+  ipcMain.handle(IpcChannels.syncChooseFile, async () => {
+    const result = await dialog.showSaveDialog({
+      title: 'Choose WebDeck Sync File',
+      defaultPath: 'webdeck-sync.json',
+      filters: [{ name: 'WebDeck Sync', extensions: ['json'] }],
+      properties: ['createDirectory', 'showOverwriteConfirmation']
+    })
+    // Cancelling the picker leaves the current file untouched.
+    if (result.canceled || !result.filePath) return getSyncStatus()
+    return setSyncFile(result.filePath)
+  })
+
   ipcMain.handle(IpcChannels.profilesList, () => listProfiles())
   ipcMain.handle(IpcChannels.profilesSetActive, (_e, id: unknown) => setActiveProfile(id))
   ipcMain.handle(IpcChannels.profilesCreate, (_e, name: unknown) => createProfile(name))
@@ -577,8 +678,9 @@ function registerIpcHandlers(): void {
 }
 
 // Hardware acceleration can only be turned off before the app is ready, so
-// this runs at module scope rather than inside whenReady.
-applyPreReadySettings()
+// this runs at module scope rather than inside whenReady. The store owns the
+// decision (pure); the shell owns the Electron call.
+if (shouldDisableHardwareAcceleration()) app.disableHardwareAcceleration()
 
 app.whenReady().then(() => {
   // Configure the profile sessions first, then push settings so spellcheck and
@@ -587,6 +689,7 @@ app.whenReady().then(() => {
   initAppSettings()
   registerIpcHandlers()
   initAgents()
+  initSync() // after sections are registered in registerIpcHandlers()
 
   if (process.env.AGWEB_WORKSPACE) {
     const workspace = openWorkspacePath(process.env.AGWEB_WORKSPACE)

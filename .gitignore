@@ -5,3 +5,4 @@ app/smoke*.png
 
 # Vendored at install time by app/scripts/fetch-js-debug.mjs (task 12.4).
 app/resources/js-debug/
+.DS_Store

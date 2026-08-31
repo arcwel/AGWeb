@@ -6,7 +6,7 @@ import { coreEnv } from '../core/env'
 import { StreamMessageReader, StreamMessageWriter } from 'vscode-jsonrpc/node'
 import type { Message } from 'vscode-jsonrpc'
 import { IpcChannels, IpcEvents } from '@shared/ipc'
-import { broadcast } from './windows'
+import { coreBroadcast } from '../core/notify'
 import { getCurrentWorkspace } from './workspace'
 import { core } from '../core/rpc'
 import { asString } from '../core/coerce'
@@ -90,7 +90,7 @@ function openConnection(id: string): Connection {
   const writer = new StreamMessageWriter(socket)
 
   reader.listen((message: Message) =>
-    broadcast(IpcEvents.debugMessage, { sessionId: id, message }, null)
+    coreBroadcast(IpcEvents.debugMessage, { sessionId: id, message }, null)
   )
   reader.onError(() => closeConnection(id))
   socket.on('error', () => closeConnection(id))
@@ -147,7 +147,7 @@ export async function startDebugSession(): Promise<{ error?: string }> {
   child.on('exit', () => {
     adapter = null
     for (const id of [...connections.keys()]) closeConnection(id)
-    broadcast(IpcEvents.debugExit, null, null)
+    coreBroadcast(IpcEvents.debugExit, null, null)
   })
 
   adapter = child

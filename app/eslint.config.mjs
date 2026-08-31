@@ -21,6 +21,7 @@ export default tseslint.config(
         console: 'readonly',
         URL: 'readonly',
         setTimeout: 'readonly',
+        clearTimeout: 'readonly',
         fetch: 'readonly',
         // Present inside page.evaluate callbacks, which run in the renderer.
         document: 'readonly'

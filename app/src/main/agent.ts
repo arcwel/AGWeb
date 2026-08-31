@@ -10,7 +10,7 @@ import type {
   AgentSessionInfo,
   PlanStep
 } from '@shared/agents'
-import { broadcast } from './windows'
+import { coreBroadcast } from '../core/notify'
 import { getCurrentWorkspace } from './workspace'
 import {
   createEntry,
@@ -21,21 +21,7 @@ import {
   writeBinaryFile,
   writeFile
 } from './fs'
-import {
-  agentCapture,
-  agentClick,
-  agentEval,
-  agentNavigate,
-  agentOpenTab,
-  agentReadPage,
-  agentRecordStart,
-  agentRecordStop,
-  agentSetViewport,
-  agentType,
-  agentWaitFor,
-  takeBlockedNavigation
-} from './agent-browser'
-import { hasVisionProblems, inspectText } from './browser-vision'
+import { agentBrowser } from '../core/agent-browser-port'
 import { artifactsRoot, generateReport, removeArtifacts } from './agent-report'
 import { searchWorkspace } from './search'
 import { isTerminalRunning, runInTerminal, stopTerminal, terminalOutput } from './terminal'
@@ -102,8 +88,22 @@ function currentModel(): string {
   return process.env.AGWEB_AGENT_MODEL || configStore.read().model || 'claude-opus-5'
 }
 
+let modelChangeNotifier: (() => void) | null = null
+/** Injected: fired when the chosen model changes (WebDeck Sync auto-push). */
+export function setAgentModelChangeNotifier(fn: () => void): void {
+  modelChangeNotifier = fn
+}
+
 export function setAgentModel(model: string): void {
-  if (ANTHROPIC_MODELS.includes(model)) configStore.write({ model })
+  if (!ANTHROPIC_MODELS.includes(model)) return
+  configStore.write({ model })
+  modelChangeNotifier?.()
+}
+
+/** The chosen model (for WebDeck Sync). Ignores the env override — that's a
+ *  per-machine dev knob, not a synced preference. */
+export function getAgentModel(): string {
+  return configStore.read().model || 'claude-opus-5'
 }
 
 /**
@@ -142,7 +142,7 @@ function persistSessions(): void {
 
 function update(session: AgentSession, patch: Partial<AgentSessionInfo>): void {
   Object.assign(session, patch)
-  broadcast(IpcEvents.agentUpdate, toInfo(session), null)
+  coreBroadcast(IpcEvents.agentUpdate, toInfo(session), null)
   persistSessions()
   // A finished session gets its execution report written to the artifact
   // store, so the evidence survives even if the workspace changes later.
@@ -155,7 +155,7 @@ function update(session: AgentSession, patch: Partial<AgentSessionInfo>): void {
 
 function log(session: AgentSession, entry: Omit<AgentLogEntry, 'ts'>): void {
   session.log = [...session.log.slice(-LOG_CAP), { ts: Date.now(), ...entry }]
-  broadcast(IpcEvents.agentUpdate, toInfo(session), null)
+  coreBroadcast(IpcEvents.agentUpdate, toInfo(session), null)
   persistSessions()
 }
 
@@ -183,7 +183,7 @@ function streamText(session: AgentSession, text: string): void {
   session.log = growing
     ? [...session.log.slice(0, -1), entry]
     : [...session.log.slice(-LOG_CAP), entry]
-  broadcast(IpcEvents.agentUpdate, toInfo(session), null)
+  coreBroadcast(IpcEvents.agentUpdate, toInfo(session), null)
 }
 
 /** Drop a partial turn so the settled text can be logged in its place. */
@@ -255,7 +255,7 @@ export async function openAgentReport(id: string): Promise<void> {
   const session = sessions.get(id)
   if (!session) return
   const path = await generateReport(toInfo(session))
-  broadcast(IpcEvents.browserOpenTab, `file://${path}`, null)
+  coreBroadcast(IpcEvents.browserOpenTab, `file://${path}`, null)
 }
 
 /** Disk-usage control: drop every finished session and its artifacts. */
@@ -267,7 +267,7 @@ export function clearFinishedAgentSessions(): AgentSessionInfo[] {
   }
   persistSessions()
   const remaining = listAgentSessions()
-  broadcast(IpcEvents.agentSessionsReset, remaining, null)
+  coreBroadcast(IpcEvents.agentSessionsReset, remaining, null)
   return remaining
 }
 
@@ -288,7 +288,7 @@ export function deleteAgentSession(id: string): AgentSessionInfo[] {
   void removeArtifacts(id)
   persistSessions()
   const remaining = listAgentSessions()
-  broadcast(IpcEvents.agentSessionsReset, remaining, null)
+  coreBroadcast(IpcEvents.agentSessionsReset, remaining, null)
   return remaining
 }
 
@@ -806,10 +806,67 @@ async function enforceNavigationPolicy(
   session: AgentSession,
   tabId: string
 ): Promise<string | null> {
-  const blocked = takeBlockedNavigation(tabId)
+  const blocked = agentBrowser().takeBlockedNavigation(tabId)
   if (!blocked) return null
   log(session, { kind: 'error', text: `Blocked navigation to ${blocked.slice(0, 200)}` })
   return `note: a navigation to ${blocked} was blocked by the permission policy; the tab did not follow it`
+}
+
+/**
+ * Which gate a navigation target belongs behind.
+ *
+ * data:, file: and blob: have no host, so no per-site rule can reach them —
+ * and what they actually do is not navigation:
+ *   - a data: URL runs whatever script it contains, with a fetch of its own,
+ *     which is exactly what browser_eval is gated as a `command` for;
+ *   - file: reads local files, around the workspace pin;
+ *   - blob: inherits the origin that made it.
+ * Treating them as navigation put them behind a check built for hosts. They go
+ * behind the `command` gate instead, which is what they are — and which the
+ * agent's own evidence page (a data: URL it authors) legitimately passes in a
+ * mode where commands are allowed.
+ */
+function navigationKind(url: string): PolicyActionKind {
+  return /^(data|file|blob):/i.test(url) ? 'command' : 'browser_navigate'
+}
+
+/**
+ * Gate an interaction with a page against the site it happens on.
+ *
+ * browser_eval was gated from the start because injected JS is an egress
+ * channel. Clicking and typing were not — and they should have been: a click
+ * can submit a purchase, send a message or fire a state-changing XHR without
+ * ever navigating, and typing is what fills the form first. Checking the
+ * destination AFTER a click, which is all that happened before, catches only
+ * the subset that navigates.
+ *
+ * This matters far more now the agent can act in the user's own session, where
+ * its clicks carry their cookies and are indistinguishable from theirs.
+ *
+ * The check is against the tab's CURRENT site, so it rides the per-site
+ * permissions: a site the user has already allowed does not prompt again, and a
+ * sensitive one asks even under full autonomy. Without that it would be a
+ * confirmation on every click, which teaches people to click yes.
+ */
+async function gateInteraction(
+  session: AgentSession,
+  tabId: string,
+  what: string
+): Promise<string | null> {
+  let url: string
+  try {
+    url = String(await agentBrowser().evaluate(tabId, 'location.href')).replace(/^"|"$/g, '')
+  } catch {
+    // A tab we cannot read the location of is one we should not act on blind.
+    return 'error: could not determine which site this tab is on; refusing to act on it'
+  }
+  // The URL alone is the detail. Everything downstream — the per-site
+  // decisions, the sensitive-site list, the local-navigation shortcut — parses
+  // it with new URL(), so a friendlier "click #go on https://…" string would
+  // parse as nothing and quietly match no site rule at all.
+  const refused = await gate(session, navigationKind(url), url)
+  if (refused) log(session, { kind: 'error', text: `Refused: ${what} on ${url}` })
+  return refused
 }
 
 /** The tool-result text for a refused concurrent write (6.6). */
@@ -888,7 +945,7 @@ async function executeTool(
       }
       const denied = await gate(session, 'file_write', `${from} → ${to}`)
       if (denied) return denied
-      const result = await renameEntry(from, to)
+      const result = await renameEntry(from, to, root)
       if (result.error) return `error: ${result.error}`
       session.writtenPaths.add(from)
       session.writtenPaths.add(to)
@@ -904,7 +961,7 @@ async function executeTool(
       const before = (await readFile(path, root, null)).content ?? ''
       const denied = await gate(session, 'file_write', path)
       if (denied) return denied
-      const result = await deleteEntry(path)
+      const result = await deleteEntry(path, root)
       if (result.error) return `error: ${result.error}`
       session.writtenPaths.add(path)
       log(session, { kind: 'edit', text: `Deleted ${path}`, path, before, after: '' })
@@ -963,9 +1020,9 @@ async function executeTool(
     }
     case 'browser_open': {
       const url = String(input.url ?? '')
-      const denied = await gate(session, 'browser_navigate', url)
+      const denied = await gate(session, navigationKind(url), url)
       if (denied) return denied
-      const result = await agentOpenTab(url)
+      const result = await agentBrowser().openTab(url)
       log(session, { kind: 'browser', text: `Opened browser tab → ${url.slice(0, 200)}` })
       const openTabId = /tabId: (\S+)/.exec(result)?.[1] ?? ''
       const blocked = openTabId ? await enforceNavigationPolicy(session, openTabId) : null
@@ -973,17 +1030,17 @@ async function executeTool(
     }
     case 'browser_navigate': {
       const url = String(input.url ?? '')
-      const denied = await gate(session, 'browser_navigate', url)
+      const denied = await gate(session, navigationKind(url), url)
       if (denied) return denied
       const navTabId = String(input.tab_id ?? '')
-      const result = await agentNavigate(navTabId, url)
+      const result = await agentBrowser().navigate(navTabId, url)
       log(session, { kind: 'browser', text: `Navigated → ${url.slice(0, 200)}` })
       const blocked = await enforceNavigationPolicy(session, navTabId)
       return blocked ? `${result}\n${blocked}` : result
     }
     case 'browser_read': {
       const readTabId = String(input.tab_id ?? '')
-      const page = await agentReadPage(
+      const page = await agentBrowser().readPage(
         readTabId,
         input.selector ? String(input.selector) : undefined
       )
@@ -991,8 +1048,8 @@ async function executeTool(
       // silently failed. If the browser saw failures, append them so the model
       // notices without having to think to call browser_inspect (P0 success
       // criterion: the failing request shows up on its own).
-      if (hasVisionProblems(readTabId)) {
-        return `${page}\n\n--- Agent Vision ---\n${inspectText(readTabId)}`
+      if (agentBrowser().visionHasProblems(readTabId)) {
+        return `${page}\n\n--- Agent Vision ---\n${agentBrowser().visionReport(readTabId)}`
       }
       return page
     }
@@ -1003,25 +1060,32 @@ async function executeTool(
       // shell command rather than being unguarded (P0-2).
       const denied = await gate(session, 'command', `browser_eval: ${expression}`)
       if (denied) return denied
-      return agentEval(String(input.tab_id ?? ''), expression)
+      return agentBrowser().evaluate(String(input.tab_id ?? ''), expression)
     }
     case 'browser_click': {
       const selector = String(input.selector ?? '')
       const tabId = String(input.tab_id ?? '')
-      // A click can drive navigation; re-check where the tab lands (P0-2/P1-1).
-      const result = await agentClick(tabId, selector)
+      // Gated BEFORE the click: a click that submits or fires an XHR has
+      // already happened by the time a post-hoc navigation check runs.
+      const refused = await gateInteraction(session, tabId, `click ${selector}`)
+      if (refused) return refused
+      // A click can also drive navigation; re-check where the tab lands too.
+      const result = await agentBrowser().click(tabId, selector)
       log(session, { kind: 'browser', text: `Clicked ${selector}` })
       const landed = await enforceNavigationPolicy(session, tabId)
       return landed ? `${result}\n${landed}` : result
     }
     case 'browser_type': {
       const selector = String(input.selector ?? '')
-      const result = await agentType(String(input.tab_id ?? ''), selector, String(input.text ?? ''))
+      const tabId = String(input.tab_id ?? '')
+      const refused = await gateInteraction(session, tabId, `type into ${selector}`)
+      if (refused) return refused
+      const result = await agentBrowser().type(tabId, selector, String(input.text ?? ''))
       log(session, { kind: 'browser', text: `Typed into ${selector}` })
       return result
     }
     case 'browser_wait_for':
-      return agentWaitFor(
+      return agentBrowser().waitFor(
         String(input.tab_id ?? ''),
         String(input.selector ?? ''),
         typeof input.timeout_ms === 'number' ? input.timeout_ms : 10_000
@@ -1033,7 +1097,7 @@ async function executeTool(
       if (shotConflict) return conflictError(session, path, shotConflict)
       const denied = await gate(session, 'file_write', path)
       if (denied) return denied
-      const png = await agentCapture(
+      const png = await agentBrowser().capture(
         String(input.tab_id ?? ''),
         input.selector ? String(input.selector) : undefined
       )
@@ -1046,7 +1110,7 @@ async function executeTool(
       return `saved ${path} (${png.length} bytes)`
     }
     case 'browser_record_start': {
-      const result = await agentRecordStart(String(input.tab_id ?? ''))
+      const result = await agentBrowser().recordStart(String(input.tab_id ?? ''))
       log(session, { kind: 'browser', text: 'Recording started' })
       return result
     }
@@ -1057,7 +1121,7 @@ async function executeTool(
       if (recConflict) return conflictError(session, path, recConflict)
       const denied = await gate(session, 'file_write', path)
       if (denied) return denied
-      const html = await agentRecordStop(String(input.tab_id ?? ''))
+      const html = await agentBrowser().recordStop(String(input.tab_id ?? ''))
       const dir = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : ''
       if (dir) await createEntry(dir, 'dir', root)
       const result = await writeFile(path, html, root)
@@ -1067,7 +1131,7 @@ async function executeTool(
       return `saved ${path}`
     }
     case 'browser_set_viewport': {
-      const result = agentSetViewport(
+      const result = agentBrowser().setViewport(
         String(input.tab_id ?? ''),
         Number(input.width ?? 0),
         Number(input.height ?? 0)
@@ -1076,7 +1140,7 @@ async function executeTool(
       return result
     }
     case 'browser_inspect': {
-      const report = inspectText(String(input.tab_id ?? ''))
+      const report = agentBrowser().visionReport(String(input.tab_id ?? ''))
       log(session, { kind: 'browser', text: report })
       return report
     }

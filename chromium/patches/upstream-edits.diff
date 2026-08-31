@@ -1,0 +1,142 @@
+diff --git a/chrome/browser/chrome_browser_interface_binders_webui.cc b/chrome/browser/chrome_browser_interface_binders_webui.cc
+index 8bc1daffbfa45..5a428e46d8b88 100644
+--- a/chrome/browser/chrome_browser_interface_binders_webui.cc
++++ b/chrome/browser/chrome_browser_interface_binders_webui.cc
+@@ -13,6 +13,8 @@
+ #include "chrome/browser/ui/webui/actor_internals/actor_internals_ui.h"
+ #include "chrome/browser/ui/webui/bluetooth_internals/bluetooth_internals.mojom.h"
+ #include "chrome/browser/ui/webui/bluetooth_internals/bluetooth_internals_ui.h"
++#include "chrome/browser/ui/webui/webdeck/webdeck.mojom.h"
++#include "chrome/browser/ui/webui/webdeck/webdeck_ui.h"
+ #include "chrome/browser/ui/webui/chrome_finds_internals/chrome_finds_internals.mojom.h"
+ #include "chrome/browser/ui/webui/chrome_finds_internals/chrome_finds_internals_ui.h"
+ #include "chrome/browser/ui/webui/chrome_urls/chrome_urls_ui.h"
+@@ -184,6 +186,12 @@ void PopulateChromeWebUIFrameBindersPartsAllPlatforms(
+   RegisterWebUIControllerInterfaceBinder<::mojom::BluetoothInternalsHandler,
+                                          BluetoothInternalsUI>(map);
+ 
++  // WebDeck: the agent drives tabs in the user's own session through this.
++  // Registered per WebUI controller, so it is reachable ONLY from
++  // chrome://webdeck and from nowhere else in the browser.
++  RegisterWebUIControllerInterfaceBinder<webdeck::mojom::AgentTabs, WebDeckUI>(
++      map);
++
+   RegisterWebUIControllerInterfaceBinder<
+       media::mojom::MediaEngagementScoreDetailsProvider, MediaEngagementUI>(
+       map);
+diff --git a/chrome/browser/resources/BUILD.gn b/chrome/browser/resources/BUILD.gn
+index e66dc00a9a34f..07f1b4c2d2432 100644
+--- a/chrome/browser/resources/BUILD.gn
++++ b/chrome/browser/resources/BUILD.gn
+@@ -47,6 +47,7 @@ group("resources") {
+ 
+   if (!is_android) {
+     public_deps += [
++      "webdeck:resources",
+       ":app_icon_resources",
+       ":dev_ui_paks",
+       "about_sys:resources",
+diff --git a/chrome/browser/ui/BUILD.gn b/chrome/browser/ui/BUILD.gn
+index bd7c42556fa36..be30c214d89d7 100644
+--- a/chrome/browser/ui/BUILD.gn
++++ b/chrome/browser/ui/BUILD.gn
+@@ -758,6 +758,7 @@ static_library("ui") {
+     "//chrome/browser/ui/webui/about:impl",
+     "//chrome/browser/ui/webui/accessibility",
+     "//chrome/browser/ui/webui/accessibility:impl",
++    "//chrome/browser/ui/webui/webdeck:impl",
+     "//chrome/browser/ui/webui/history",
+     "//chrome/browser/undo",
+     "//chrome/browser/updates/announcement_notification",
+@@ -1735,6 +1736,7 @@ static_library("ui") {
+       # TODO(crbug.com/364667551): It includes //c/b/ui/browser.h and
+       # //c/b/ui/browser_window.h.
+       "//chrome/browser/ui/webui/accessibility:impl",
++    "//chrome/browser/ui/webui/webdeck:impl",
+ 
+       # TODO(crbug.com/430013958): Remove this circular dependency when
+       # `translate_bubble_factory.cc` stop including c/b/ui/browser_window.h.
+diff --git a/chrome/browser/ui/webui/BUILD.gn b/chrome/browser/ui/webui/BUILD.gn
+index 9ba5323722b00..0404825ab7978 100644
+--- a/chrome/browser/ui/webui/BUILD.gn
++++ b/chrome/browser/ui/webui/BUILD.gn
+@@ -62,6 +62,7 @@ source_set("configs") {
+     "//chrome/browser/ui",
+     "//chrome/browser/ui/webui/about",
+     "//chrome/browser/ui/webui/accessibility",
++    "//chrome/browser/ui/webui/webdeck",
+     "//chrome/browser/ui/webui/actor_internals",
+     "//chrome/browser/ui/webui/autofill_and_password_manager_internals",
+     "//chrome/browser/ui/webui/bluetooth_internals",
+diff --git a/chrome/browser/ui/webui/chrome_web_ui_configs.cc b/chrome/browser/ui/webui/chrome_web_ui_configs.cc
+index 8e1786d0f63bf..2aab5096e05b3 100644
+--- a/chrome/browser/ui/webui/chrome_web_ui_configs.cc
++++ b/chrome/browser/ui/webui/chrome_web_ui_configs.cc
+@@ -13,6 +13,7 @@
+ #include "chrome/browser/optimization_guide/optimization_guide_internals_ui.h"
+ #include "chrome/browser/ui/webui/about/about_ui.h"
+ #include "chrome/browser/ui/webui/accessibility/accessibility_ui.h"
++#include "chrome/browser/ui/webui/webdeck/webdeck_ui.h"
+ #include "chrome/browser/ui/webui/actor_internals/actor_internals_ui.h"
+ #include "chrome/browser/ui/webui/autofill_and_password_manager_internals/autofill_internals_ui.h"
+ #include "chrome/browser/ui/webui/autofill_and_password_manager_internals/password_manager_internals_ui.h"
+@@ -259,6 +260,7 @@ void RegisterChromeWebUIConfigs() {
+   map.AddWebUIConfig(std::make_unique<chrome_urls::ChromeUrlsUIConfig>());
+   map.AddWebUIConfig(std::make_unique<chromeos::DeviceLogUIConfig>());
+   map.AddWebUIConfig(std::make_unique<CrashesUIConfig>());
++  map.AddWebUIConfig(std::make_unique<WebDeckUIConfig>());
+   map.AddWebUIConfig(std::make_unique<commerce::CommerceInternalsUIConfig>());
+   map.AddWebUIConfig(std::make_unique<ActorInternalsUIConfig>());
+   map.AddWebUIConfig(std::make_unique<ComponentsUIConfig>());
+diff --git a/chrome/chrome_paks.gni b/chrome/chrome_paks.gni
+index 7274b66570dd1..49c29c3823177 100644
+--- a/chrome/chrome_paks.gni
++++ b/chrome/chrome_paks.gni
+@@ -187,6 +187,10 @@ template("chrome_extra_paks") {
+       sources += invoker.additional_paks
+     }
+ 
++    # chrome://webdeck resources (Arcwel WebDeck).
++    sources += [ "$root_gen_dir/chrome/webdeck_resources.pak" ]
++    deps += [ "//chrome/browser/resources/webdeck:resources" ]
++
+     if (enable_extensions_core) {
+       sources += [
+         "$root_gen_dir/chrome/component_extension_resources.pak",
+diff --git a/chrome/common/webui_url_constants.h b/chrome/common/webui_url_constants.h
+index 329de0b6b578b..6bbaad1c6f16f 100644
+--- a/chrome/common/webui_url_constants.h
++++ b/chrome/common/webui_url_constants.h
+@@ -357,6 +357,12 @@ inline constexpr char kChromeUIUserEducationInternalsHost[] =
+     "user-education-internals";
+ inline constexpr char kChromeUIUserEducationInternalsURL[] =
+     "chrome://user-education-internals";
++inline constexpr char kChromeUIWebDeckHost[] = "webdeck";
++// The WebDeck UI is served untrusted: it is a normal web app (VS Code's service
++// layer fetches its own bundled themes and grammars, which chrome:// forbids for
++// page script), and it needs no WebUI bindings — it talks to webdeck-core over a
++// loopback socket.
++inline constexpr char kChromeUIWebDeckUntrustedURL[] = "chrome-untrusted://webdeck/";
+ inline constexpr char kChromeUIVersionHost[] = "version";
+ inline constexpr char kChromeUIVersionURL[] = "chrome://version/";
+ inline constexpr char16_t kChromeUIVersionURL16[] = u"chrome://version/";
+diff --git a/tools/gritsettings/resource_ids.spec b/tools/gritsettings/resource_ids.spec
+index 322591a3aa40b..5bf6e61031fd0 100644
+--- a/tools/gritsettings/resource_ids.spec
++++ b/tools/gritsettings/resource_ids.spec
+@@ -1789,6 +1789,15 @@
+     "includes": [10140],
+   },
+ 
++  # Arcwel WebDeck (chrome://webdeck) — the pre-built UI bundle (~180 files).
++  # grit allocates roughly two ids per include, and the chunk count moves with
++  # the app, so this is sized well above the current need. 10160+600 stays clear
++  # of the next allocation at 12000.
++  "chrome/browser/resources/webdeck/webdeck_resources.grd": {
++    "META": {"sizes": {"includes": [600]}},
++    "includes": [10160],
++  },
++
+   "<(SHARED_INTERMEDIATE_DIR)/THIS_IS_A_PLACEHOLDER.grd": {
+     "META": {"sizes": {"includes": [800]}},
+     "includes": [12000],

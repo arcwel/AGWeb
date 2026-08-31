@@ -3,7 +3,7 @@ import { createRequire } from 'node:module'
 import { StreamMessageReader, StreamMessageWriter } from 'vscode-jsonrpc/node'
 import type { Message } from 'vscode-jsonrpc'
 import { IpcChannels, IpcEvents } from '@shared/ipc'
-import { broadcast } from './windows'
+import { coreBroadcast } from '../core/notify'
 import { getCurrentWorkspace } from './workspace'
 import { core } from '../core/rpc'
 import { asString } from '../core/coerce'
@@ -100,7 +100,7 @@ export function startLanguageServer(id: string, cwd: string): { error?: string }
   const writer = new StreamMessageWriter(child.stdin)
 
   reader.listen((message: Message) => {
-    broadcast(IpcEvents.lspMessage, { id, message }, null)
+    coreBroadcast(IpcEvents.lspMessage, { id, message }, null)
   })
   reader.onError(() => {
     // A framing error means the stream is no longer trustworthy; drop the
@@ -110,7 +110,7 @@ export function startLanguageServer(id: string, cwd: string): { error?: string }
 
   child.on('exit', () => {
     running.delete(id)
-    broadcast(IpcEvents.lspExit, { id }, null)
+    coreBroadcast(IpcEvents.lspExit, { id }, null)
   })
 
   running.set(id, { child, writer, reader })

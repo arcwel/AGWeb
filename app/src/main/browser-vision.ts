@@ -1,160 +1,46 @@
 import { getTabWebContents } from './browser'
+import {
+  newVisionState,
+  applyCdpEvent,
+  summarizeVision,
+  formatSnapshot,
+  redactSecrets,
+  type VisionState
+} from '../core/vision'
 
 /**
- * Agent Vision (v0): the agent's window into what the browser itself saw.
- *
- * Electron let the agent only *pantomime* a user — click, type, screenshot. It
- * was blind to the failed XHR, the console error, the request that never
- * resolved. This attaches Chromium's DevTools protocol (via `webContents.debugger`)
- * to an agent-driven tab and records the network + console the page produced, so
- * the agent can *cite* the failing request in its own verification instead of
- * guessing from the rendered DOM. Under the Chromium fork this same surface
- * upgrades to native CDP/Mojo with no change to the agent.
- *
- * Capability note: the agent already runs arbitrary JS on tabs it opens
- * (browser_eval, policy-gated), so reading that tab's network log is within the
- * grant it already holds — not a new trust boundary. Response bodies are captured
- * only for HTTP error responses and capped, to avoid hoarding page data.
+ * Electron's half of Agent Vision: attach `webContents.debugger` to an agent
+ * tab and feed its CDP events into the shared aggregator in core/vision.ts.
+ * The fork does the same over a CDP socket, against the same pure code.
  */
 
-export interface VisionRequest {
-  requestId: string
-  url: string
-  method: string
-  type?: string
-  status?: number
-  failed: boolean
-  error?: string
-  body?: string
-}
+export {
+  newVisionState,
+  applyCdpEvent,
+  summarizeVision,
+  formatSnapshot,
+  redactSecrets
+} from '../core/vision'
+export type { VisionRequest, VisionConsole, VisionState, VisionSnapshot } from '../core/vision'
 
-export interface VisionConsole {
-  level: 'error' | 'warning'
-  text: string
-}
-
-export interface VisionState {
-  requests: Map<string, VisionRequest>
-  console: VisionConsole[]
-}
-
-export interface VisionSnapshot {
-  totalRequests: number
-  failures: VisionRequest[]
-  console: VisionConsole[]
-}
-
-const MAX_CONSOLE = 50
 const MAX_BODY = 2048
-
-export function newVisionState(): VisionState {
-  return { requests: new Map(), console: [] }
-}
-
-/**
- * Fold one CDP event into the state. Pure and Electron-free, so the whole
- * aggregation is unit-tested directly against synthetic events.
- */
-export function applyCdpEvent(state: VisionState, method: string, params: unknown): void {
-  const p = (params ?? {}) as Record<string, unknown>
-  switch (method) {
-    case 'Network.requestWillBeSent': {
-      const request = p.request as { url?: string; method?: string } | undefined
-      const id = p.requestId as string | undefined
-      if (id && request) {
-        state.requests.set(id, {
-          requestId: id,
-          url: request.url ?? '(unknown)',
-          method: request.method ?? 'GET',
-          type: p.type as string | undefined,
-          failed: false
-        })
-      }
-      break
-    }
-    case 'Network.responseReceived': {
-      const r = state.requests.get(p.requestId as string)
-      const response = p.response as { status?: number } | undefined
-      if (r) {
-        r.status = response?.status
-        r.type = (p.type as string) ?? r.type
-      }
-      break
-    }
-    case 'Network.loadingFailed': {
-      const id = p.requestId as string
-      const r = state.requests.get(id)
-      if (r) {
-        r.failed = true
-        r.error = p.errorText as string
-      } else if (id) {
-        state.requests.set(id, {
-          requestId: id,
-          url: '(unknown)',
-          method: '?',
-          failed: true,
-          error: p.errorText as string
-        })
-      }
-      break
-    }
-    case 'Runtime.consoleAPICalled': {
-      const level = p.type as string
-      if (level === 'error' || level === 'warning' || level === 'warn') {
-        const args = (p.args as Array<Record<string, unknown>>) ?? []
-        const text = args
-          .map((a) => a.value ?? a.description ?? a.unserializableValue ?? '')
-          .join(' ')
-          .trim()
-        if (text && state.console.length < MAX_CONSOLE) {
-          state.console.push({
-            level: level === 'error' ? 'error' : 'warning',
-            text: text.slice(0, 500)
-          })
-        }
-      }
-      break
-    }
-    case 'Log.entryAdded': {
-      const entry = p.entry as { level?: string; text?: string } | undefined
-      if (entry && (entry.level === 'error' || entry.level === 'warning')) {
-        if (state.console.length < MAX_CONSOLE) {
-          state.console.push({ level: entry.level, text: String(entry.text ?? '').slice(0, 500) })
-        }
-      }
-      break
-    }
-  }
-}
-
-/** What the agent should see: request count, the failures, and console problems. */
-export function summarizeVision(state: VisionState): VisionSnapshot {
-  const all = [...state.requests.values()]
-  const failures = all.filter((r) => r.failed || (r.status !== undefined && r.status >= 400))
-  return { totalRequests: all.length, failures, console: state.console }
-}
-
-/** Render a snapshot as the terse text the agent reads and cites in verification. */
-export function formatSnapshot(s: VisionSnapshot): string {
-  if (!s.failures.length && !s.console.length) {
-    return `Browser saw ${s.totalRequests} request(s); no network failures or console errors.`
-  }
-  const lines = [`Browser saw ${s.totalRequests} request(s), ${s.failures.length} failed.`]
-  for (const f of s.failures.slice(0, 10)) {
-    lines.push(`  ✗ ${f.method} ${f.url} → ${f.status ?? f.error ?? 'failed'}`)
-    if (f.body) lines.push(`      body: ${f.body.slice(0, 300)}`)
-  }
-  if (s.console.length) {
-    lines.push(`Console: ${s.console.length} error/warning(s).`)
-    for (const c of s.console.slice(0, 10)) lines.push(`  [${c.level}] ${c.text}`)
-  }
-  return lines.join('\n')
-}
 
 /* ---- Electron attach layer (per agent tab) ---- */
 
 const states = new Map<string, VisionState>()
 const attachedTabs = new Set<string>()
+/** The CDP message handler per tab, so detach can remove it (no listener leak). */
+const messageHandlers = new Map<string, (event: unknown, method: string, params: unknown) => void>()
+
+/** Same registrable origin? Used to gate cross-origin response-body capture. */
+function sameOrigin(a: string | undefined, b: string | undefined): boolean {
+  if (!a || !b) return false
+  try {
+    return new URL(a).origin === new URL(b).origin
+  } catch {
+    return false
+  }
+}
 
 /**
  * Attach the debugger and start recording. Synchronous by design: the domain
@@ -176,25 +62,32 @@ export function attachVision(tabId: string): void {
   }
   attachedTabs.add(tabId)
 
-  wc.debugger.on('message', (_event, method, params) => {
+  const onMessage = (_event: unknown, method: string, params: unknown): void => {
     applyCdpEvent(state, method, params)
     // Best-effort: pull the body for HTTP error responses (the "why did it 500").
-    const response = (params as { response?: { status?: number }; requestId?: string })?.response
+    // Only for requests SAME-ORIGIN with the tab's document: CDP can read
+    // cross-origin bodies the page itself cannot (pre-CORS), which would leak
+    // third-party secrets into the agent. The body is redacted regardless.
+    const response = (params as { response?: { status?: number; url?: string } })?.response
     if (method === 'Network.responseReceived' && (response?.status ?? 0) >= 400) {
+      if (!sameOrigin(response?.url, wc.getURL())) return
       const requestId = (params as { requestId?: string }).requestId
       wc.debugger
         .sendCommand('Network.getResponseBody', { requestId })
         .then((res: { body?: string; base64Encoded?: boolean }) => {
           const r = requestId ? state.requests.get(requestId) : undefined
           if (r && res?.body) {
-            r.body = (
-              res.base64Encoded ? Buffer.from(res.body, 'base64').toString('utf8') : res.body
-            ).slice(0, MAX_BODY)
+            const decoded = res.base64Encoded
+              ? Buffer.from(res.body, 'base64').toString('utf8')
+              : res.body
+            r.body = redactSecrets(decoded).slice(0, MAX_BODY)
           }
         })
         .catch(() => {})
     }
-  })
+  }
+  wc.debugger.on('message', onMessage)
+  messageHandlers.set(tabId, onMessage)
 
   // Fire-and-forget: enabling a domain is fast, and awaiting it would stall the
   // caller's navigate(). A rejection just means teardown raced us.
@@ -222,7 +115,10 @@ export function detachVision(tabId: string): void {
   states.delete(tabId)
   if (!attachedTabs.delete(tabId)) return
   const wc = getTabWebContents(tabId)
+  const handler = messageHandlers.get(tabId)
+  messageHandlers.delete(tabId)
   try {
+    if (wc && handler) wc.debugger.removeListener('message', handler)
     if (wc && wc.debugger.isAttached()) wc.debugger.detach()
   } catch {
     // tab already gone

@@ -4,7 +4,13 @@ import { describe, it, expect, vi } from 'vitest'
 // aggregation — the part worth unit-testing — loads without the shell.
 vi.mock('./browser', () => ({ getTabWebContents: () => undefined }))
 
-import { applyCdpEvent, formatSnapshot, newVisionState, summarizeVision } from './browser-vision'
+import {
+  applyCdpEvent,
+  formatSnapshot,
+  newVisionState,
+  redactSecrets,
+  summarizeVision
+} from './browser-vision'
 
 /** Feed a sequence of CDP events into a fresh state and summarize. */
 function run(events: Array<[string, unknown]>): ReturnType<typeof summarizeVision> {
@@ -92,6 +98,55 @@ describe('applyCdpEvent + summarizeVision', () => {
     ])
     expect(s.totalRequests).toBe(0)
     expect(s.failures).toHaveLength(0)
+  })
+
+  it('caps the request log so a polling tab cannot grow unbounded', () => {
+    const state = newVisionState()
+    for (let i = 0; i < 250; i++) {
+      applyCdpEvent(state, 'Network.requestWillBeSent', {
+        requestId: `r${i}`,
+        request: { url: `https://x/${i}`, method: 'GET' }
+      })
+    }
+    expect(state.requests.size).toBeLessThanOrEqual(200)
+    // Oldest evicted, newest kept.
+    expect(state.requests.has('r0')).toBe(false)
+    expect(state.requests.has('r249')).toBe(true)
+  })
+
+  it('redacts secrets in captured console text', () => {
+    const state = newVisionState()
+    applyCdpEvent(state, 'Runtime.consoleAPICalled', {
+      type: 'error',
+      args: [{ value: 'refresh failed {"refresh_token":"s3cr3tvalue","x":1}' }]
+    })
+    expect(state.console[0].text).not.toContain('s3cr3tvalue')
+    expect(state.console[0].text).toContain('«redacted»')
+  })
+})
+
+describe('redactSecrets', () => {
+  it('masks token/secret-shaped key:value pairs', () => {
+    expect(redactSecrets('{"refresh_token":"abc123def"}')).not.toContain('abc123def')
+    expect(redactSecrets('api_key=SUPERSECRET&x=1')).not.toContain('SUPERSECRET')
+    // The shape that matters, and the one a no-space token silently hid: the
+    // scheme and the credential are separated by a space, so a redactor that
+    // stops at whitespace masks "Bearer" and prints the key.
+    expect(redactSecrets('authorization: Bearer sk_live_abc123')).not.toContain('sk_live_abc123')
+    expect(redactSecrets('Cookie: session=deadbeef; theme=dark')).not.toContain('deadbeef')
+    // A masked value must not swallow the rest of a structured body.
+    const body = redactSecrets('{"access_token":"zzz","status":"expired"}')
+    expect(body).not.toContain('zzz')
+    expect(body).toContain('expired')
+  })
+
+  it('masks JWT-shaped strings', () => {
+    expect(redactSecrets('cookie eyJhbGc.eyJzdWIx.SflKxwRJ here')).toContain('«redacted-jwt»')
+  })
+
+  it('leaves ordinary diagnostic text intact', () => {
+    const plain = 'GET https://x/api → 500 internal error'
+    expect(redactSecrets(plain)).toBe(plain)
   })
 })
 

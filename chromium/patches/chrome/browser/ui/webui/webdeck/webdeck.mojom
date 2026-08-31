@@ -1,0 +1,56 @@
+// Copyright 2026 Arcwel. All rights reserved.
+
+module webdeck.mojom;
+
+// Lets chrome://webdeck drive tabs in the user's OWN browsing session on the
+// agent's behalf — their cookies, their logins, watched live in their own tab
+// strip. That is the point of the feature: an agent that can only browse
+// logged-out cannot check a dashboard or file an issue.
+//
+// The surface is DevTools protocol rather than a bespoke click/type API,
+// deliberately:
+//
+//  * It is the same mechanism Chrome's own extension API (chrome.debugger)
+//    gives agents, so the semantics are known-good rather than reinvented.
+//  * The agent already speaks it — the core drives an isolated browser over a
+//    CDP socket today, and this lets both modes share one implementation
+//    instead of two that drift.
+//  * The alternative is a growing RPC of every page interaction we ever need.
+//
+// Crucially it is IN-PROCESS. The other way to get CDP against the user's real
+// session is --remote-debugging-port, and a debugging port is unauthenticated
+// total control of that browser for any local process — upstream Chromium
+// blocked it on the default profile for exactly that reason. Nothing here
+// listens on a socket.
+//
+// Scope: only tabs opened through OpenTab are reachable. This interface cannot
+// attach to a tab the user opened themselves, so it is not a way to read
+// whatever they happen to have on screen.
+interface AgentTabs {
+  // Opens `url` in the user's current window and attaches a protocol session
+  // to it. On success `error` is empty and `tab_id` addresses the new tab.
+  OpenTab(string url) => (string tab_id, string error);
+
+  // Sends one protocol command to a tab opened by OpenTab. `params_json` and
+  // the returned `result_json` are the protocol's own JSON; passing it through
+  // opaquely keeps this interface stable as the agent's needs grow.
+  SendCommand(string tab_id, string method, string params_json)
+      => (string result_json, string error);
+
+  // Closes a tab this interface opened. Tabs the user opened are untouched.
+  CloseTab(string tab_id) => ();
+
+  // Registers the page that receives protocol events.
+  SetClient(pending_remote<AgentTabsClient> client);
+};
+
+// Protocol events travelling back to the page: navigation, console output,
+// network activity — what Agent Vision reads to tell the agent what the
+// browser actually saw.
+interface AgentTabsClient {
+  OnEvent(string tab_id, string method, string params_json);
+
+  // The tab went away — closed by the user, or crashed. The agent needs to
+  // learn this rather than wait on a tab that no longer exists.
+  OnDetached(string tab_id);
+};

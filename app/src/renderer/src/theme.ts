@@ -31,4 +31,12 @@ export function useThemeEffect(): void {
     }
     void window.agweb.setTheme(theme)
   }, [theme])
+
+  // WebDeck Sync: a theme change from another device arrives here; adopt it
+  // into the store (which re-runs the effect above to apply + persist it).
+  useEffect(() => {
+    return window.agweb.onThemeChanged((next) => {
+      if (useShellStore.getState().theme !== next) useShellStore.getState().setTheme(next)
+    })
+  }, [])
 }

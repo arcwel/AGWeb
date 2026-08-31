@@ -647,7 +647,15 @@ export const useShellStore = create<ShellState>((set) => ({
 
   activeProfileId: 'default',
   syncProfile: (profileId) =>
-    set({ activeProfileId: profileId, bookmarks: loadBookmarks(profileId) }),
+    set((state) => {
+      // An empty id is "the host has no profiles to report", not "the empty
+      // profile". Adopting it swapped the user's bookmarks for the empty set
+      // and pointed later saves at a key nothing reads back — the bookmarks
+      // looked deleted. Under the fork, profiles:list returns exactly that.
+      if (!profileId) return {}
+      if (profileId === state.activeProfileId) return {}
+      return { activeProfileId: profileId, bookmarks: loadBookmarks(profileId) }
+    }),
   bookmarks: loadBookmarks('default'),
   addBookmark: (url, title) =>
     set((state) => {
@@ -843,7 +851,14 @@ export const useShellStore = create<ShellState>((set) => ({
       })
     })),
 
-  detachDeck: () => set({ deckMode: 'detached', deckRevealed: false }),
+  detachDeck: () =>
+    set(() => {
+      // Detaching hides the inline Deck and asks the host for a window to put
+      // it in. Where the host has no second window to give, that trade loses
+      // the Deck outright — so stay attached rather than detach into nothing.
+      if (!window.agweb.host.canOpenWindows) return { deckRevealed: true }
+      return { deckMode: 'detached' as const, deckRevealed: false }
+    }),
 
   attachDeck: () => set({ deckMode: 'attached', deckRevealed: true }),
 
@@ -1145,7 +1160,11 @@ useShellStore.subscribe((state) => {
     editorTabs: state.editorTabs,
     activeEditorPath: state.activeEditorPath
   }
-  if (!applyingRemote) void window.agweb.windows.broadcastState(lastSlice)
+  // Only meaningful when the host can open other windows; on the fork there is
+  // nothing to sync to, and firing it rejected on every single state change.
+  if (!applyingRemote && window.agweb.host.canOpenWindows) {
+    void window.agweb.windows.broadcastState(lastSlice)
+  }
   if (saveTimer) clearTimeout(saveTimer)
   saveTimer = setTimeout(() => saveLayout(useShellStore.getState()), 400)
 })

@@ -132,49 +132,24 @@ export function ApplicationSettings(): React.JSX.Element {
       </Section>
 
       <Section title="Downloads">
-        <label className="flex cursor-pointer items-start gap-2.5 rounded-lg px-2 py-1.5 hover:bg-[var(--wd-hover)]">
-          <input
-            type="checkbox"
-            className="mt-0.5 accent-[var(--wd-accent)]"
-            checked={settings.askWhereToSave}
-            onChange={(e) => void update('askWhereToSave', e.target.checked)}
-          />
-          <span className="min-w-0">
-            <span className="block font-medium text-[var(--wd-text)]">
-              Ask where to save each file
+        {/* Downloads belong to the host that performs them. Under the Chromium
+            fork that is Chromium: it chooses the folder, decides whether to ask
+            each time, and nothing reads WebDeck's copies of those two settings.
+            Showing them anyway would be two switches for one behaviour, and the
+            folder picker behind "Change…" does not exist on this host — so name
+            where the real setting lives rather than offering a dead control. */}
+        {window.agweb.host.ownsBrowserFeatures ? (
+          <p className="px-2 py-1 text-[11px] leading-relaxed text-[var(--wd-dim)]">
+            Chromium handles downloads on this build. Change the download folder — and whether
+            you’re asked where to save each file — at{' '}
+            <span className="select-all font-mono text-[var(--wd-muted)]">
+              chrome://settings/downloads
             </span>
-            <span className="block text-[11px] text-[var(--wd-dim)]">
-              Choose a location every time, instead of saving to the folder below.
-            </span>
-          </span>
-        </label>
-        <div
-          className={`flex items-center gap-2 px-2 py-1 ${
-            settings.askWhereToSave ? 'pointer-events-none opacity-40' : ''
-          }`}
-        >
-          <span className="min-w-0 flex-1 truncate text-[11px] text-[var(--wd-muted)]">
-            {settings.downloadPath || 'Default location (your Downloads folder)'}
-          </span>
-          <button
-            onClick={() => {
-              void window.agweb.appSettings.chooseDownloadDir().then(setSettings)
-            }}
-            className="flex-none rounded-md border border-[var(--wd-glass-border)] px-2 py-0.5 text-[11px] font-medium text-[var(--wd-muted)] hover:bg-[var(--wd-hover)]"
-          >
-            Change…
-          </button>
-          {settings.downloadPath && (
-            <button
-              onClick={() => {
-                void window.agweb.appSettings.write({ downloadPath: '' }).then(setSettings)
-              }}
-              className="flex-none text-[11px] text-[var(--wd-dim)] hover:text-rose-500"
-            >
-              Reset
-            </button>
-          )}
-        </div>
+            .
+          </p>
+        ) : (
+          <DownloadSettings settings={settings} onChange={setSettings} />
+        )}
       </Section>
 
       <Section title="Privacy — clear browsing data">
@@ -224,6 +199,69 @@ export function ApplicationSettings(): React.JSX.Element {
 
       {status && <span className="px-2 text-[11px] text-emerald-500">{status}</span>}
     </div>
+  )
+}
+
+interface DownloadSettingsProps {
+  settings: AppSettings
+  onChange: (settings: AppSettings) => void
+}
+
+/**
+ * WebDeck's own download location — only rendered where WebDeck performs the
+ * download, which is Electron. The folder picker behind "Change…" is a native
+ * dialog with no browser equivalent, so this whole block is host-gated by its
+ * caller rather than degraded here.
+ */
+function DownloadSettings({ settings, onChange }: DownloadSettingsProps): React.JSX.Element {
+  return (
+    <>
+      <label className="flex cursor-pointer items-start gap-2.5 rounded-lg px-2 py-1.5 hover:bg-[var(--wd-hover)]">
+        <input
+          type="checkbox"
+          className="mt-0.5 accent-[var(--wd-accent)]"
+          checked={settings.askWhereToSave}
+          onChange={(e) =>
+            void window.agweb.appSettings.write({ askWhereToSave: e.target.checked }).then(onChange)
+          }
+        />
+        <span className="min-w-0">
+          <span className="block font-medium text-[var(--wd-text)]">
+            Ask where to save each file
+          </span>
+          <span className="block text-[11px] text-[var(--wd-dim)]">
+            Choose a location every time, instead of saving to the folder below.
+          </span>
+        </span>
+      </label>
+      <div
+        className={`flex items-center gap-2 px-2 py-1 ${
+          settings.askWhereToSave ? 'pointer-events-none opacity-40' : ''
+        }`}
+      >
+        <span className="min-w-0 flex-1 truncate text-[11px] text-[var(--wd-muted)]">
+          {settings.downloadPath || 'Default location (your Downloads folder)'}
+        </span>
+        <button
+          onClick={() => {
+            void window.agweb.appSettings.chooseDownloadDir().then(onChange)
+          }}
+          className="flex-none rounded-md border border-[var(--wd-glass-border)] px-2 py-0.5 text-[11px] font-medium text-[var(--wd-muted)] hover:bg-[var(--wd-hover)]"
+        >
+          Change…
+        </button>
+        {settings.downloadPath && (
+          <button
+            onClick={() => {
+              void window.agweb.appSettings.write({ downloadPath: '' }).then(onChange)
+            }}
+            className="flex-none text-[11px] text-[var(--wd-dim)] hover:text-rose-500"
+          >
+            Reset
+          </button>
+        )}
+      </div>
+    </>
   )
 }
 

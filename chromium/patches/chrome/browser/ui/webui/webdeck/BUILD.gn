@@ -1,0 +1,50 @@
+# Copyright 2026 Arcwel. All rights reserved.
+
+import("//mojo/public/tools/bindings/mojom.gni")
+
+assert(is_win || is_mac || is_linux)
+
+# The agent's tab-control interface, exposed to chrome://webdeck only.
+# webui_module_path makes the generated JS importable from the page.
+mojom("mojo_bindings") {
+  sources = [ "webdeck.mojom" ]
+  webui_module_path = "/"
+}
+
+source_set("webdeck") {
+  sources = [
+    "webdeck_agent_tabs.h",
+    "webdeck_ui.h",
+  ]
+
+  public_deps = [
+    ":mojo_bindings",
+    "//base",
+    "//content/public/browser",
+    "//mojo/public/cpp/bindings",
+  ]
+}
+
+source_set("impl") {
+  sources = [
+    "webdeck_agent_tabs.cc",
+    "webdeck_ui.cc",
+  ]
+
+  public_deps = [ "//chrome/browser:browser_public_dependencies" ]
+
+  deps = [
+    ":webdeck",
+    "//chrome/browser/profiles:profile",
+    "//chrome/browser/resources/webdeck:resources",
+    "//chrome/browser/ui/browser_window",
+    "//chrome/browser/ui/navigator",
+    "//chrome/browser/webdeck:core_service",
+    "//chrome/common",
+    "//chrome/common:constants",
+    "//services/network/public/mojom",
+    "//ui/base",
+    "//ui/webui",
+    "//url",
+  ]
+}

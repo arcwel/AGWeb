@@ -1,10 +1,14 @@
 import { describe, it, expect, afterEach } from 'vitest'
 import WebSocket from 'ws'
 import { CoreRegistry } from '../rpc'
+import { coreAuthSubprotocol } from './auth'
 import { serveCoreOverWebSocket, type WsServerHandle } from './ws-server'
 
 // A real WebSocket round-trip through the webdeck-core server — the P0 bridge
 // deliverable, exercised end to end rather than just as a pure function.
+//
+// Every connection carries the server's token; the refusal cases live in
+// ws-auth.test.ts.
 
 let server: WsServerHandle | null = null
 afterEach(async () => {
@@ -12,9 +16,13 @@ afterEach(async () => {
   server = null
 })
 
-function connect(port: number): Promise<WebSocket> {
+function serve(registry: CoreRegistry): Promise<WsServerHandle> {
+  return serveCoreOverWebSocket(registry, { authToken: 'test-token-ws-server' })
+}
+
+function connect(handle: WsServerHandle): Promise<WebSocket> {
   return new Promise((resolve, reject) => {
-    const ws = new WebSocket(`ws://127.0.0.1:${port}`)
+    const ws = new WebSocket(`ws://127.0.0.1:${handle.port}`, [coreAuthSubprotocol(handle.token)])
     ws.on('open', () => resolve(ws))
     ws.on('error', reject)
   })
@@ -28,8 +36,8 @@ describe('serveCoreOverWebSocket', () => {
   it('round-trips a request from a socket client to a handler and back', async () => {
     const reg = new CoreRegistry()
     reg.register('add', (a, b) => (a as number) + (b as number))
-    server = await serveCoreOverWebSocket(reg)
-    const ws = await connect(server.port)
+    server = await serve(reg)
+    const ws = await connect(server)
 
     ws.send(JSON.stringify({ id: 1, method: 'add', args: [2, 3] }))
     expect(JSON.parse(await nextMessage(ws))).toEqual({ id: 1, result: 5 })
@@ -44,8 +52,8 @@ describe('serveCoreOverWebSocket', () => {
       pushed = v
     })
     reg.register('ping', () => 'pong')
-    server = await serveCoreOverWebSocket(reg)
-    const ws = await connect(server.port)
+    server = await serve(reg)
+    const ws = await connect(server)
 
     ws.send(JSON.stringify({ notify: true, method: 'push', args: ['x'] }))
     ws.send(JSON.stringify({ id: 2, method: 'ping' }))
@@ -62,8 +70,8 @@ describe('serveCoreOverWebSocket', () => {
     reg.register('boom', () => {
       throw new Error('kaboom')
     })
-    server = await serveCoreOverWebSocket(reg)
-    const ws = await connect(server.port)
+    server = await serve(reg)
+    const ws = await connect(server)
 
     ws.send(JSON.stringify({ id: 3, method: 'boom' }))
     expect(JSON.parse(await nextMessage(ws))).toEqual({ id: 3, error: 'kaboom' })
@@ -72,7 +80,7 @@ describe('serveCoreOverWebSocket', () => {
   })
 
   it('binds loopback and reports an ephemeral port', async () => {
-    server = await serveCoreOverWebSocket(new CoreRegistry())
+    server = await serve(new CoreRegistry())
     expect(server.port).toBeGreaterThan(0)
   })
 })

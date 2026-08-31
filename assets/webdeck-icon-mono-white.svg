@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024" role="img" aria-label="WebDeck white">
+  <defs>
+    <clipPath id="mcwhite"><rect x="16" y="16" width="992" height="992" rx="248"></rect></clipPath>
+    <clipPath id="mbwhite"><rect x="400" y="0" width="624" height="1024"></rect></clipPath>
+    <clipPath id="mfwhite"><rect x="0" y="0" width="400" height="1024"></rect></clipPath>
+  </defs>
+  <rect x="8" y="8" width="1008" height="1008" rx="252" fill="none" stroke="#FFFFFF" stroke-width="16"></rect>
+  <g clip-path="url(#mcwhite)">
+    <g clip-path="url(#mbwhite)"><path d="M -120 795 A 1228.8 1228.8 0 0 1 1120 55" fill="none" stroke="#FFFFFF" stroke-width="41" stroke-linecap="round"></path></g>
+    <g fill="none" stroke="#FFFFFF" stroke-width="10" stroke-opacity="0.55">
+      <rect x="133" y="133" width="548" height="548" rx="46"></rect>
+      <rect x="717" y="133" width="174" height="548" rx="46"></rect>
+      <rect x="133" y="717" width="758" height="174" rx="46"></rect>
+    </g>
+    <g clip-path="url(#mfwhite)"><path d="M -120 795 A 1228.8 1228.8 0 0 1 1120 55" fill="none" stroke="#FFFFFF" stroke-width="41" stroke-linecap="round"></path></g>
+  </g>
+</svg>

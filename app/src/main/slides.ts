@@ -1,6 +1,7 @@
 import { createServer } from 'node:http'
+import { mintServerToken, takeToken } from './local-server-auth'
 import type { Server } from 'node:http'
-import { createReadStream, readFileSync, statSync } from 'node:fs'
+import { createReadStream, readFileSync, realpathSync, statSync } from 'node:fs'
 import { basename, dirname, extname, join, normalize, sep } from 'node:path'
 import { IpcChannels } from '@shared/ipc'
 import { core } from '../core/rpc'
@@ -69,10 +70,19 @@ function deckFile(rel: string): string | null {
   // renders the shell, turning the whole tree into an injection namespace.
   try {
     if (!statSync(resolved).isFile()) return null
+    // Resolve symlinks before serving. The check above is textual, so a link
+    // inside the workspace pointing outside it passes and then gets streamed —
+    // and a link like that ships in someone else's repo, so opening their
+    // project is enough to expose whatever it points at.
+    // The resolved root, for the same reason: /var is a symlink to /private/var
+    // on macOS, so an unresolved root rejects the workspace's own decks.
+    const realRoot = realpathSync(workspace.path)
+    const real = realpathSync(resolved)
+    if (!real.startsWith(realRoot + sep)) return null
+    return real
   } catch {
     return null
   }
-  return resolved
 }
 
 function deckHtml(rel: string): string {
@@ -182,7 +192,17 @@ function handle(url: string, res: import('node:http').ServerResponse, hostHeader
     res.end('Forbidden')
     return
   }
-  const [route, ...restParts] = url.replace(/^\//, '').split('/')
+  // A capability in the URL, for the same reason the preview server has one:
+  // the Host check stops a rebound DNS name, but any local process could set
+  // the right Host and read every deck — and the deck route serves files from
+  // the workspace.
+  const path = takeToken(url, serverToken)
+  if (path === null) {
+    res.writeHead(404)
+    res.end('Not found')
+    return
+  }
+  const [route, ...restParts] = path.replace(/^\//, '').split('/')
   const rest = decodeURIComponent(restParts.join('/')).split('?')[0]
 
   if (route === 'deck') {
@@ -275,13 +295,17 @@ function handle(url: string, res: import('node:http').ServerResponse, hostHeader
   res.end()
 }
 
+/** Minted once per server, and part of every URL it hands out. */
+let serverToken = ''
+
 async function ensureServer(): Promise<string> {
   if (server && baseUrl) return baseUrl
+  serverToken = mintServerToken()
   server = createServer((req, res) => handle(req.url ?? '/', res, req.headers.host))
   await new Promise<void>((resolve) => server?.listen(0, '127.0.0.1', () => resolve()))
   const address = server?.address()
   boundPort = address && typeof address === 'object' ? address.port : 0
-  baseUrl = boundPort ? `http://127.0.0.1:${boundPort}` : null
+  baseUrl = boundPort ? `http://127.0.0.1:${boundPort}/${serverToken}` : null
   if (!baseUrl) throw new Error('slide server failed to bind')
   return baseUrl
 }

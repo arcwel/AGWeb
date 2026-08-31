@@ -3,6 +3,7 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { IpcChannels } from '@shared/ipc'
 import { core } from '../core/rpc'
+import { fetchSecretFromCommand, getSecretSource, setSecretSource } from './secret-source'
 
 /**
  * Secret storage for provider API keys.
@@ -75,6 +76,11 @@ export function setApiKey(provider: unknown, key: unknown): boolean {
 
 /** The decrypted key, for the main process only. Never sent to the renderer. */
 export function getApiKey(provider: Provider): string | null {
+  // A configured password-manager command wins: in that mode WebDeck holds no
+  // key of its own, and asking the vault is the whole point.
+  if (getSecretSource().mode === 'command') {
+    return fetchSecretFromCommand(provider)
+  }
   const stored = loadAll()[provider]
   if (!stored) return null
   if (!stored.encrypted) return stored.value
@@ -116,10 +122,26 @@ export function isEncryptionAvailable(): boolean {
  * these to IPC; under the Chromium fork the same three lines bind to a socket.
  */
 export function registerSecretsRpc(): void {
-  core.register(IpcChannels.secretsList, () => ({
-    encryptionAvailable: isEncryptionAvailable(),
-    configured: listConfiguredProviders()
-  }))
+  core.register(IpcChannels.secretsList, () => {
+    const source = getSecretSource()
+    return {
+      encryptionAvailable: isEncryptionAvailable(),
+      // In command mode "configured" means the command yields a value, not that
+      // we hold a key — WebDeck stores nothing in that mode.
+      configured:
+        source.mode === 'command'
+          ? {
+              anthropic: Boolean(fetchSecretFromCommand('anthropic')),
+              openai: Boolean(fetchSecretFromCommand('openai')),
+              gemini: Boolean(fetchSecretFromCommand('gemini'))
+            }
+          : listConfiguredProviders(),
+      source
+    }
+  })
   core.register(IpcChannels.secretsSet, (provider, key) => setApiKey(provider, key))
   core.register(IpcChannels.secretsClear, (provider) => clearApiKey(provider))
+  core.register(IpcChannels.secretsSetSource, (config) =>
+    setSecretSource((config ?? {}) as Parameters<typeof setSecretSource>[0])
+  )
 }

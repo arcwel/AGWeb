@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>WebDeck</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      html,
+      body,
+      #root {
+        height: 100%;
+        margin: 0;
+      }
+      body {
+        background: #0b0f14;
+        color: #e6e8ea;
+        font:
+          13px/1.5 system-ui,
+          -apple-system,
+          'Segoe UI',
+          sans-serif;
+      }
+      .webui-fail {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        height: 100%;
+        gap: 8px;
+        text-align: center;
+      }
+      .webui-fail h1 {
+        font-size: 16px;
+        font-weight: 600;
+        margin: 0;
+        color: #fb7185;
+      }
+      .webui-fail pre {
+        margin: 0;
+        max-width: 60ch;
+        white-space: pre-wrap;
+        font-family: ui-monospace, Menlo, monospace;
+        font-size: 11px;
+        color: #8b9198;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <!-- Set by the WebUI host; carries the core's loopback port. -->
+    <script src="core-port.js"></script>
+    <!-- Bundled assets the VS Code layer fetches; chrome:// forbids fetching
+         them directly, so they are served from this map. -->
+    <script src="./assets/inline-assets.js"></script>
+    <script type="module" src="./main.tsx"></script>
+  </body>
+</html>

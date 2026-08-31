@@ -1,13 +1,32 @@
 name: CI
 
+# The hosted gate. Everything in this job runs on a stock ubuntu-latest runner
+# with nothing but Node — so everything in it can actually run on every push.
+#
+# What this job DELIBERATELY does not cover: the three checks that need the
+# built Chromium fork or its checkout (verify:fork, verify:hardening,
+# verify:patches). No hosted runner has an 80 GB Chromium checkout on an
+# external drive, so a job for them here could only ever be red or vacuously
+# skipped. They live in fork-verify.yml (manual, on the machine that has the
+# build). The final step of this job prints that list into the run summary, so
+# a green check here never reads as "the fork was verified".
+
 on:
   push:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     defaults:
       run:
         working-directory: app
@@ -20,12 +39,28 @@ jobs:
           cache-dependency-path: app/package-lock.json
       - run: npm ci
       - name: Rebuild node-pty for Electron
-        # If headers can't be fetched, the app falls back to its system-node pty host.
-        run: npm run rebuild:native || echo "electron-rebuild failed; smoke uses the pty-host fallback"
+        id: native
+        # If headers can't be fetched, the app falls back to its system-node pty
+        # host. That fallback is legitimate, but it means the smoke test below
+        # exercised a DIFFERENT code path than a release build does — so say so
+        # loudly instead of swallowing it into an echo nobody reads.
+        run: |
+          if npm run rebuild:native; then
+            echo "path=electron-abi" >> "$GITHUB_OUTPUT"
+          else
+            echo "path=pty-host-fallback" >> "$GITHUB_OUTPUT"
+            echo "::warning title=node-pty was not rebuilt::electron-rebuild failed; the smoke test ran against the system-node pty host, not the in-process Electron ABI. Terminal regressions specific to the Electron ABI cannot be caught by this run."
+          fi
       - run: npm run lint
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+      - name: webdeck-core standalone binary (no Electron)
+        # Builds the fork's service bundle, boots it as a plain Node process, and
+        # drives real domain calls over the WebSocket — guards the migration.
+        # Invoked through the npm script so package.json stays the one place the
+        # gate is named; `npm run verify:core` locally and here are the same run.
+        run: npm run verify:core
       - name: Smoke test (Electron under Xvfb)
         run: xvfb-run -a node scripts/smoke.mjs smoke.png
       - name: Upload smoke screenshot
@@ -34,4 +69,33 @@ jobs:
         with:
           name: agweb-smoke
           path: app/smoke.png
-          if-no-files-found: ignore
+          # warn, not ignore: a smoke run that reported success without ever
+          # producing a screenshot is a result worth seeing in the log.
+          if-no-files-found: warn
+      - name: What this run did NOT verify
+        if: always()
+        # The anti-vacuous-green step. This job is the whole hosted gate, and
+        # three real gates are outside it. Printing them here means the summary
+        # of a passing run states its own limits rather than implying none.
+        run: |
+          {
+            echo "### Hosted CI — coverage and limits"
+            echo
+            echo "Ran here: lint · typecheck · unit tests · build · verify:core · Electron smoke (Xvfb)"
+            echo
+            echo "node-pty path exercised by the smoke test: \`${{ steps.native.outputs.path }}\`"
+            echo
+            echo "**NOT run here — no hosted runner has the fork or its checkout:**"
+            echo
+            echo "| Gate | Needs | Where it runs |"
+            echo "| --- | --- | --- |"
+            echo "| \`verify:fork\` | the built Chromium browser | fork-verify.yml (manual, self-hosted macOS arm64) |"
+            echo "| \`verify:hardening\` | the built browser + the checkout's \`gn\` | fork-verify.yml (manual, self-hosted macOS arm64) |"
+            echo "| \`verify:patches\` | the Chromium checkout | fork-verify.yml (manual, self-hosted macOS arm64) |"
+            echo "| \`upstream:check\` | network (patch half also needs the checkout) | upstream-watch.yml (weekly) |"
+            echo
+            echo "Locally, before pushing anything that touches \`chromium/\`, on the machine with the build:"
+            echo '```'
+            echo "npm --prefix app run verify:fork:all"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
