@@ -187,6 +187,31 @@ export function createAgwebApi(ipcRenderer: IpcLike, host: HostCapabilities): Ag
     },
     agents: {
       start: (task, attachments) => ipcRenderer.invoke(IpcChannels.agentStart, task, attachments),
+      ask: (askId, prompt, context) =>
+        ipcRenderer.invoke(IpcChannels.agentAsk, askId, prompt, context),
+      onAskToken: (listener) => {
+        const handler = (_e: unknown, payload: { askId: string; token: string }): void =>
+          listener(payload)
+        ipcRenderer.on(IpcEvents.agentAskToken, handler)
+        return () => ipcRenderer.removeListener(IpcEvents.agentAskToken, handler)
+      },
+      chatPage: (chatId, question, pageText, url, title) =>
+        ipcRenderer.invoke(IpcChannels.chatPage, chatId, question, pageText, url, title),
+      onChatPageToken: (listener) => {
+        const handler = (_e: unknown, payload: { chatId: string; token: string }): void =>
+          listener(payload)
+        ipcRenderer.on(IpcEvents.chatPageToken, handler)
+        return () => ipcRenderer.removeListener(IpcEvents.chatPageToken, handler)
+      },
+      editCode: (editId, instruction, code, language) =>
+        ipcRenderer.invoke(IpcChannels.agentEditCode, editId, instruction, code, language),
+      onEditToken: (listener) => {
+        const handler = (_e: unknown, payload: { editId: string; token: string }): void =>
+          listener(payload)
+        ipcRenderer.on(IpcEvents.agentEditToken, handler)
+        return () => ipcRenderer.removeListener(IpcEvents.agentEditToken, handler)
+      },
+      cancel: (id) => ipcRenderer.invoke(IpcChannels.agentCancel, id),
       approve: (id) => ipcRenderer.invoke(IpcChannels.agentApprove, id),
       reject: (id) => ipcRenderer.invoke(IpcChannels.agentReject, id),
       stop: (id) => ipcRenderer.invoke(IpcChannels.agentStop, id),
@@ -257,7 +282,20 @@ export function createAgwebApi(ipcRenderer: IpcLike, host: HostCapabilities): Ag
       commit: (message) => ipcRenderer.invoke(IpcChannels.gitCommit, message),
       branches: () => ipcRenderer.invoke(IpcChannels.gitBranches),
       checkout: (branch) => ipcRenderer.invoke(IpcChannels.gitCheckout, branch),
-      blame: (path) => ipcRenderer.invoke(IpcChannels.gitBlame, path)
+      blame: (path) => ipcRenderer.invoke(IpcChannels.gitBlame, path),
+      logGraph: (limit) => ipcRenderer.invoke(IpcChannels.gitLogGraph, limit),
+      show: (hash) => ipcRenderer.invoke(IpcChannels.gitShow, hash)
+    },
+
+    rest: {
+      send: (request) => ipcRenderer.invoke(IpcChannels.restSend, request)
+    },
+
+    db: {
+      connect: (path, readonly) => ipcRenderer.invoke(IpcChannels.dbConnect, path, readonly),
+      query: (id, sql, params) => ipcRenderer.invoke(IpcChannels.dbQuery, id, sql, params),
+      tables: (id) => ipcRenderer.invoke(IpcChannels.dbTables, id),
+      close: (id) => ipcRenderer.invoke(IpcChannels.dbClose, id)
     },
 
     lsp: {

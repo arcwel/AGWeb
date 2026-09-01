@@ -166,6 +166,44 @@ Gatekeeper system-wide:
 Tell testers this is expected for an internal build and will go away once the
 app is notarized (§4 [YOU]).
 
+## 7. The keychain prompt ("wants to use the Arcwel WebDeck Safe Storage key")
+
+Chromium keeps the key that encrypts cookies and saved passwords in the login
+keychain, under an item named *Arcwel WebDeck Safe Storage*. macOS lets an app
+read its own keychain item without asking only when it can bind the item's
+access control to a stable code identity. A notarized app has a Team ID and
+binds cleanly. An ad-hoc build has none — macOS binds to the code hash instead,
+which works **only if two things hold**:
+
+- **The app runs from a stable path.** A quarantined un-notarized app launched
+  from the DMG or Downloads is *App-Translocated* — macOS runs it from a random
+  read-only path that changes each launch, so the binding never matches and the
+  prompt returns every time. **Dragging the app to /Applications in Finder clears
+  translocation** (this is why §5 says drag to Applications, not run-in-place).
+- **The binary does not change.** Every rebuild produces a new code hash, so a
+  keychain item created by a previous build no longer matches. During
+  development this is why the prompt reappears after each build.
+
+So for a tester on a **single delivered build installed to /Applications**: the
+prompt appears **once**, they click **Always Allow**, and it does not return.
+
+If a machine was used to run *several* builds (e.g. this one), a stale item from
+an earlier build's hash lingers and prompts on every launch. Clear it once:
+
+```bash
+security delete-generic-password -s "Arcwel WebDeck Safe Storage" 2>/dev/null || true
+```
+
+The next launch of the installed app recreates it, bound to that build's hash,
+and prompts once more (Always Allow) — then it is quiet.
+
+**Do not "fix" this with `--use-mock-keychain`.** That switch routes OSCrypt to
+an in-memory fake keychain whose key is regenerated every launch, which makes
+every previously stored cookie and password undecryptable on the next start —
+it silently logs the user out of everything on each run. Notarization (§4 [YOU])
+is the only change that removes the prompt without that cost, because a Team ID
+gives the keychain a stable identity to bind to.
+
 ## What still needs deciding before a real launch
 
 Not blockers for testing, but named so they are not forgotten (SHIPPABLE.md has

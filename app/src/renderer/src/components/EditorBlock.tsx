@@ -10,6 +10,7 @@ import {
   updateSettings
 } from '@/monaco'
 import { EditorBreadcrumbs } from '@/components/EditorBreadcrumbs'
+import { InlineEdit, type InlineEditParams } from '@/components/InlineEdit'
 import { usePopover } from '@/popover'
 import { ensureLanguageClient } from '@/lsp'
 import { useMonacoReady } from '@/monaco-ready'
@@ -39,10 +40,62 @@ export function EditorBlock(): React.JSX.Element {
   const [cursorLine, setCursorLine] = useState(1)
   const [modelUri, setModelUri] = useState<string | null>(null)
   const [diffOpen, setDiffOpen] = useState(false)
+  // The active inline AI edit (⌘I), or null. Non-destructive: it only becomes a
+  // buffer change when the user accepts the streamed proposal (roadmap A3). The
+  // editor instance is captured here (not read from the ref during render) so
+  // the overlay has it without a render-time ref access.
+  const [inlineEdit, setInlineEdit] = useState<{
+    editor: monaco.editor.IStandaloneCodeEditor
+    params: InlineEditParams
+    /** The file this edit was opened on; the overlay unmounts when it changes. */
+    path: string
+  } | null>(null)
   const monacoReady = useMonacoReady()
 
   const containerRef = useRef<HTMLDivElement>(null)
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null)
+  // The ⌘I command is registered once on the editor, but must call the latest
+  // opener (which sets React state); a ref bridges the two without re-registering.
+  const openInlineEditRef = useRef<(() => void) | null>(null)
+
+  const openInlineEdit = useCallback((): void => {
+    const editor = editorRef.current
+    const model = editor?.getModel()
+    const selection = editor?.getSelection()
+    if (!editor || !model || !selection) return
+    // No selection: fall back to the current line (constraint 4).
+    const range = selection.isEmpty()
+      ? new monaco.Range(
+          selection.startLineNumber,
+          1,
+          selection.startLineNumber,
+          model.getLineMaxColumn(selection.startLineNumber)
+        )
+      : new monaco.Range(
+          selection.startLineNumber,
+          selection.startColumn,
+          selection.endLineNumber,
+          selection.endColumn
+        )
+    const originalText = model.getValueInRange(range)
+    // An empty line with no selection has nothing to edit — no-op.
+    if (!originalText.trim()) return
+    setInlineEdit({
+      editor,
+      path: pathOfModel(model),
+      params: {
+        editId: `edit-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        range,
+        originalText,
+        language: model.getLanguageId()
+      }
+    })
+  }, [])
+
+  // Keep the ref pointing at the latest opener for the once-registered command.
+  useEffect(() => {
+    openInlineEditRef.current = openInlineEdit
+  }, [openInlineEdit])
 
   const runFormat = async (): Promise<void> => {
     const model = editorRef.current?.getModel()
@@ -82,6 +135,18 @@ export function EditorBlock(): React.JSX.Element {
     })
     editor.addCommand(monaco.KeyMod.Shift | monaco.KeyMod.Alt | monaco.KeyCode.KeyF, () => {
       void runFormat()
+    })
+    // ⌘I / Ctrl+I opens the inline AI edit on the selection (roadmap A3). ⌘I is
+    // free in base Monaco (⌘K is deliberately avoided — it is a chord prefix for
+    // fold/comment bindings). Registered as an action so it also lands in the
+    // context menu under the modification group.
+    editor.addAction({
+      id: 'agweb.inlineEdit',
+      label: 'AI: Edit Selection…',
+      keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyI],
+      contextMenuGroupId: 'modification',
+      contextMenuOrder: 1.5,
+      run: () => openInlineEditRef.current?.()
     })
     const onCursor = editor.onDidChangeCursorPosition((e) => setCursorLine(e.position.lineNumber))
     const onModel = editor.onDidChangeModel(() =>
@@ -234,6 +299,13 @@ export function EditorBlock(): React.JSX.Element {
         )}
         {diffOpen && activePath && (
           <DiffOverlay path={activePath} onClose={() => setDiffOpen(false)} />
+        )}
+        {inlineEdit && inlineEdit.path === activePath && (
+          <InlineEdit
+            editor={inlineEdit.editor}
+            params={inlineEdit.params}
+            onClose={() => setInlineEdit(null)}
+          />
         )}
       </div>
     </div>

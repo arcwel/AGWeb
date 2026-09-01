@@ -1,5 +1,5 @@
 diff --git a/chrome/browser/chrome_browser_interface_binders_webui.cc b/chrome/browser/chrome_browser_interface_binders_webui.cc
-index 8bc1daffbfa45..5a428e46d8b88 100644
+index 8bc1daffbfa45..6e234c3a511bf 100644
 --- a/chrome/browser/chrome_browser_interface_binders_webui.cc
 +++ b/chrome/browser/chrome_browser_interface_binders_webui.cc
 @@ -13,6 +13,8 @@
@@ -11,7 +11,7 @@ index 8bc1daffbfa45..5a428e46d8b88 100644
  #include "chrome/browser/ui/webui/chrome_finds_internals/chrome_finds_internals.mojom.h"
  #include "chrome/browser/ui/webui/chrome_finds_internals/chrome_finds_internals_ui.h"
  #include "chrome/browser/ui/webui/chrome_urls/chrome_urls_ui.h"
-@@ -184,6 +186,12 @@ void PopulateChromeWebUIFrameBindersPartsAllPlatforms(
+@@ -184,6 +186,15 @@ void PopulateChromeWebUIFrameBindersPartsAllPlatforms(
    RegisterWebUIControllerInterfaceBinder<::mojom::BluetoothInternalsHandler,
                                           BluetoothInternalsUI>(map);
  
@@ -20,10 +20,101 @@ index 8bc1daffbfa45..5a428e46d8b88 100644
 +  // chrome://webdeck and from nowhere else in the browser.
 +  RegisterWebUIControllerInterfaceBinder<webdeck::mojom::AgentTabs, WebDeckUI>(
 +      map);
++  // WebDeck: the shell's own tab strip / toolbar drive the window's real tabs
++  // and stream the stage rect. Also reachable ONLY from chrome://webdeck.
++  RegisterWebUIControllerInterfaceBinder<webdeck::mojom::Shell, WebDeckUI>(map);
 +
    RegisterWebUIControllerInterfaceBinder<
        media::mojom::MediaEngagementScoreDetailsProvider, MediaEngagementUI>(
        map);
+diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/chrome_content_browser_client.cc
+index 00d54e849a832..9fc39d1784ad9 100644
+--- a/chrome/browser/chrome_content_browser_client.cc
++++ b/chrome/browser/chrome_content_browser_client.cc
+@@ -579,6 +579,7 @@
+ #include "chrome/browser/ui/waap/waap_utils.h"
+ #include "chrome/browser/ui/webui/chrome_content_browser_client_webui_part.h"
+ #include "chrome/browser/ui/webui/util/webui_util_desktop.h"
++#include "chrome/browser/ui/webui/webdeck/webdeck_adblock.h"
+ #include "chrome/browser/web_applications/isolated_web_apps/chrome_content_browser_client_isolated_web_apps_part.h"
+ #include "chrome/browser/web_applications/isolated_web_apps/isolated_web_app_error_page.h"
+ #include "chrome/browser/web_applications/isolated_web_apps/isolated_web_app_url_info.h"
+@@ -5988,6 +5989,12 @@ ChromeContentBrowserClient::CreateURLLoaderThrottles(
+   Profile* profile = Profile::FromBrowserContext(browser_context);
+   DCHECK(profile);
+ 
++  // WebDeck ad/tracker blocking. The throttle is installed only while the
++  // pref is on, so a disabled blocker adds nothing to the per-request path.
++  if (profile->GetPrefs()->GetBoolean(webdeck::kWebDeckAdblockEnabled)) {
++    result.push_back(std::make_unique<webdeck::WebDeckAdblockThrottle>());
++  }
++
+   ChromeNavigationUIData* chrome_navigation_ui_data =
+       static_cast<ChromeNavigationUIData*>(navigation_ui_data);
+ 
+diff --git a/chrome/browser/devtools/devtools_ui_controller.cc b/chrome/browser/devtools/devtools_ui_controller.cc
+index f2a3fe25fe45f..f0d5e7c0d6a6e 100644
+--- a/chrome/browser/devtools/devtools_ui_controller.cc
++++ b/chrome/browser/devtools/devtools_ui_controller.cc
+@@ -7,6 +7,7 @@
+ #include "base/memory/raw_ptr.h"
+ #include "chrome/browser/devtools/devtools_contents_resizing_strategy.h"
+ #include "chrome/browser/devtools/devtools_window.h"
++#include "chrome/browser/ui/browser_init_state.h"
+ #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
+ #include "chrome/browser/ui/views/frame/contents_container_view.h"
+ #include "chrome/browser/ui/views/frame/contents_web_view.h"
+@@ -15,12 +16,28 @@
+ 
+ DEFINE_USER_DATA(DevtoolsUIController);
+ 
++namespace {
++
++// Returns true if |browser| is a WebDeck window. WebDeck windows draw their own
++// browser chrome and position the active tab into an inset "stage" rect; a
++// docked DevTools panel splits the contents area and fights that layout, so
++// WebDeck windows must open DevTools undocked (windowed). Detection mirrors
++// ContentsContainerView (chrome/browser/ui/views/frame/contents_container_view.cc).
++bool IsWebDeckWindow(BrowserWindowInterface* browser) {
++  const BrowserInitState* const init_state = BrowserInitState::From(browser);
++  return init_state &&
++         init_state->browser_window_create_params().is_webdeck_window;
++}
++
++}  // namespace
++
+ DevtoolsUIController::DevtoolsUIController(
+     BrowserWindowInterface* browser,
+     const std::vector<raw_ptr<ContentsContainerView, DanglingUntriaged>>&
+         contents_container_views)
+-    : can_dock_devtools_(browser->GetType() ==
+-                         BrowserWindowInterface::Type::TYPE_NORMAL),
++    : can_dock_devtools_(
++          browser->GetType() == BrowserWindowInterface::Type::TYPE_NORMAL &&
++          !IsWebDeckWindow(browser)),
+       scoped_data_holder_(browser->GetUnownedUserDataHost(), *this) {
+   for (ContentsContainerView* contents_container_view :
+        contents_container_views) {
+diff --git a/chrome/browser/prefs/browser_prefs.cc b/chrome/browser/prefs/browser_prefs.cc
+index b0923f5e9cd91..b89b6a047e18b 100644
+--- a/chrome/browser/prefs/browser_prefs.cc
++++ b/chrome/browser/prefs/browser_prefs.cc
+@@ -103,6 +103,7 @@
+ #include "chrome/browser/ui/webui/ntp/new_tab_ui.h"
+ #include "chrome/browser/ui/webui/policy/policy_ui.h"
+ #include "chrome/browser/ui/webui/print_preview/policy_settings.h"
++#include "chrome/browser/ui/webui/webdeck/webdeck_adblock.h"
+ #include "chrome/browser/updates/announcement_notification/announcement_notification_service.h"
+ #include "chrome/browser/webauthn/webauthn_pref_names.h"
+ #include "chrome/common/buildflags.h"
+@@ -1778,6 +1779,7 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry,
+   contextual_tasks::RegisterProfilePrefs(registry);
+   registry->RegisterIntegerPref(prefs::kContextualTasksNextPanelOpenCount, 0);
+   registry->RegisterBooleanPref(prefs::kCtrlTabMru, false);
++  registry->RegisterBooleanPref(webdeck::kWebDeckAdblockEnabled, false);
+   cross_device::RegisterProfilePrefs(registry);
+   enterprise::RegisterIdentifiersProfilePrefs(registry);
+   enterprise_connectors::RegisterProfilePrefs(registry);
 diff --git a/chrome/browser/resources/BUILD.gn b/chrome/browser/resources/BUILD.gn
 index e66dc00a9a34f..07f1b4c2d2432 100644
 --- a/chrome/browser/resources/BUILD.gn
@@ -37,18 +128,19 @@ index e66dc00a9a34f..07f1b4c2d2432 100644
        ":dev_ui_paks",
        "about_sys:resources",
 diff --git a/chrome/browser/ui/BUILD.gn b/chrome/browser/ui/BUILD.gn
-index bd7c42556fa36..be30c214d89d7 100644
+index bd7c42556fa36..68623f5cae097 100644
 --- a/chrome/browser/ui/BUILD.gn
 +++ b/chrome/browser/ui/BUILD.gn
-@@ -758,6 +758,7 @@ static_library("ui") {
+@@ -758,6 +758,8 @@ static_library("ui") {
      "//chrome/browser/ui/webui/about:impl",
      "//chrome/browser/ui/webui/accessibility",
      "//chrome/browser/ui/webui/accessibility:impl",
 +    "//chrome/browser/ui/webui/webdeck:impl",
++    "//chrome/browser/webdeck:shell_host",
      "//chrome/browser/ui/webui/history",
      "//chrome/browser/undo",
      "//chrome/browser/updates/announcement_notification",
-@@ -1735,6 +1736,7 @@ static_library("ui") {
+@@ -1735,6 +1737,7 @@ static_library("ui") {
        # TODO(crbug.com/364667551): It includes //c/b/ui/browser.h and
        # //c/b/ui/browser_window.h.
        "//chrome/browser/ui/webui/accessibility:impl",
@@ -56,6 +148,442 @@ index bd7c42556fa36..be30c214d89d7 100644
  
        # TODO(crbug.com/430013958): Remove this circular dependency when
        # `translate_bubble_factory.cc` stop including c/b/ui/browser_window.h.
+diff --git a/chrome/browser/ui/browser_window/internal/browser_window_features.cc b/chrome/browser/ui/browser_window/internal/browser_window_features.cc
+index 72ff7572d05cd..dc4fb2aac8184 100644
+--- a/chrome/browser/ui/browser_window/internal/browser_window_features.cc
++++ b/chrome/browser/ui/browser_window/internal/browser_window_features.cc
+@@ -319,6 +319,9 @@ void BrowserWindowFeatures::Init(BrowserWindowInterface* browser) {
+           BrowserInitState::From(browser)
+               ->browser_window_create_params()
+               .is_trusted_source,
++          BrowserInitState::From(browser)
++              ->browser_window_create_params()
++              .is_webdeck_window,
+           browser->GetUnownedUserDataHost());
+ 
+   side_panel_registry_ =
+diff --git a/chrome/browser/ui/browser_window/public/create_browser_window.h b/chrome/browser/ui/browser_window/public/create_browser_window.h
+index c6e44f9a4bc26..10d5960d2605b 100644
+--- a/chrome/browser/ui/browser_window/public/create_browser_window.h
++++ b/chrome/browser/ui/browser_window/public/create_browser_window.h
+@@ -99,6 +99,13 @@ struct BrowserWindowCreateParams {
+   // case some security UI may not be shown.
+   bool is_trusted_source = false;
+ 
++  // Whether this is a WebDeck window: the WebDeck shell (chrome://webdeck) owns
++  // the whole window and draws its own tab strip / toolbar, so the native
++  // top-chrome (tab strip, toolbar, location bar, bookmark bar) is suppressed.
++  // See WindowFeatureController::SupportsWindowFeatureImpl and
++  // chromium/SHELL_ARCHITECTURE.md in the WebDeck repo.
++  bool is_webdeck_window = false;
++
+   // The app name associated with the browser window.
+   std::string app_name;
+ 
+diff --git a/chrome/browser/ui/startup/startup_browser_creator_impl.cc b/chrome/browser/ui/startup/startup_browser_creator_impl.cc
+index 332a48ebee92f..3a1d51489aa24 100644
+--- a/chrome/browser/ui/startup/startup_browser_creator_impl.cc
++++ b/chrome/browser/ui/startup/startup_browser_creator_impl.cc
+@@ -337,6 +337,10 @@ BrowserWindowInterface* StartupBrowserCreatorImpl::OpenTabsInBrowser(
+     BrowserWindowCreateParams params(profile_, false);
+     params.creation_source =
+         BrowserWindowCreateParams::CreationSource::kStartupCreator;
++    // WebDeck: the shell (chrome://webdeck) owns the whole window; suppress the
++    // native tab strip / toolbar. The window's content tab is steered to
++    // chrome://webdeck below.
++    params.is_webdeck_window = command_line_->HasSwitch(switches::kWebDeck);
+ #if BUILDFLAG(IS_LINUX)
+     params.startup_id = startup_id;
+ #endif
+@@ -357,11 +361,22 @@ BrowserWindowInterface* StartupBrowserCreatorImpl::OpenTabsInBrowser(
+   }
+   CHECK(profile_);
+ 
++  // WebDeck: the shell (chrome://webdeck) is hosted beneath the tab by
++  // ContentsContainerView, not as a tab. The window's single tab starts blank
++  // and becomes the "staged" tab the shell drives — the shell navigates it from
++  // its own address bar (Shell::Navigate) and positions it (Shell::SetStageBounds).
++  StartupTabs webdeck_tabs;
++  if (command_line_->HasSwitch(switches::kWebDeck)) {
++    webdeck_tabs.emplace_back(GURL("about:blank"));
++  }
++  const StartupTabs& effective_tabs =
++      webdeck_tabs.empty() ? tabs : webdeck_tabs;
++
+   bool first_tab = true;
+   bool process_headless_commands = headless::ShouldProcessHeadlessCommands();
+   custom_handlers::ProtocolHandlerRegistry* registry =
+       ProtocolHandlerRegistryFactory::GetForBrowserContext(profile_);
+-  for (auto& tab : tabs) {
++  for (auto& tab : effective_tabs) {
+     // We skip URLs that we'd have to launch an external protocol handler for.
+     // This avoids us getting into an infinite loop asking ourselves to open
+     // a URL, should the handler be (incorrectly) configured to be us. Anyone
+@@ -561,6 +576,16 @@ void StartupBrowserCreatorImpl::DetermineURLsAndLaunch(
+       StartupBrowserCreator::GetSessionStartupPref(*command_line_, profile_),
+       behavior_options);
+ 
++  // WebDeck: a --webdeck launch must always open a fresh WebDeck window rather
++  // than restore a previous session or reuse an existing window, so its tab
++  // gets steered to chrome://webdeck and the window is created with
++  // is_webdeck_window (both handled in OpenTabsInBrowser). Without this, a
++  // fresh macOS profile takes the SYNCHRONOUS_RESTORE path, which creates the
++  // window inside SessionRestore and never reaches OpenTabsInBrowser.
++  if (command_line_->HasSwitch(switches::kWebDeck)) {
++    behavior = BrowserOpenBehavior::NEW;
++  }
++
+   SessionRestore::BehaviorBitmask restore_options =
+       restore_tabbed_browser ? SessionRestore::RESTORE_BROWSER : 0;
+   if (behavior == BrowserOpenBehavior::SYNCHRONOUS_RESTORE) {
+diff --git a/chrome/browser/ui/views/frame/contents_container_view.cc b/chrome/browser/ui/views/frame/contents_container_view.cc
+index 6c1080488d4d3..3bd55f6f07d45 100644
+--- a/chrome/browser/ui/views/frame/contents_container_view.cc
++++ b/chrome/browser/ui/views/frame/contents_container_view.cc
+@@ -18,9 +18,13 @@
+ #include "chrome/browser/ui/ai_overlay_dialog/ai_overlay_dialog_controller.h"
+ #include "chrome/browser/ui/browser_element_identifiers.h"
+ #include "chrome/browser/ui/read_anything/read_anything_immersive_overlay_view.h"
++#include "chrome/browser/ui/sad_tab_helper.h"
+ #include "chrome/browser/ui/ui_features.h"
+ #include "chrome/browser/ui/view_ids.h"
++#include "chrome/browser/ui/browser_init_state.h"
+ #include "chrome/browser/ui/views/frame/browser_view.h"
++#include "chrome/browser/webdeck/webdeck_shell_host.h"
++#include "url/gurl.h"
+ #include "chrome/browser/ui/views/frame/contents_capture_border_view.h"
+ #include "chrome/browser/ui/views/frame/contents_container_outline.h"
+ #include "chrome/browser/ui/views/frame/contents_separator.h"
+@@ -59,7 +63,8 @@ constexpr int kNewTabFooterSeparatorHeight = 1;
+ constexpr int kNewTabFooterHeight = 56;
+ }  // namespace
+ 
+-ContentsContainerView::ContentsContainerView(BrowserView* browser_view)
++ContentsContainerView::ContentsContainerView(BrowserView* browser_view,
++                                             bool is_primary)
+     : browser_view_(browser_view),
+       web_contents_modal_dialog_host_(browser_view_, this) {
+   SetLayoutManager(std::make_unique<views::DelegatingLayoutManager>(this));
+@@ -81,6 +86,33 @@ ContentsContainerView::ContentsContainerView(BrowserView* browser_view)
+ 
+   toast_anchor_view_ = AddChildView(std::make_unique<views::View>());
+ 
++  // WebDeck: the shell (chrome://webdeck) fills the container beneath the active
++  // tab. Added here — before contents_view_ — so it is beneath the tab in
++  // z-order. The tab is positioned into an inset "stage" on top of it in
++  // CalculateProposedLayout (2a uses a static inset to prove the overlay; 2b
++  // streams the real stage rect from the shell over Mojo).
++  const BrowserInitState* const init_state =
++      BrowserInitState::From(browser_view->browser());
++  if (is_primary && init_state &&
++      init_state->browser_window_create_params().is_webdeck_window) {
++    shell_web_view_ = AddChildView(
++        std::make_unique<views::WebView>(browser_view->GetProfile()));
++    shell_web_view_->LoadInitialURL(GURL("chrome://webdeck/"));
++    // Link the shell's (non-tab) WebContents back to this window so the
++    // mojom::Shell impl can reach the TabStripModel and this container.
++    webdeck::WebDeckShellHost::CreateForWebContents(
++        shell_web_view_->GetWebContents(), browser_view->browser());
++
++    // WebDeck split view (Approach A): a second staged ContentsWebView, added
++    // just after the shell backdrop so it sits above it in z-order (same z-band
++    // as contents_view_, which is added next). It hosts a background tab's
++    // WebContents in the secondary stage; hidden until SetSecondaryStagedContents
++    // binds one. See SPLIT_VIEW_PLAN.md.
++    secondary_contents_view_ = AddChildView(
++        std::make_unique<ContentsWebView>(browser_view->GetProfile()));
++    secondary_contents_view_->SetVisible(false);
++  }
++
+   contents_view_ = AddChildView(
+       std::make_unique<ContentsWebView>(browser_view->GetProfile()));
+   contents_view_->SetID(VIEW_ID_TAB_CONTAINER);
+@@ -355,6 +387,50 @@ void ContentsContainerView::SetContentsResizingStrategy(
+   InvalidateLayout();
+ }
+ 
++void ContentsContainerView::SetSecondaryStagedContents(
++    content::WebContents* contents) {
++  if (!secondary_contents_view_) {
++    // Non-WebDeck window (or non-primary container): no secondary stage exists.
++    return;
++  }
++  // Mirror MultiContentsView::SetWebContentsAtIndex: host the (background) tab's
++  // WebContents in the secondary ContentsWebView and reinstall its SadTabHelper
++  // so a crashed tab still paints its sad-tab page in the new view.
++  secondary_contents_view_->SetWebContents(contents);
++  if (contents) {
++    // Guard against painting at the PREVIOUS split's rect. The view still holds
++    // the bounds it was last laid out at, but on a fresh split session
++    // `secondary_strategy_` is empty again (reset on the prior teardown, below)
++    // until the shell streams the new stage rect via SetSecondaryStageBounds —
++    // and CalculateProposedLayout leaves the view untouched while that rect is
++    // empty. Reset to an empty rect before showing so nothing paints until the
++    // real rect arrives, mirroring how the primary stage is never left at a
++    // stale rect (it always lays out, with a static-inset fallback before the
++    // shell has measured).
++    secondary_contents_view_->SetBoundsRect(gfx::Rect());
++    secondary_contents_view_->SetVisible(true);
++    if (auto* sad_tab_helper = SadTabHelper::FromWebContents(contents)) {
++      sad_tab_helper->ReinstallInWebView();
++    }
++  } else {
++    secondary_contents_view_->SetVisible(false);
++    // Tearing the split down: forget the secondary stage rect so the layout
++    // guard (below) drops the secondary view until the next SetSplit.
++    secondary_strategy_.CopyFrom(DevToolsContentsResizingStrategy());
++  }
++  InvalidateLayout();
++}
++
++void ContentsContainerView::SetSecondaryContentsResizingStrategy(
++    const DevToolsContentsResizingStrategy& strategy) {
++  if (secondary_strategy_.Equals(strategy)) {
++    return;
++  }
++
++  secondary_strategy_.CopyFrom(strategy);
++  InvalidateLayout();
++}
++
+ void ContentsContainerView::ApplyWatermarkSettings(
+     const std::string& watermark_text,
+     SkColor fill_color,
+@@ -448,6 +524,16 @@ void ContentsContainerView::SetRoundedCorners(
+   UpdateBorderRoundedCorners();
+ }
+ 
++void ContentsContainerView::SetStageCornerRadius(int radius) {
++  if (!contents_view_) {
++    return;
++  }
++  // Reuse the rounded-corner path: this stores the radii and applies them to
++  // contents_view_->holder() (and re-applies on relayout via OnViewBoundsChanged
++  // when the radii are non-empty), matching how the file rounds contents.
++  SetRoundedCorners(gfx::RoundedCornersF(static_cast<float>(radius)));
++}
++
+ void ContentsContainerView::UpdateContentsClip() {
+   bool changed =
+       contents_view_->holder()->SetNativeViewClipRect(contents_clip_rect_);
+@@ -489,6 +575,21 @@ views::ProposedLayout ContentsContainerView::CalculateProposedLayout(
+                                         &non_devtools_contents_bounds);
+   gfx::Rect contents_view_bounds = non_devtools_contents_bounds;
+ 
++  // WebDeck: the shell fills the container and the active tab renders in an
++  // inset "stage" on top of it. Once the shell streams a stage rect over Mojo
++  // (Shell::SetStageBounds -> SetContentsResizingStrategy), that rect drives the
++  // layout via `strategy_` above (non_devtools_contents_bounds). Until then —
++  // before the shell has measured its stage placeholder — fall back to a static
++  // inset so the overlay is still visible (a margin on three sides and a wider
++  // reserve on the right, where the Dev Deck lives).
++  if (shell_web_view_ && strategy_.bounds().IsEmpty()) {
++    constexpr int kStageMargin = 40;
++    gfx::Rect stage = full_contents_bounds;
++    stage.Inset(gfx::Insets::TLBR(kStageMargin, kStageMargin, kStageMargin,
++                                  full_contents_bounds.width() / 3));
++    contents_view_bounds = stage;
++  }
++
+   // DevTools cares about the specific position, so we have to compensate RTL
+   // layout here.
+   layouts.child_layouts.emplace_back(
+@@ -500,6 +601,14 @@ views::ProposedLayout ContentsContainerView::CalculateProposedLayout(
+       GetMirroredRect(devtools_bounds),
+       views::SizeBounds(full_contents_bounds.size()));
+ 
++  // WebDeck shell: fills the whole container, beneath the tab (see ctor z-order).
++  if (shell_web_view_) {
++    layouts.child_layouts.emplace_back(
++        shell_web_view_.get(), shell_web_view_->GetVisible(),
++        GetMirroredRect(full_contents_bounds),
++        views::SizeBounds(full_contents_bounds.size()));
++  }
++
+   if (new_tab_footer_view_) {
+     gfx::Rect footer_separator_rect, footer_rect;
+     if (new_tab_footer_view_->GetVisible()) {
+@@ -527,6 +636,21 @@ views::ProposedLayout ContentsContainerView::CalculateProposedLayout(
+   layouts.child_layouts.emplace_back(
+       contents_view_.get(), contents_view_->GetVisible(), contents_rect);
+ 
++  // WebDeck split view: the secondary staged tab is positioned by its own
++  // resizing strategy, derived the same way as the primary stage. Guarded on a
++  // non-empty secondary rect so a WebDeck window that never splits (and every
++  // non-WebDeck window, where secondary_contents_view_ is null) is untouched.
++  if (secondary_contents_view_ && !secondary_strategy_.bounds().IsEmpty()) {
++    gfx::Rect secondary_devtools_bounds;
++    gfx::Rect secondary_contents_bounds;
++    ApplyDevToolsContentsResizingStrategy(
++        secondary_strategy_, full_contents_bounds, &secondary_devtools_bounds,
++        &secondary_contents_bounds);
++    layouts.child_layouts.emplace_back(
++        secondary_contents_view_.get(), secondary_contents_view_->GetVisible(),
++        GetMirroredRect(secondary_contents_bounds));
++  }
++
+   layouts.child_layouts.emplace_back(
+       toast_anchor_view_.get(), toast_anchor_view_->GetVisible(),
+       gfx::BoundingRect(contents_rect.origin(), contents_rect.top_right()));
+diff --git a/chrome/browser/ui/views/frame/contents_container_view.h b/chrome/browser/ui/views/frame/contents_container_view.h
+index e3ae9d104db2d..4827ee90fd628 100644
+--- a/chrome/browser/ui/views/frame/contents_container_view.h
++++ b/chrome/browser/ui/views/frame/contents_container_view.h
+@@ -26,6 +26,10 @@ class ScrimView;
+ class ActorOverlayWebView;
+ class ReadAnythingImmersiveOverlayView;
+ 
++namespace content {
++class WebContents;
++}  // namespace content
++
+ namespace gfx {
+ class Rect;
+ }  // namespace gfx
+@@ -63,7 +67,11 @@ class ContentsContainerView : public views::View,
+     kUnknown
+   };
+ 
+-  explicit ContentsContainerView(BrowserView* browser_view);
++  // `is_primary` is true only for the window's primary contents container (the
++  // second container exists for split view and starts hidden). A WebDeck window
++  // hosts its chrome://webdeck shell only in the primary container, so exactly
++  // one shell WebContents / mojom::Shell drives the window's TabStripModel.
++  ContentsContainerView(BrowserView* browser_view, bool is_primary);
+   ContentsContainerView(ContentsContainerView&) = delete;
+   ContentsContainerView& operator=(const ContentsContainerView&) = delete;
+   ~ContentsContainerView() override;
+@@ -77,6 +85,9 @@ class ContentsContainerView : public views::View,
+   ScrimView* contents_scrim_view() { return contents_scrim_view_; }
+   views::WebView* devtools_web_view() { return devtools_web_view_; }
+   ScrimView* devtools_scrim_view() { return devtools_scrim_view_; }
++  // The WebDeck shell (chrome://webdeck) drawn beneath the active tab, filling
++  // the container. Non-null only for WebDeck windows.
++  views::WebView* shell_web_view() { return shell_web_view_; }
+   DevToolsDockedPlacement devtools_docked_placement() {
+     return current_devtools_docked_placement_;
+   }
+@@ -114,6 +125,24 @@ class ContentsContainerView : public views::View,
+     return strategy_;
+   }
+ 
++  // WebDeck split view (Approach A, see SPLIT_VIEW_PLAN.md). The primary
++  // ContentsContainerView of a WebDeck window can stage a SECOND (background)
++  // tab's WebContents into a secondary "stage" alongside the primary one, both
++  // riding on the single full-window shell backdrop. These are no-ops (and the
++  // secondary view is null) in every non-WebDeck window, so a window that never
++  // splits lays out exactly as before.
++
++  // Redirect `contents` (a background tab's WebContents) into the secondary
++  // staged view, or nullptr to tear the secondary stage down. Toggles the
++  // secondary view's visibility. Mirrors how MultiContentsView hosts a
++  // non-active tab in a ContentsWebView.
++  void SetSecondaryStagedContents(content::WebContents* contents);
++
++  // Position the secondary staged view (mirror of SetContentsResizingStrategy
++  // for the secondary stage).
++  void SetSecondaryContentsResizingStrategy(
++      const DevToolsContentsResizingStrategy& strategy);
++
+   void ApplyWatermarkSettings(const std::string& watermark_text,
+                               SkColor fill_color,
+                               SkColor outline_color,
+@@ -141,6 +170,12 @@ class ContentsContainerView : public views::View,
+ 
+   void SetRoundedCorners(const gfx::RoundedCornersF& corner_radii);
+ 
++  // WebDeck: rounds the active tab's (staged) contents corners to `radius` px on
++  // all four corners (0 = square). Applied through the same rounded-corner path
++  // as SetRoundedCorners so it survives relayout. No-op if there is no contents
++  // view.
++  void SetStageCornerRadius(int radius);
++
+   views::View* GetToastAnchorView() { return toast_anchor_view_; }
+ 
+  private:
+@@ -180,6 +215,16 @@ class ContentsContainerView : public views::View,
+ 
+   // The view that contains devtools window for the WebContents.
+   raw_ptr<views::WebView> devtools_web_view_ = nullptr;
++  // WebDeck: hosts chrome://webdeck beneath the active tab, filling the
++  // container so the tab renders in an inset "stage" on top. Non-null only for
++  // WebDeck windows (see the ctor). Added before contents_view_ so it is beneath
++  // it in z-order.
++  raw_ptr<views::WebView> shell_web_view_ = nullptr;
++  // WebDeck split view: a second staged ContentsWebView hosting a background
++  // tab's WebContents in the secondary stage. Non-null only for WebDeck windows
++  // (created next to shell_web_view_). Hidden until SetSecondaryStagedContents
++  // binds a WebContents into it. See SPLIT_VIEW_PLAN.md (Approach A).
++  raw_ptr<ContentsWebView> secondary_contents_view_ = nullptr;
+   // The scrim view that covers the devtools area when a tab-modal dialog is
+   // open.
+   raw_ptr<ScrimView> devtools_scrim_view_ = nullptr;
+@@ -241,6 +286,10 @@ class ContentsContainerView : public views::View,
+   gfx::RoundedCornersF rounded_corner_radii_;
+ 
+   DevToolsContentsResizingStrategy strategy_;
++  // Resizing strategy for the secondary staged view (WebDeck split view). Its
++  // bounds are empty until the shell streams a secondary stage rect, which is
++  // also the guard that keeps the secondary view out of layout until then.
++  DevToolsContentsResizingStrategy secondary_strategy_;
+   base::ScopedObservation<View, ViewObserver> view_bounds_observer_{this};
+ };
+ 
+diff --git a/chrome/browser/ui/views/frame/layout/browser_view_tabbed_layout_impl.cc b/chrome/browser/ui/views/frame/layout/browser_view_tabbed_layout_impl.cc
+index 75f02715c7af1..d089f970a7563 100644
+--- a/chrome/browser/ui/views/frame/layout/browser_view_tabbed_layout_impl.cc
++++ b/chrome/browser/ui/views/frame/layout/browser_view_tabbed_layout_impl.cc
+@@ -1581,10 +1581,19 @@ void BrowserViewTabbedLayoutImpl::DoPostLayoutVisualAdjustments(
+     frame_color.opacity = 0.0f;
+   }
+ 
++  // A WebDeck window suppresses the toolbar and the rest of the top chrome, so
++  // the toolbar carries no CustomCornersBackground. The glass corner treatment
++  // for the top chrome (toolbar / top container) below therefore does not apply
++  // — skip it. Normal windows always have the background, so this early return
++  // never fires for them (it replaces a CHECK that asserted exactly that). The
++  // WebDeck shell draws its own rounded frame in the page.
+   auto* const toolbar_background =
+-      views().toolbar->background()->AsA<CustomCornersBackground>();
+-  CHECK(toolbar_background)
+-      << "Expected toolbar to have a CustomCornersBackground.";
++      views().toolbar->background()
++          ? views().toolbar->background()->AsA<CustomCornersBackground>()
++          : nullptr;
++  if (!toolbar_background) {
++    return;
++  }
+ 
+   // Set toolbar corners.
+   CustomCornersBackground::Corners toolbar_corners;
+diff --git a/chrome/browser/ui/views/frame/multi_contents_view.cc b/chrome/browser/ui/views/frame/multi_contents_view.cc
+index 54069adbee055..2e3bc6ec8a059 100644
+--- a/chrome/browser/ui/views/frame/multi_contents_view.cc
++++ b/chrome/browser/ui/views/frame/multi_contents_view.cc
+@@ -75,8 +75,9 @@ MultiContentsView::MultiContentsView(
+   background_view_ =
+       AddChildView(std::make_unique<MultiContentsBackgroundView>(browser_view));
+ 
+-  contents_container_views_.push_back(
+-      AddChildView(std::make_unique<ContentsContainerView>(browser_view_)));
++  contents_container_views_.push_back(AddChildView(
++      std::make_unique<ContentsContainerView>(browser_view_,
++                                              /*is_primary=*/true)));
+   contents_container_views_[0]
+       ->contents_view()
+       ->set_is_primary_web_contents_for_window(true);
+@@ -84,8 +85,9 @@ MultiContentsView::MultiContentsView(
+   resize_area_ = AddChildView(std::make_unique<MultiContentsResizeArea>(this));
+   resize_area_->SetVisible(false);
+ 
+-  contents_container_views_.push_back(
+-      AddChildView(std::make_unique<ContentsContainerView>(browser_view_)));
++  contents_container_views_.push_back(AddChildView(
++      std::make_unique<ContentsContainerView>(browser_view_,
++                                              /*is_primary=*/false)));
+   contents_container_views_[1]->SetVisible(false);
+ 
+   drop_target_view_ =
 diff --git a/chrome/browser/ui/webui/BUILD.gn b/chrome/browser/ui/webui/BUILD.gn
 index 9ba5323722b00..0404825ab7978 100644
 --- a/chrome/browser/ui/webui/BUILD.gn
@@ -88,6 +616,68 @@ index 8e1786d0f63bf..2aab5096e05b3 100644
    map.AddWebUIConfig(std::make_unique<commerce::CommerceInternalsUIConfig>());
    map.AddWebUIConfig(std::make_unique<ActorInternalsUIConfig>());
    map.AddWebUIConfig(std::make_unique<ComponentsUIConfig>());
+diff --git a/chrome/browser/ui/window_feature_controller/window_feature_controller.cc b/chrome/browser/ui/window_feature_controller/window_feature_controller.cc
+index ec7bd3ea6cd00..c5d7436d5f50e 100644
+--- a/chrome/browser/ui/window_feature_controller/window_feature_controller.cc
++++ b/chrome/browser/ui/window_feature_controller/window_feature_controller.cc
+@@ -17,11 +17,13 @@ WindowFeatureController::WindowFeatureController(
+     web_app::AppBrowserController* app_controller,
+     BrowserWindowInterface::Type browser_type,
+     bool is_trusted_source,
++    bool is_webdeck_window,
+     ui::UnownedUserDataHost& host)
+     : fullscreen_controller_(CHECK_DEREF(fullscreen_controller)),
+       app_controller_(app_controller),
+       browser_type_(browser_type),
+       is_trusted_source_(is_trusted_source),
++      is_webdeck_window_(is_webdeck_window),
+       scoped_unowned_user_data_(host, *this) {}
+ 
+ WindowFeatureController::~WindowFeatureController() = default;
+@@ -166,6 +168,22 @@ bool WindowFeatureController::PictureInPictureBrowserSupportsWindowFeature(
+ bool WindowFeatureController::SupportsWindowFeatureImpl(
+     WindowFeature feature,
+     bool check_can_support) const {
++  // A WebDeck window is a normal (TYPE_NORMAL) browser so the tab model,
++  // sessions, and DevTools docking all stay wired — but the WebDeck shell
++  // (chrome://webdeck) draws its own tab strip and toolbar, so the native
++  // top-chrome must be suppressed. TYPE_NORMAL supports the bookmark bar
++  // unconditionally, so it is listed explicitly here too.
++  if (is_webdeck_window_) {
++    switch (feature) {
++      case WindowFeature::kFeatureTabStrip:
++      case WindowFeature::kFeatureToolbar:
++      case WindowFeature::kFeatureLocationBar:
++      case WindowFeature::kFeatureBookmarkBar:
++        return false;
++      default:
++        break;  // Title bar and the rest keep normal-browser behavior.
++    }
++  }
+   switch (browser_type_) {
+     case BrowserWindowInterface::Type::TYPE_NORMAL:
+       return NormalBrowserSupportsWindowFeature(feature, check_can_support);
+diff --git a/chrome/browser/ui/window_feature_controller/window_feature_controller.h b/chrome/browser/ui/window_feature_controller/window_feature_controller.h
+index 7c203d12c129f..e54667bc9c6c7 100644
+--- a/chrome/browser/ui/window_feature_controller/window_feature_controller.h
++++ b/chrome/browser/ui/window_feature_controller/window_feature_controller.h
+@@ -38,6 +38,7 @@ class WindowFeatureController {
+       web_app::AppBrowserController* app_controller,
+       BrowserWindowInterface::Type browser_type,
+       bool is_trusted_source,
++      bool is_webdeck_window,
+       ui::UnownedUserDataHost& host);
+   ~WindowFeatureController();
+ 
+@@ -92,6 +93,8 @@ class WindowFeatureController {
+ 
+   const BrowserWindowInterface::Type browser_type_;
+   const bool is_trusted_source_;
++  // A WebDeck window suppresses native top-chrome; the shell draws its own.
++  const bool is_webdeck_window_;
+ 
+   ui::ScopedUnownedUserData<WindowFeatureController> scoped_unowned_user_data_;
+ };
 diff --git a/chrome/chrome_paks.gni b/chrome/chrome_paks.gni
 index 7274b66570dd1..49c29c3823177 100644
 --- a/chrome/chrome_paks.gni
@@ -103,6 +693,33 @@ index 7274b66570dd1..49c29c3823177 100644
      if (enable_extensions_core) {
        sources += [
          "$root_gen_dir/chrome/component_extension_resources.pak",
+diff --git a/chrome/common/chrome_switches.cc b/chrome/common/chrome_switches.cc
+index 018b68347edca..7457341a30af0 100644
+--- a/chrome/common/chrome_switches.cc
++++ b/chrome/common/chrome_switches.cc
+@@ -731,6 +731,10 @@ const char kWebRtcIPHandlingPolicy[] = "webrtc-ip-handling-policy";
+ // Force What's New on Desktop to request from the staging environment.
+ const char kWhatsNewUseStaging[] = "whats-new-use-staging";
+ 
++// Launch a WebDeck window: the WebDeck shell (chrome://webdeck) owns the whole
++// window, with no native tab strip or toolbar.
++const char kWebDeck[] = "webdeck";
++
+ // Specify the initial window user title: --window-name="My custom title"
+ const char kWindowName[] = "window-name";
+ 
+diff --git a/chrome/common/chrome_switches.h b/chrome/common/chrome_switches.h
+index 66700a4b9f4f8..ad44701e57813 100644
+--- a/chrome/common/chrome_switches.h
++++ b/chrome/common/chrome_switches.h
+@@ -212,6 +212,7 @@ extern const char kWebRtcRemoteEventLogUploadDelayMs[];
+ extern const char kWebRtcRemoteEventLogUploadNoSuppression[];
+ extern const char kWebRtcIPHandlingPolicy[];
+ extern const char kWhatsNewUseStaging[];
++extern const char kWebDeck[];
+ extern const char kWindowName[];
+ extern const char kWindowPosition[];
+ extern const char kWindowSize[];
 diff --git a/chrome/common/webui_url_constants.h b/chrome/common/webui_url_constants.h
 index 329de0b6b578b..6bbaad1c6f16f 100644
 --- a/chrome/common/webui_url_constants.h

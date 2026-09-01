@@ -1,10 +1,13 @@
 import { spawn, type ChildProcess } from 'node:child_process'
+import { existsSync } from 'node:fs'
 import { createRequire } from 'node:module'
+import { join } from 'node:path'
 import { StreamMessageReader, StreamMessageWriter } from 'vscode-jsonrpc/node'
 import type { Message } from 'vscode-jsonrpc'
 import { IpcChannels, IpcEvents } from '@shared/ipc'
 import { coreBroadcast } from '../core/notify'
 import { getCurrentWorkspace } from './workspace'
+import { coreEnv } from '../core/env'
 import { core } from '../core/rpc'
 import { asString } from '../core/coerce'
 
@@ -27,18 +30,61 @@ import { asString } from '../core/coerce'
  * to have installed.
  */
 
+/**
+ * A native-binary language server (gopls, rust-analyzer): a standalone
+ * executable, not a Node script. It ships under the runtime's
+ * `resources/lsp-bin/<tool>/<platform>-<arch>/<bin>` (the same way js-debug is
+ * vendored) and is spawned directly — no `process.execPath`, no
+ * `ELECTRON_RUN_AS_NODE`, no require-anchor. The exact on-disk path depends on
+ * `coreEnv().appDir`, so it is described here as a locator and resolved at spawn.
+ */
+interface NativeCommand {
+  /** Vendor directory under resources/lsp-bin (e.g. 'rust-analyzer', 'gopls'). */
+  tool: string
+  /** Executable file name inside the platform-arch directory. */
+  bin: string
+}
+
 interface ServerSpec {
-  /** Package whose bin is the server entry point. */
-  module: string
+  /**
+   * Node-script server: the package whose bin is the entry point. Resolved
+   * through the runtime-anchored `createRequire` and spawned as
+   * `process.execPath [entry, ...args]` under `ELECTRON_RUN_AS_NODE`.
+   * Mutually exclusive with `command`.
+   */
+  module?: string
+  /**
+   * Native-binary server: a standalone executable spawned directly. The
+   * alternative to `module` for tools not written in Node (Go, Rust).
+   */
+  command?: NativeCommand
   args: string[]
 }
 
 /**
- * Servers by id. Adding a language is a line here plus its npm dependency —
- * the transport below is language-agnostic.
+ * Servers by id. Adding a Node-script language is a line here plus its npm
+ * dependency (shipped via RUNTIME_PACKAGES); a native-binary language is a line
+ * here plus a vendored binary under resources/lsp-bin (see fetch-lsp-bins.mjs).
+ * The transport below is language-agnostic.
  */
 const SERVERS: Record<string, ServerSpec> = {
-  typescript: { module: 'typescript-language-server/lib/cli.mjs', args: ['--stdio'] }
+  typescript: { module: 'typescript-language-server/lib/cli.mjs', args: ['--stdio'] },
+  // Pyright's stdio language server. The entry MUST be the top-level
+  // langserver.index.js, not dist/pyright-langserver.js directly: it sets
+  // global.__rootDirectory to dist/ before requiring the bundle, which is how
+  // pyright finds its bundled typeshed-fallback stdlib stubs. Pyright pre-bundles
+  // every dependency into dist/ (its package.json declares no runtime deps, only
+  // optional fsevents), so — exactly like typescript-language-server — the single
+  // package is the whole closure. Shipped via RUNTIME_PACKAGES in build-core.mjs.
+  python: { module: 'pyright/langserver.index.js', args: ['--stdio'] },
+  // rust-analyzer speaks LSP on stdio by default (no flag). Native binary,
+  // vendored per-platform under resources/lsp-bin/rust-analyzer/. Absent binary
+  // → resolveNativeCommand returns null → graceful "not installed".
+  rust: { command: { tool: 'rust-analyzer', bin: 'rust-analyzer' }, args: [] },
+  // gopls speaks LSP on stdio by default (no flag). Native binary, vendored
+  // under resources/lsp-bin/gopls/ (built with `go install` — no official
+  // prebuilt download; see fetch-lsp-bins.mjs).
+  go: { command: { tool: 'gopls', bin: 'gopls' }, args: [] }
 }
 
 interface Running {
@@ -49,15 +95,49 @@ interface Running {
 
 const running = new Map<string, Running>()
 
-const require_ = createRequire(import.meta.url)
+// Anchor resolution where the language-server packages actually live. In the
+// webdeck-core SEA, import.meta.url is the embedded main path (node_modules is
+// unreachable from there), so anchor at the unpacked runtime dir instead; under
+// Electron/dev, import.meta.url already sits beside node_modules. Same fix as
+// terminal.ts — without it every server reads as "not installed" on the fork.
+const require_ = createRequire(
+  process.env.WEBDECK_CORE_RUNTIME
+    ? join(process.env.WEBDECK_CORE_RUNTIME, 'noop.cjs')
+    : import.meta.url
+)
 
-/** Resolve a server's entry script inside our own node_modules. */
-function resolveServer(spec: ServerSpec): string | null {
+/** Resolve a Node-script server's entry script inside our own node_modules. */
+function resolveServer(module: string): string | null {
   try {
-    return require_.resolve(spec.module)
+    return require_.resolve(module)
   } catch {
     return null
   }
+}
+
+/**
+ * Resolve a native-binary server's executable on disk, or null if it was not
+ * vendored for this platform. Mirrors debug.ts's `adapterPath`: packaged
+ * (`process.resourcesPath`), core runtime (`coreEnv().appDir`), and dev
+ * (`process.cwd()`), tried in that order.
+ */
+function resolveNativeCommand(cmd: NativeCommand): string | null {
+  const rel = join('lsp-bin', cmd.tool, `${process.platform}-${process.arch}`, cmd.bin)
+  let appResources = ''
+  try {
+    // coreEnv() throws before setCoreEnv() runs; that is a startup bug elsewhere,
+    // but a language server must never take the editor down, so tolerate it and
+    // fall through to the other candidates (appResources stays empty).
+    appResources = join(coreEnv().appDir, 'resources', rel)
+  } catch {
+    // Intentionally empty: the empty appResources is filtered out below.
+  }
+  const candidates = [
+    process.resourcesPath ? join(process.resourcesPath, rel) : '',
+    appResources,
+    join(process.cwd(), 'resources', rel)
+  ]
+  return candidates.find((path) => path && existsSync(path)) ?? null
 }
 
 /**
@@ -71,18 +151,32 @@ export function startLanguageServer(id: string, cwd: string): { error?: string }
   const spec = SERVERS[id]
   if (!spec) return { error: `No language server configured for '${id}'.` }
 
-  const entry = resolveServer(spec)
-  if (!entry) return { error: `Language server '${id}' is not installed.` }
-
-  const child = spawn(process.execPath, [entry, ...spec.args], {
-    cwd,
-    stdio: ['pipe', 'pipe', 'pipe'],
-    env: {
-      ...process.env,
-      // Run Electron's bundled Node rather than requiring a system install.
-      ELECTRON_RUN_AS_NODE: '1'
-    }
-  })
+  // Two spawn models. A native binary (gopls, rust-analyzer) is launched
+  // directly. A Node-script server rides Electron's bundled Node — this path is
+  // kept byte-for-byte identical to before so typescript/python are unaffected.
+  let child: ChildProcess
+  if (spec.command) {
+    const bin = resolveNativeCommand(spec.command)
+    if (!bin) return { error: `Language server '${id}' is not installed.` }
+    child = spawn(bin, spec.args, {
+      cwd,
+      stdio: ['pipe', 'pipe', 'pipe']
+    })
+  } else if (spec.module) {
+    const entry = resolveServer(spec.module)
+    if (!entry) return { error: `Language server '${id}' is not installed.` }
+    child = spawn(process.execPath, [entry, ...spec.args], {
+      cwd,
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env: {
+        ...process.env,
+        // Run Electron's bundled Node rather than requiring a system install.
+        ELECTRON_RUN_AS_NODE: '1'
+      }
+    })
+  } else {
+    return { error: `Language server '${id}' is misconfigured.` }
+  }
 
   if (!child.stdout || !child.stdin) {
     child.kill()
@@ -106,6 +200,16 @@ export function startLanguageServer(id: string, cwd: string): { error?: string }
     // A framing error means the stream is no longer trustworthy; drop the
     // server so the next open starts a clean one.
     stopLanguageServer(id)
+  })
+
+  // A spawn failure (a missing or non-executable binary — Google Drive strips
+  // exec bits, and rust-analyzer/gopls live there) emits 'error'. Without a
+  // listener that is an unhandled event that takes the whole core down; mirror
+  // terminal.ts's getHost() and degrade the server to "not installed" instead.
+  child.on('error', (err) => {
+    running.delete(id)
+    coreBroadcast(IpcEvents.lspExit, { id }, null)
+    console.error(`[lsp:${id}] failed to start: ${err}`)
   })
 
   child.on('exit', () => {

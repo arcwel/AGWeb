@@ -659,7 +659,7 @@ try {
   //    rejects the app. This is also what makes the whole thing notarizable:
   //    every executable carries the same signature.
   const machoInRuntime = []
-  const runtimeRoot = join(stagedApp, 'Contents', 'MacOS', 'webdeck-core-runtime')
+  const runtimeRoot = join(stagedApp, 'Contents', 'Resources', 'webdeck-core-runtime')
   if (existsSync(runtimeRoot)) {
     const stack = [runtimeRoot]
     while (stack.length) {

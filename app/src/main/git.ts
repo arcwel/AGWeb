@@ -2,10 +2,11 @@ import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { resolve, sep } from 'node:path'
 import type { GitBlameLine, GitFileDiff, GitStatus, GitStatusEntry } from '@shared/git'
+import type { GitCommit, GitCommitDetail, GitCommitFile, GitGraphResult } from '@shared/ipc'
 import { getCurrentWorkspace } from './workspace'
 import { IpcChannels } from '@shared/ipc'
 import { core } from '../core/rpc'
-import { asString, asStringList } from '../core/coerce'
+import { asNumber, asString, asStringList } from '../core/coerce'
 
 /**
  * Source control (task 12.3).
@@ -65,7 +66,7 @@ function safeRelative(rel: string): string | null {
  * `-z` matters: it is the only status format that survives filenames
  * containing spaces, quotes or newlines, all of which are legal.
  */
-function parseStatus(raw: string): GitStatusEntry[] {
+export function parseStatus(raw: string): GitStatusEntry[] {
   const entries: GitStatusEntry[] = []
   const records = raw.split('\0')
 
@@ -96,7 +97,7 @@ function parseStatus(raw: string): GitStatusEntry[] {
 }
 
 /** `## main...origin/main [ahead 1, behind 2]` */
-function parseBranchLine(raw: string): Pick<GitStatus, 'branch' | 'ahead' | 'behind'> {
+export function parseBranchLine(raw: string): Pick<GitStatus, 'branch' | 'ahead' | 'behind'> {
   const line = raw.split('\0').find((r) => r.startsWith('##')) ?? ''
   const head = line.slice(3)
   const branch = head.split('...')[0].split(' ')[0] || 'HEAD'
@@ -242,6 +243,159 @@ export async function gitBlame(rel: string): Promise<{ lines: GitBlameLine[]; er
   return { lines }
 }
 
+/**
+ * Commit graph (roadmap C9).
+ *
+ * `\x1f` (unit separator) is used between fields: it cannot appear in a commit
+ * subject, author or ref, so a plain split reconstructs the record where a comma
+ * or tab would be ambiguous. `--all` sweeps every ref (branches, tags, remotes)
+ * so the graph shows the whole DAG, and `--date-order` keeps rows chronological
+ * without the topological reshuffling that scrambles a linear history.
+ */
+const GRAPH_LIMIT_DEFAULT = 300
+const GRAPH_LIMIT_MAX = 2000
+/** Cap the per-commit blob fetches so a giant refactor commit can't stall a click. */
+const COMMIT_FILE_CAP = 60
+const GRAPH_FORMAT = ['%H', '%h', '%P', '%an', '%at', '%D', '%s'].join('%x1f')
+
+export function parseGraphLog(raw: string): GitCommit[] {
+  const commits: GitCommit[] = []
+  for (const line of raw.split('\n')) {
+    if (!line) continue
+    const f = line.split('\x1f')
+    if (f.length < 7) continue
+    commits.push({
+      hash: f[0],
+      short: f[1],
+      parents: f[2] ? f[2].split(' ').filter(Boolean) : [],
+      author: f[3],
+      timestamp: Number(f[4]) || 0,
+      refs: f[5],
+      subject: f[6]
+    })
+  }
+  return commits
+}
+
+export async function gitLogGraph(limit = GRAPH_LIMIT_DEFAULT): Promise<GitGraphResult> {
+  const cap = Math.min(GRAPH_LIMIT_MAX, Math.max(1, Math.round(limit)))
+  const result = await git([
+    'log',
+    '--all',
+    '--date-order',
+    `--max-count=${cap}`,
+    `--pretty=format:${GRAPH_FORMAT}`
+  ])
+  if (result.error) {
+    // A freshly `git init`'d repo has no commits yet: that is an empty graph, not
+    // a missing repository, so don't degrade it to "not a repo".
+    if (
+      /does not have any commits|bad default revision|unknown revision|ambiguous argument/i.test(
+        result.error
+      )
+    ) {
+      return { repository: true, commits: [] }
+    }
+    return { repository: false, commits: [], error: result.error }
+  }
+  return { repository: true, commits: parseGraphLog(result.stdout) }
+}
+
+/** `diff-tree --name-status -z` is a flat NUL stream of STATUS, PATH, STATUS… */
+export function parseNameStatus(raw: string): { status: string; path: string }[] {
+  const parts = raw.split('\0').filter((p) => p.length > 0)
+  const out: { status: string; path: string }[] = []
+  for (let i = 0; i + 1 < parts.length; i += 2) {
+    out.push({ status: parts[i][0] ?? 'M', path: parts[i + 1] })
+  }
+  return out
+}
+
+/**
+ * A rev is a plausible object name: 4–40 hex digits and nothing else. execFile
+ * already makes shell injection impossible; this rejects a leading dash (read as
+ * an option) and any non-hex ref (`HEAD`, `; rm -rf`, empty), so a click can
+ * never hand git an arbitrary revision.
+ */
+export function isValidCommitHash(s: string): boolean {
+  return /^[0-9a-f]{4,40}$/i.test(s)
+}
+
+function emptyDetail(hash: string, error?: string): GitCommitDetail {
+  return { hash, short: hash.slice(0, 7), author: '', timestamp: 0, subject: '', files: [], error }
+}
+
+/**
+ * One commit's metadata and changed files, each as before/after blobs — the same
+ * shape `gitFileDiff` returns, so the renderer feeds them straight into the
+ * Monaco diff component the Source Control block already uses.
+ */
+export async function gitShow(hash: string): Promise<GitCommitDetail> {
+  const rev = hash.trim()
+  if (!isValidCommitHash(rev)) return emptyDetail(rev, 'Invalid commit.')
+
+  const meta = await git([
+    'show',
+    '--no-patch',
+    `--pretty=format:${['%H', '%h', '%an', '%at', '%s'].join('%x1f')}`,
+    rev
+  ])
+  if (meta.error) return emptyDetail(rev, meta.error)
+  const m = meta.stdout.split('\x1f')
+
+  // `--root` so the initial commit lists its files; `--no-renames` keeps every
+  // change a plain A/M/D pair (a rename becomes D+A), which the blob reads below
+  // handle without a separate rename case. Merge commits list nothing here.
+  const names = await git([
+    'diff-tree',
+    '--no-commit-id',
+    '--name-status',
+    '--no-renames',
+    '-r',
+    '-z',
+    '--root',
+    rev
+  ])
+  const entries = parseNameStatus(names.stdout)
+  const capped = entries.slice(0, COMMIT_FILE_CAP)
+
+  // Fetch every capped file's two blobs concurrently. Serially this was up to
+  // 60 × 2 = 120 back-to-back `git show` spawns; a flat Promise.all over the
+  // (≤60) cap, with the two sides of each file also in parallel, keeps a click
+  // on a large commit from stalling. Same result shape and A/D guards as before.
+  const files: GitCommitFile[] = await Promise.all(
+    capped.map(async (entry) => {
+      // Parent side and commit side, exactly like gitFileDiff: an added file has no
+      // parent blob, a deleted file has no commit blob, and a `git show` that fails
+      // leaves that side empty — which is the truth for both.
+      const [before, after]: [GitResult, GitResult] = await Promise.all([
+        entry.status === 'A'
+          ? Promise.resolve({ stdout: '' })
+          : git(['show', `${rev}^:${entry.path}`]),
+        entry.status === 'D'
+          ? Promise.resolve({ stdout: '' })
+          : git(['show', `${rev}:${entry.path}`])
+      ])
+      return {
+        path: entry.path,
+        status: entry.status,
+        original: before.error ? '' : before.stdout,
+        modified: after.error ? '' : after.stdout
+      }
+    })
+  )
+
+  return {
+    hash: m[0] ?? rev,
+    short: m[1] ?? rev.slice(0, 7),
+    author: m[2] ?? '',
+    timestamp: Number(m[3]) || 0,
+    subject: m[4] ?? '',
+    files,
+    truncated: entries.length > COMMIT_FILE_CAP || undefined
+  }
+}
+
 /** Register the source-control domain with webdeck-core (P1). */
 export function registerGitRpc(): void {
   core.register(IpcChannels.gitStatus, () => gitStatus())
@@ -258,5 +412,12 @@ export function registerGitRpc(): void {
   core.register(IpcChannels.gitBlame, (path) => {
     const p = asString(path)
     return p === null ? { lines: [], error: 'bad arguments' } : gitBlame(p)
+  })
+  core.register(IpcChannels.gitLogGraph, (limit) =>
+    gitLogGraph(asNumber(limit, GRAPH_LIMIT_DEFAULT))
+  )
+  core.register(IpcChannels.gitShow, (hash) => {
+    const h = asString(hash)
+    return h === null ? emptyDetail('', 'bad arguments') : gitShow(h)
   })
 }

@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type { BrowserTabState, WorkspaceInfo } from '@shared/ipc'
+import type { HistoryEntry } from '@/omnibox-rank'
 import type { AgentAttachment, AgentSessionInfo } from '@shared/agents'
 import type {
   BlockGroup,
@@ -79,7 +80,11 @@ export const BLOCK_LABELS: Record<BlockType, string> = {
   scm: 'Source Control',
   tasks: 'Tasks',
   settings: 'Settings',
-  debug: 'Debug'
+  debug: 'Debug',
+  chat: 'Page Assistant',
+  gitgraph: 'Git Graph',
+  rest: 'REST Client',
+  db: 'Database'
 }
 
 /** Which shell window this renderer is: the browser, the detached deck, or a float. */
@@ -210,23 +215,48 @@ interface LayoutSnapshot extends DeckLayout {
 const layoutKey = (workspacePath: string | null): string =>
   `agweb.layout:${workspacePath ?? 'default'}`
 
+/** Pack live deck layout into its persisted shape. Shared by the per-workspace
+ *  autosave and named snapshots so both capture the deck identically. */
+function serializeLayout(state: {
+  blocks: Record<string, BlockInstance>
+  groups: BlockGroup[]
+  rail: RailEntry[]
+  deckSizes: DeckSizes
+  deckMode: DeckMode
+}): LayoutSnapshot {
+  return {
+    blocks: state.blocks,
+    groups: state.groups,
+    rail: state.rail,
+    deckSizes: state.deckSizes,
+    deckMode: state.deckMode,
+    counters: { nextBlockId, nextGroupId, blockCounts }
+  }
+}
+
+/** Rehydrate a layout snapshot, bumping the id counters past the saved ones so
+ *  freshly minted blocks/groups never collide with restored ids. Pure: the
+ *  localStorage read lives in `loadLayout`, so named snapshots can reuse this. */
+function rebuildLayout(snap: LayoutSnapshot): DeckLayout | null {
+  if (!snap.groups || !snap.blocks) return null
+  nextBlockId = Math.max(nextBlockId, snap.counters?.nextBlockId ?? 1)
+  nextGroupId = Math.max(nextGroupId, snap.counters?.nextGroupId ?? 1)
+  blockCounts = { ...blockCounts, ...snap.counters?.blockCounts }
+  return {
+    blocks: snap.blocks,
+    groups: snap.groups,
+    rail: snap.rail ?? [],
+    deckSizes: clampDeckSizes(snap.deckSizes ?? DEFAULT_DECK_SIZES),
+    deckMode: snap.deckMode === 'detached' ? 'detached' : 'attached'
+  }
+}
+
 function loadLayout(workspacePath: string | null): DeckLayout | null {
   if (!isLayoutAuthority) return null
   try {
     const raw = localStorage.getItem(layoutKey(workspacePath))
     if (!raw) return null
-    const snap = JSON.parse(raw) as LayoutSnapshot
-    if (!snap.groups || !snap.blocks) return null
-    nextBlockId = Math.max(nextBlockId, snap.counters?.nextBlockId ?? 1)
-    nextGroupId = Math.max(nextGroupId, snap.counters?.nextGroupId ?? 1)
-    blockCounts = { ...blockCounts, ...snap.counters?.blockCounts }
-    return {
-      blocks: snap.blocks,
-      groups: snap.groups,
-      rail: snap.rail ?? [],
-      deckSizes: clampDeckSizes(snap.deckSizes ?? DEFAULT_DECK_SIZES),
-      deckMode: snap.deckMode === 'detached' ? 'detached' : 'attached'
-    }
+    return rebuildLayout(JSON.parse(raw) as LayoutSnapshot)
   } catch {
     return null
   }
@@ -242,15 +272,10 @@ function saveLayout(state: {
 }): void {
   if (!isLayoutAuthority) return
   try {
-    const snap: LayoutSnapshot = {
-      blocks: state.blocks,
-      groups: state.groups,
-      rail: state.rail,
-      deckSizes: state.deckSizes,
-      deckMode: state.deckMode,
-      counters: { nextBlockId, nextGroupId, blockCounts }
-    }
-    localStorage.setItem(layoutKey(state.workspace?.path ?? null), JSON.stringify(snap))
+    localStorage.setItem(
+      layoutKey(state.workspace?.path ?? null),
+      JSON.stringify(serializeLayout(state))
+    )
   } catch {
     // storage unavailable — layout just won't persist
   }
@@ -286,39 +311,162 @@ function saveBookmarks(profileId: string, bookmarks: Array<{ url: string; title:
   }
 }
 
+/* ---- Browsing history (localStorage, per profile — mirrors bookmarks) ---- */
+
+/** Cap the stored history: this backs autocomplete, not a forensic log. */
+const HISTORY_CAP = 3000
+
+function historyKey(profileId: string): string {
+  return `agweb.history:${profileId}`
+}
+
+function loadHistory(profileId: string): HistoryEntry[] {
+  try {
+    const raw = localStorage.getItem(historyKey(profileId))
+    return raw ? (JSON.parse(raw) as HistoryEntry[]) : []
+  } catch {
+    return []
+  }
+}
+
+function saveHistory(profileId: string, history: HistoryEntry[]): void {
+  try {
+    localStorage.setItem(historyKey(profileId), JSON.stringify(history))
+  } catch {
+    // storage unavailable — history just won't persist
+  }
+}
+
+/** Only real web pages belong in the omnibox — skip about:/data:/file: views. */
+function isHistoryUrl(url: string): boolean {
+  return /^https?:\/\//i.test(url)
+}
+
+/* ---- Vertical-tabs layout preference (localStorage, global UI pref) ---- */
+
+// The layout mode is a UI preference, not per-workspace state, so it lives in
+// its own key (mirroring `agweb.utilitiesLocked`) rather than the per-project
+// tab-session snapshot. It survives relaunch and applies to every workspace.
+const VERTICAL_TABS_KEY = 'agweb.verticalTabs'
+
+function loadVerticalTabs(): boolean {
+  try {
+    return localStorage.getItem(VERTICAL_TABS_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+function saveVerticalTabs(vertical: boolean): void {
+  try {
+    localStorage.setItem(VERTICAL_TABS_KEY, vertical ? '1' : '0')
+  } catch {
+    // storage unavailable — the preference just won't persist
+  }
+}
+
 /* ---- Per-project tab-session persistence (localStorage) ---- */
 
 interface TabSessionSnapshot {
-  tabs: Array<{ kind: 'web' | 'doc'; title: string; url?: string; docPath?: string }>
+  // `groupId` points at an entry in `groups` by its *saved* id; loadTabSession
+  // remints both so restored ids never collide with a live counter.
+  tabs: Array<{
+    kind: 'web' | 'doc'
+    title: string
+    url?: string
+    docPath?: string
+    groupId?: string
+  }>
   activeIndex: number
+  /** Tab groups active when the session was saved (Chrome-style grouping). */
+  groups?: TabGroup[]
 }
 
 const tabsKey = (workspacePath: string | null): string => `agweb.tabs:${workspacePath ?? 'default'}`
+
+/** Pack the live tab strip into its persisted shape. Shared by the per-workspace
+ *  autosave and named snapshots so both capture tabs, order, groups and the
+ *  active tab identically. */
+function serializeTabSession(state: {
+  tabs: BrowserTab[]
+  activeTabId: string
+  browserStates: Record<string, BrowserTabState>
+  tabGroups: Record<string, TabGroup>
+}): TabSessionSnapshot {
+  // Only persist groups that still hold at least one tab — an empty group is
+  // dead weight that would restore as an unreachable header.
+  const liveGroupIds = new Set(
+    state.tabs.map((t) => t.groupId).filter((id): id is string => Boolean(id))
+  )
+  return {
+    tabs: state.tabs.map((tab) =>
+      tab.kind === 'doc'
+        ? { kind: 'doc', title: tab.title, docPath: tab.docPath, groupId: tab.groupId }
+        : {
+            kind: 'web',
+            title: tab.title,
+            url: state.browserStates[tab.id]?.url ?? tab.initialUrl,
+            groupId: tab.groupId
+          }
+    ),
+    activeIndex: Math.max(
+      0,
+      state.tabs.findIndex((t) => t.id === state.activeTabId)
+    ),
+    groups: Object.values(state.tabGroups).filter((g) => liveGroupIds.has(g.id))
+  }
+}
+
+/** Rebuild a saved tab strip with fresh ids; pages lazy-load on activation.
+ *  Pure: the localStorage read and the "restore tabs" gate live in the callers,
+ *  so named snapshots reuse this exact re-minting path. */
+function rebuildTabSession(
+  snap: TabSessionSnapshot
+): { tabs: BrowserTab[]; activeTabId: string; tabGroups: Record<string, TabGroup> } | null {
+  if (!Array.isArray(snap.tabs) || snap.tabs.length === 0) return null
+  // Remint group ids so a restored group never shares an id with one minted
+  // this session; carry the old→new mapping to re-tag the rebuilt tabs.
+  const groupIdMap = new Map<string, string>()
+  const tabGroups: Record<string, TabGroup> = {}
+  for (const g of snap.groups ?? []) {
+    if (!g || typeof g.id !== 'string') continue
+    const freshId = `tabgroup-${nextTabGroupId++}`
+    groupIdMap.set(g.id, freshId)
+    tabGroups[freshId] = {
+      id: freshId,
+      name: g.name,
+      color: g.color,
+      collapsed: Boolean(g.collapsed)
+    }
+  }
+  const tabs = snap.tabs.map((t) => {
+    const base = t.kind === 'doc' && t.docPath ? makeDocTab(t.docPath) : makeTab(t.url)
+    const titled =
+      t.kind === 'doc' ? base : t.url ? { ...base, title: t.title || base.title } : base
+    const mapped = t.groupId ? groupIdMap.get(t.groupId) : undefined
+    return mapped ? { ...titled, groupId: mapped } : titled
+  })
+  // Drop any group that ended up with no tabs (e.g. its only tab was a web
+  // tab dropped by a restore filter in future) so no orphan header shows.
+  const used = new Set(tabs.map((t) => t.groupId).filter((id): id is string => Boolean(id)))
+  for (const id of Object.keys(tabGroups)) if (!used.has(id)) delete tabGroups[id]
+  const active = tabs[Math.min(Math.max(snap.activeIndex ?? 0, 0), tabs.length - 1)]
+  return { tabs, activeTabId: active.id, tabGroups }
+}
 
 function saveTabSession(state: {
   workspace: WorkspaceInfo | null
   tabs: BrowserTab[]
   activeTabId: string
   browserStates: Record<string, BrowserTabState>
+  tabGroups: Record<string, TabGroup>
 }): void {
   if (!isLayoutAuthority) return
   try {
-    const snap: TabSessionSnapshot = {
-      tabs: state.tabs.map((tab) =>
-        tab.kind === 'doc'
-          ? { kind: 'doc', title: tab.title, docPath: tab.docPath }
-          : {
-              kind: 'web',
-              title: tab.title,
-              url: state.browserStates[tab.id]?.url ?? tab.initialUrl
-            }
-      ),
-      activeIndex: Math.max(
-        0,
-        state.tabs.findIndex((t) => t.id === state.activeTabId)
-      )
-    }
-    localStorage.setItem(tabsKey(state.workspace?.path ?? null), JSON.stringify(snap))
+    localStorage.setItem(
+      tabsKey(state.workspace?.path ?? null),
+      JSON.stringify(serializeTabSession(state))
+    )
   } catch {
     // storage unavailable — the session just won't persist
   }
@@ -327,7 +475,7 @@ function saveTabSession(state: {
 /** Rebuild a saved tab strip with fresh ids; pages lazy-load on activation. */
 function loadTabSession(
   workspacePath: string | null
-): { tabs: BrowserTab[]; activeTabId: string } | null {
+): { tabs: BrowserTab[]; activeTabId: string; tabGroups: Record<string, TabGroup> } | null {
   if (!isLayoutAuthority) return null
   // Honour the "Restore tabs on launch" setting — off means start fresh.
   try {
@@ -338,17 +486,60 @@ function loadTabSession(
   try {
     const raw = localStorage.getItem(tabsKey(workspacePath))
     if (!raw) return null
-    const snap = JSON.parse(raw) as TabSessionSnapshot
-    if (!Array.isArray(snap.tabs) || snap.tabs.length === 0) return null
-    const tabs = snap.tabs.map((t) => {
-      if (t.kind === 'doc' && t.docPath) return makeDocTab(t.docPath)
-      const tab = makeTab(t.url)
-      return t.url ? { ...tab, title: t.title || tab.title } : tab
-    })
-    const active = tabs[Math.min(Math.max(snap.activeIndex ?? 0, 0), tabs.length - 1)]
-    return { tabs, activeTabId: active.id }
+    return rebuildTabSession(JSON.parse(raw) as TabSessionSnapshot)
   } catch {
     return null
+  }
+}
+
+/* ---- Named workspace snapshots (localStorage, global across workspaces) ---- */
+
+/**
+ * A named capture of a workspace's working state: its tab strip (urls, order,
+ * groups, active tab), its deck layout, and its open editor files. A snapshot
+ * names a *workspace* state, so it stores the workspace it was taken in and
+ * restore targets that workspace. Reuses the same serialized shapes the
+ * per-workspace autosaves write, so capture and restore share one code path.
+ */
+export interface WorkspaceSnapshot {
+  id: string
+  name: string
+  /** The workspace this was captured in; restore returns into it. */
+  workspace: WorkspaceInfo | null
+  /** Epoch ms the snapshot was taken. */
+  savedAt: number
+  /** Same shape `saveTabSession` persists. */
+  tabSession: TabSessionSnapshot
+  /** Same shape `saveLayout` persists. */
+  layout: LayoutSnapshot
+  /** Open editor documents (workspace-relative paths) and the focused one. */
+  editorTabs: string[]
+  activeEditorPath: string | null
+}
+
+const SNAPSHOTS_KEY = 'agweb.snapshots'
+let nextSnapshotId = 1
+
+function loadSnapshots(): WorkspaceSnapshot[] {
+  try {
+    const raw = localStorage.getItem(SNAPSHOTS_KEY)
+    if (!raw) return []
+    const parsed = JSON.parse(raw) as WorkspaceSnapshot[]
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
+}
+
+/** Returns whether the write actually landed — the caller surfaces a failure
+ *  (e.g. quota exceeded) instead of falsely reporting the snapshot saved. */
+function saveSnapshots(snapshots: WorkspaceSnapshot[]): boolean {
+  try {
+    localStorage.setItem(SNAPSHOTS_KEY, JSON.stringify(snapshots))
+    return true
+  } catch {
+    // storage unavailable (e.g. quota exceeded) — snapshots won't persist
+    return false
   }
 }
 
@@ -405,8 +596,12 @@ interface ShellState {
   setTheme(theme: Theme): void
 
   newTab(initialUrl?: string): string
-  /** Adopt a browser view an agent created in main as a live tab. */
-  adoptBrowserTab(id: string): void
+  /**
+   * Adopt a browser view the browser created but the shell did not: an agent
+   * view from main, or a tab a page opened itself (window.open / target=_blank).
+   * `url`/`title` seed the strip until the first browserState push refines them.
+   */
+  adoptBrowserTab(id: string, url?: string, title?: string): void
   /** Open (or focus) a Document Studio tab for a workspace file. */
   openDoc(path: string): void
   closeTab(id: string): void
@@ -424,6 +619,15 @@ interface ShellState {
    *  Dev Deck block — Settings is not part of the developer workspace. */
   settingsOpen: boolean
   setSettingsOpen(open: boolean): void
+  /** The Session Snapshots surface opens as its own overlay over the stage,
+   *  like Settings — so both the hotkey and the command palette can raise it. */
+  snapshotsOpen: boolean
+  setSnapshotsOpen(open: boolean): void
+  /** Reader Mode: a distraction-free reading overlay for the active tab. When
+   *  open, ReaderView raises the overlay count so the native view yields to its
+   *  in-DOM reading column. Toggled from the toolbar and closed on Escape. */
+  readerOpen: boolean
+  setReaderOpen(open: boolean): void
   toggleDeck(): void
   /** Pop the whole deck out into its own IDE window. */
   detachDeck(): void
@@ -450,10 +654,21 @@ interface ShellState {
 
   /** A turn handed back to the composer for editing before it is sent again
    *  (task 11.13). Null once the composer has picked it up. */
+  /**
+   * Tab-strip layout: false renders the horizontal strip, true a vertical left
+   * rail. A UI preference, persisted globally so it survives relaunch. Exposed
+   * on the store so the surrounding layout (Stage/App) can reserve rail width.
+   */
+  verticalTabs: boolean
+  setVerticalTabs(vertical: boolean): void
+  toggleVerticalTabs(): void
+
   /** Tab groups, keyed by id. Tabs point at these by `groupId`. */
   tabGroups: Record<string, TabGroup>
   /** Group the given tabs together, creating the group. Returns its id. */
   groupTabs(tabIds: string[], name?: string): string
+  /** Add an existing tab to an existing group, keeping the group contiguous. */
+  addTabToGroup(tabId: string, groupId: string): void
   ungroupTab(tabId: string): void
   renameTabGroup(groupId: string, name: string): void
   setTabGroupColor(groupId: string, color: TabGroupColor): void
@@ -498,6 +713,12 @@ interface ShellState {
   removeBookmark(url: string): void
   /** Merge an imported set into the active profile's bookmarks (deduped). */
   importBookmarks(items: Array<{ url: string; title: string }>): number
+  /** Visited pages for the active profile, most-relevant first — omnibox source. */
+  history: HistoryEntry[]
+  /** Record (or refresh) a visit; called as browser state updates flow in. */
+  recordVisit(url: string, title: string, favicon?: string): void
+  /** Forget the active profile's browsing history. */
+  clearHistory(): void
   /** The page the Home button goes to. */
   homeUrl: string
   setHomeUrl(url: string): void
@@ -522,6 +743,20 @@ interface ShellState {
   /** An agent started a command in its own pty — surface it as a Terminal
    *  block whose id IS the pty session id, so the user watches it live. */
   adoptTerminal(sessionId: string, title: string): void
+
+  /**
+   * Named workspace snapshots: capture the current tabs + deck layout + open
+   * editors under a name, restore them later. Global across workspaces (a
+   * snapshot stores the workspace it belongs to), newest first.
+   */
+  snapshots: WorkspaceSnapshot[]
+  /** Capture the live state as a new snapshot named `name`. Returns whether it
+   *  persisted, so the UI can report a storage failure instead of "Saved". */
+  saveSnapshot(name: string): boolean
+  /** Rebuild tabs, deck layout and editors from a snapshot (re-minting ids). */
+  restoreSnapshot(id: string): void
+  renameSnapshot(id: string, name: string): void
+  deleteSnapshot(id: string): void
 }
 
 const initialTab = makeTab()
@@ -545,6 +780,19 @@ export const useShellStore = create<ShellState>((set) => ({
   editorTabs: [],
   activeEditorPath: null,
   tabGroups: {},
+  snapshots: loadSnapshots(),
+
+  verticalTabs: loadVerticalTabs(),
+  setVerticalTabs: (vertical) => {
+    saveVerticalTabs(vertical)
+    set({ verticalTabs: vertical })
+  },
+  toggleVerticalTabs: () =>
+    set((state) => {
+      const verticalTabs = !state.verticalTabs
+      saveVerticalTabs(verticalTabs)
+      return { verticalTabs }
+    }),
 
   groupTabs: (tabIds, name) => {
     if (tabIds.length === 0) return ''
@@ -574,6 +822,24 @@ export const useShellStore = create<ShellState>((set) => ({
     })
     return id
   },
+
+  addTabToGroup: (tabId, groupId) =>
+    set((state) => {
+      if (!state.tabGroups[groupId]) return {}
+      const moving = state.tabs.find((t) => t.id === tabId)
+      if (!moving || moving.groupId === groupId) return {}
+      const tagged = { ...moving, groupId }
+      const rest = state.tabs.filter((t) => t.id !== tabId)
+      // Slot the tab right after the group's current last member so the run
+      // stays contiguous (the same invariant groupTabs maintains); if the group
+      // has no members yet, append it.
+      const lastIndex = rest.reduce((at, t, i) => (t.groupId === groupId ? i : at), -1)
+      const tabs =
+        lastIndex < 0
+          ? [...rest, tagged]
+          : [...rest.slice(0, lastIndex + 1), tagged, ...rest.slice(lastIndex + 1)]
+      return { tabs }
+    }),
 
   ungroupTab: (tabId) =>
     set((state) => ({
@@ -654,7 +920,11 @@ export const useShellStore = create<ShellState>((set) => ({
       // looked deleted. Under the fork, profiles:list returns exactly that.
       if (!profileId) return {}
       if (profileId === state.activeProfileId) return {}
-      return { activeProfileId: profileId, bookmarks: loadBookmarks(profileId) }
+      return {
+        activeProfileId: profileId,
+        bookmarks: loadBookmarks(profileId),
+        history: loadHistory(profileId)
+      }
     }),
   bookmarks: loadBookmarks('default'),
   addBookmark: (url, title) =>
@@ -683,6 +953,42 @@ export const useShellStore = create<ShellState>((set) => ({
     })
     return added
   },
+  history: loadHistory('default'),
+  recordVisit: (url, title, favicon) =>
+    set((state) => {
+      if (!isHistoryUrl(url)) return {}
+      const front = state.history[0]
+      if (front && front.url === url) {
+        // Title and favicon arrive after the URL, and a reload re-fires the
+        // whole sequence — refresh the front entry in place rather than
+        // inflating its visit count on every browser-state push.
+        const nextTitle = title || front.title
+        const nextFavicon = favicon ?? front.favicon
+        if (nextTitle === front.title && nextFavicon === front.favicon) return {}
+        const history = [
+          { ...front, title: nextTitle, favicon: nextFavicon, lastVisit: Date.now() },
+          ...state.history.slice(1)
+        ]
+        saveHistory(state.activeProfileId, history)
+        return { history }
+      }
+      const existing = state.history.find((h) => h.url === url)
+      const entry: HistoryEntry = {
+        url,
+        title: title || existing?.title || url,
+        favicon: favicon ?? existing?.favicon,
+        visitCount: (existing?.visitCount ?? 0) + 1,
+        lastVisit: Date.now()
+      }
+      const history = [entry, ...state.history.filter((h) => h.url !== url)].slice(0, HISTORY_CAP)
+      saveHistory(state.activeProfileId, history)
+      return { history }
+    }),
+  clearHistory: () =>
+    set((state) => {
+      saveHistory(state.activeProfileId, [])
+      return { history: [] }
+    }),
   homeUrl: localStorage.getItem('agweb.home') ?? 'https://duckduckgo.com',
   setHomeUrl: (url) => {
     try {
@@ -744,12 +1050,18 @@ export const useShellStore = create<ShellState>((set) => ({
     return tab.id
   },
 
-  adoptBrowserTab: (id) =>
+  adoptBrowserTab: (id, url, title) =>
     set((state) => {
       if (state.tabs.some((t) => t.id === id)) return { activeTabId: id }
-      // The view already exists in main, so the tab starts with content; its
-      // title arrives with the first browserState push.
-      const tab: BrowserTab = { id, kind: 'web', title: 'Agent tab', hasContent: true }
+      // The view already exists in the browser, so the tab starts with content.
+      // Seed the title from the payload (falling back to the URL's host, then a
+      // placeholder); the first browserState push refines it either way.
+      const tab: BrowserTab = {
+        id,
+        kind: 'web',
+        title: title || (url ? (hostOf(url) ?? url) : '') || 'Agent tab',
+        hasContent: true
+      }
       return { tabs: [...state.tabs, tab], activeTabId: id }
     }),
 
@@ -814,7 +1126,17 @@ export const useShellStore = create<ShellState>((set) => ({
       const rest = state.tabs.filter((t) => t.id !== id)
       const index = beforeId ? rest.findIndex((t) => t.id === beforeId) : rest.length
       if (index < 0) return {}
-      return { tabs: [...rest.slice(0, index), moving, ...rest.slice(index)] }
+      // Chrome-style ungroup-on-drag-out: a grouped tab stays in its group only
+      // when it lands adjacent to a fellow member, keeping the run one unbroken
+      // segment. Dropped anywhere else it leaves the group, so the strip never
+      // renders two chips for a group split into two pieces.
+      let placed = moving
+      if (moving.groupId) {
+        const staysContiguous =
+          rest[index - 1]?.groupId === moving.groupId || rest[index]?.groupId === moving.groupId
+        if (!staysContiguous) placed = { ...moving, groupId: undefined }
+      }
+      return { tabs: [...rest.slice(0, index), placed, ...rest.slice(index)] }
     }),
 
   markTabHasContent: (id) =>
@@ -822,7 +1144,7 @@ export const useShellStore = create<ShellState>((set) => ({
       tabs: state.tabs.map((t) => (t.id === id ? { ...t, hasContent: true } : t))
     })),
 
-  updateBrowserState: (browserState) =>
+  updateBrowserState: (browserState) => {
     set((state) => ({
       browserStates: { ...state.browserStates, [browserState.tabId]: browserState },
       tabs: state.tabs.map((tab) => {
@@ -830,13 +1152,27 @@ export const useShellStore = create<ShellState>((set) => ({
         const title = browserState.title || hostOf(browserState.url) || 'New Tab'
         return { ...tab, title, favicon: browserState.favicon, hasContent: true }
       })
-    })),
+    }))
+    // Every navigation flows through here, so it is the one place to record
+    // history for the omnibox. recordVisit ignores non-web URLs and dedupes.
+    if (browserState.url) {
+      useShellStore
+        .getState()
+        .recordVisit(browserState.url, browserState.title, browserState.favicon)
+    }
+  },
 
   setOverlayOpen: (open) =>
     set((state) => ({ overlayCount: Math.max(0, state.overlayCount + (open ? 1 : -1)) })),
 
   settingsOpen: false,
   setSettingsOpen: (open) => set({ settingsOpen: open }),
+
+  snapshotsOpen: false,
+  setSnapshotsOpen: (open) => set({ snapshotsOpen: open }),
+
+  readerOpen: false,
+  setReaderOpen: (open) => set({ readerOpen: open }),
 
   toggleDeck: () => set((state) => ({ deckRevealed: !state.deckRevealed })),
 
@@ -1065,6 +1401,73 @@ export const useShellStore = create<ShellState>((set) => ({
   setFileDirty: (path, dirty) =>
     set((state) => ({ dirtyFiles: { ...state.dirtyFiles, [path]: dirty } })),
 
+  saveSnapshot: (name) => {
+    // Capture whether the write landed outside `set` (zustand setters have no
+    // return value) so the caller can report a storage failure to the user.
+    let persisted = false
+    set((state) => {
+      const snapshot: WorkspaceSnapshot = {
+        id: `snapshot-${Date.now().toString(36)}-${nextSnapshotId++}`,
+        name: name.trim() || `Snapshot ${state.snapshots.length + 1}`,
+        workspace: state.workspace,
+        savedAt: Date.now(),
+        // Reuse the exact serializers the per-workspace autosaves use, so a
+        // snapshot captures tabs/groups/layout byte-for-byte the same way.
+        tabSession: serializeTabSession(state),
+        layout: serializeLayout(state),
+        editorTabs: state.editorTabs,
+        activeEditorPath: state.activeEditorPath
+      }
+      const snapshots = [snapshot, ...state.snapshots]
+      persisted = saveSnapshots(snapshots)
+      return { snapshots }
+    })
+    return persisted
+  },
+
+  restoreSnapshot: (id) =>
+    set((state) => {
+      const snapshot = state.snapshots.find((s) => s.id === id)
+      if (!snapshot) return {}
+      // Rebuild through the same paths setWorkspace uses: rebuildLayout bumps
+      // the block/group counters, rebuildTabSession re-mints tab and group ids.
+      const layout = rebuildLayout(snapshot.layout)
+      const session = rebuildTabSession(snapshot.tabSession)
+      if (session) {
+        // Tear down the live web views the restored strip replaces — exactly
+        // what leaving a workspace does — so no orphaned native view lingers.
+        for (const tab of state.tabs) {
+          if (tab.kind === 'web' && tab.hasContent) void window.agweb.browser.destroy(tab.id)
+        }
+      }
+      return {
+        workspace: snapshot.workspace,
+        editorTabs: snapshot.editorTabs,
+        activeEditorPath: snapshot.activeEditorPath,
+        ...(layout ?? {}),
+        // Re-minted tab ids replace the strip, so any open split binding is now
+        // dangling — reset it (and the divider) alongside the restored session.
+        ...(session ? { ...session, browserStates: {}, splitTabId: null, splitRatio: 0.5 } : {})
+      }
+    }),
+
+  renameSnapshot: (id, name) =>
+    set((state) => {
+      const trimmed = name.trim()
+      const snapshots = state.snapshots.map((s) =>
+        s.id === id ? { ...s, name: trimmed || s.name } : s
+      )
+      saveSnapshots(snapshots)
+      return { snapshots }
+    }),
+
+  deleteSnapshot: (id) =>
+    set((state) => {
+      const snapshots = state.snapshots.filter((s) => s.id !== id)
+      saveSnapshots(snapshots)
+      return { snapshots }
+    }),
+
   applyPreset: (preset) =>
     set((state) => {
       if (preset === 'browsing') return { deckRevealed: false }
@@ -1175,19 +1578,22 @@ if (isLayoutAuthority) {
   let lastTabSlice = {
     tabs: useShellStore.getState().tabs,
     activeTabId: useShellStore.getState().activeTabId,
-    browserStates: useShellStore.getState().browserStates
+    browserStates: useShellStore.getState().browserStates,
+    tabGroups: useShellStore.getState().tabGroups
   }
   let tabSaveTimer: ReturnType<typeof setTimeout> | null = null
   useShellStore.subscribe((state) => {
     const changed =
       lastTabSlice.tabs !== state.tabs ||
       lastTabSlice.activeTabId !== state.activeTabId ||
-      lastTabSlice.browserStates !== state.browserStates
+      lastTabSlice.browserStates !== state.browserStates ||
+      lastTabSlice.tabGroups !== state.tabGroups
     if (!changed) return
     lastTabSlice = {
       tabs: state.tabs,
       activeTabId: state.activeTabId,
-      browserStates: state.browserStates
+      browserStates: state.browserStates,
+      tabGroups: state.tabGroups
     }
     if (tabSaveTimer) clearTimeout(tabSaveTimer)
     tabSaveTimer = setTimeout(() => saveTabSession(useShellStore.getState()), 400)

@@ -12,6 +12,10 @@ export type BlockType =
   | 'tasks'
   | 'settings'
   | 'debug'
+  | 'chat'
+  | 'gitgraph'
+  | 'rest'
+  | 'db'
 
 /** Zones a group can dock into inside a window. */
 export type DockZone = 'left' | 'right' | 'bottom'

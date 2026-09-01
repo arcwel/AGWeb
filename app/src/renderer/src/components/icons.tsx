@@ -224,6 +224,36 @@ export function BlockTypeIcon({
           <path d="M6 8.5v7M18 11.5c0 3-3 4-6 4.5" />
         </svg>
       )
+    case 'chat':
+      return (
+        <svg {...common}>
+          <path d="M21 12a8 8 0 0 1-11.5 7.2L4 20l1-4.2A8 8 0 1 1 21 12z" />
+          <path d="M9 11h6M9 8h4" />
+        </svg>
+      )
+    case 'gitgraph':
+      return (
+        <svg {...common}>
+          <circle cx="6" cy="5" r="2.2" />
+          <circle cx="6" cy="19" r="2.2" />
+          <circle cx="17" cy="12" r="2.2" />
+          <path d="M6 7.2v9.6M6 12h4.5a4.5 4.5 0 0 0 4.5-2.4" />
+        </svg>
+      )
+    case 'rest':
+      return (
+        <svg {...common}>
+          <path d="M8 16l-4-4 4-4M16 8l4 4-4 4M13.5 6l-3 12" />
+        </svg>
+      )
+    case 'db':
+      return (
+        <svg {...common}>
+          <ellipse cx="12" cy="6" rx="7" ry="2.8" />
+          <path d="M5 6v12c0 1.5 3.1 2.8 7 2.8s7-1.3 7-2.8V6" />
+          <path d="M5 12c0 1.5 3.1 2.8 7 2.8s7-1.3 7-2.8" />
+        </svg>
+      )
   }
 }
 
@@ -319,6 +349,16 @@ export function SendIcon({ size = 15, className }: IconProps): React.JSX.Element
   return (
     <svg {...stroke(size, className)}>
       <path d="M12 19V5M6 11l6-6 6 6" />
+    </svg>
+  )
+}
+
+/** Reader Mode — an open book, same 24-grid stroke family as the rest. */
+export function ReaderIcon({ size = 15, className }: IconProps): React.JSX.Element {
+  return (
+    <svg {...stroke(size, className)}>
+      <path d="M12 6.5C10.5 5 8 4.5 4 5v13c4-.5 6.5 0 8 1.5 1.5-1.5 4-2 8-1.5V5c-4-.5-6.5 0-8 1.5z" />
+      <path d="M12 6.5V20" />
     </svg>
   )
 }

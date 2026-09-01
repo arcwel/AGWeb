@@ -192,6 +192,13 @@ try {
       '--allow-chrome-scheme-url',
       '--no-first-run',
       '--no-default-browser-check',
+      // The stripped HOME below has no login keychain, so the browser's OSCrypt
+      // "Safe Storage" access would BLOCK forever waiting for a keychain that
+      // isn't there — hanging the shell's boot before it can connect to the
+      // core. A real tester always has a login keychain; the keychain is a
+      // runtime OS resource, not a build-machine dependency, so mock it here so
+      // this check tests what it means to (no build-tree deps), not the keychain.
+      '--use-mock-keychain',
       `--user-data-dir=${join(stage, 'profile')}`
     ],
     { stdio: ['ignore', 'pipe', 'pipe'], env: cleanEnv }

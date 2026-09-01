@@ -58,6 +58,81 @@ export type ClearableData = 'cache' | 'cookies' | 'storage' | 'history'
 
 /** LLM providers whose API keys the shell can store in the OS keychain. */
 export type AiProvider = 'anthropic' | 'openai' | 'gemini'
+
+/**
+ * The omnibox "Ask AI" feature (roadmap A1): a one-shot, streamed answer the
+ * user gets inline under the address bar, without leaving the page they're on.
+ *
+ * Distinct from the Mission-Control agent sessions above — no plan, no tools,
+ * no workspace writes. Just a grounded answer and the links it referenced.
+ */
+
+/** Page context handed to an ask so the model can ground "this page" questions. */
+export interface AskContext {
+  /** The active tab's URL, when it's a real page (not about:blank). */
+  url?: string
+  /** The active tab's title. */
+  title?: string
+}
+
+/** One link the answer referenced, surfaced as a source row under the answer. */
+export interface AskSource {
+  title: string
+  url: string
+}
+
+/** The settled result of an ask. Tokens stream separately via agentAskToken;
+ *  this is the whole text plus the links it referenced, or an error string. */
+export interface AskResult {
+  text: string
+  sources: AskSource[]
+  error?: string
+  /** Set when the user cancelled: the backend stream was aborted. The partial
+   *  text already reached the renderer via token events, so `text` may be empty
+   *  — the caller keeps what it received and settles into an idle state. */
+  cancelled?: boolean
+}
+
+/**
+ * Inline AI code edit (roadmap A3): the editor's Cursor-style ⌘I edit-a-selection.
+ *
+ * Like the omnibox ask, this is a one-shot streamed transform, not an agent
+ * session — no plan, no tools, no workspace writes. The model is handed a code
+ * selection plus an instruction and streams back ONLY the replacement code.
+ * Tokens arrive on agentEditToken keyed by `editId`; this is the settled
+ * replacement (fences stripped), or an error string the caller renders inline.
+ */
+export interface EditCodeResult {
+  /** The proposed replacement code for the selection. Empty when `error` is set. */
+  text: string
+  error?: string
+  /** Set when the user cancelled: the backend stream was aborted. The partial
+   *  replacement already reached the renderer via token events; the caller
+   *  settles into an idle state rather than surfacing an error. */
+  cancelled?: boolean
+}
+
+/**
+ * "Chat with this page" (roadmap A4): a one-shot, streamed answer about the
+ * user's ACTIVE page. Like the omnibox ask this is deliberately NOT an agent
+ * session — no plan, no tools, no workspace writes, no policy gate. The Page
+ * Assistant block hands the model the page's visible text (read over the Mojo
+ * Shell) plus the question, and the model answers using ONLY that text. Tokens
+ * arrive on chatPageToken keyed by `chatId`; this is the settled answer, or an
+ * error string the block renders inline.
+ *
+ * Distinct from the Mission-Control agent (which drives isolated agent tabs):
+ * this reads the tab the user is looking at and never acts.
+ */
+export interface ChatPageResult {
+  /** The settled answer in Markdown. Empty when `error` is set. */
+  text: string
+  error?: string
+  /** Set when the user cancelled: the backend stream was aborted. The partial
+   *  answer already reached the renderer via token events; the block settles
+   *  into an idle state rather than surfacing an error. */
+  cancelled?: boolean
+}
 /** A browser profile — Chrome's "person": an isolated, persistent session. */
 export interface Profile {
   id: string
@@ -164,15 +239,6 @@ export interface PermissionRequestInfo {
  */
 export type PermissionMode = 'secure' | 'review' | 'agent' | 'autonomous' | 'custom'
 
-/**
- * Which browser the agent drives.
- *
- * `session` is the user's own browser: real tabs in their window, their cookies
- * and logins, watched live — the agent acting as them, which is the point.
- * `isolated` is a throwaway profile with no ambient authority, for work on
- * pages that are not trusted (scraping something unknown, testing a build).
- */
-export type AgentBrowserMode = 'session' | 'isolated'
 export type PolicyActionKind = 'file_write' | 'command' | 'browser_navigate'
 export type PolicyDecision = 'allow' | 'confirm' | 'deny'
 
@@ -245,6 +311,129 @@ export interface DevServerStatus {
   logTail: string[]
 }
 
+/**
+ * Git Graph (roadmap C9): one commit as returned by `git log --all`.
+ *
+ * `parents` drives the lane edges — the first parent continues a commit's lane,
+ * any others are merge branches. `refs` is git's raw `%D` decoration
+ * ("HEAD -> main, origin/main, tag: v1"), parsed into chips in the renderer.
+ */
+export interface GitCommit {
+  hash: string
+  short: string
+  parents: string[]
+  author: string
+  /** Author time, epoch seconds (git `%at`). */
+  timestamp: number
+  /** Raw ref decoration (git `%D`); empty when the commit carries no ref. */
+  refs: string
+  subject: string
+}
+
+/** The whole graph, or a reason it could not be read. Degrades like GitStatus. */
+export interface GitGraphResult {
+  /** False when the workspace is not a git repository, or git is missing. */
+  repository: boolean
+  /** Newest first, capped at the requested limit. */
+  commits: GitCommit[]
+  error?: string
+}
+
+/**
+ * One file a commit changed, as before/after blobs — the exact shape the Monaco
+ * diff component (task 3.5) consumes, so click-to-view reuses that path.
+ */
+export interface GitCommitFile {
+  path: string
+  /** git name-status letter: A (added), M (modified), D (deleted). */
+  status: string
+  /** The file at the parent commit; empty for an added file. */
+  original: string
+  /** The file at this commit; empty for a deleted file. */
+  modified: string
+}
+
+/** One commit's metadata and its changed files, for the commit-diff overlay. */
+export interface GitCommitDetail {
+  hash: string
+  short: string
+  author: string
+  timestamp: number
+  subject: string
+  files: GitCommitFile[]
+  /** Set when the commit touches more files than the per-commit cap. */
+  truncated?: boolean
+  error?: string
+}
+
+/**
+ * REST client (roadmap C7): a request the core executes with Node's global
+ * `fetch` (undici) and streams back.
+ *
+ * The request runs in the core, not the renderer, because `chrome://webdeck`
+ * lives under a strict CSP: it cannot fetch arbitrary cross-origin URLs, set
+ * arbitrary headers, or use arbitrary methods. The core has none of those
+ * limits, so the block builds the request here and the core does the sending.
+ *
+ * `headers` is a flat name→value map — the block collapses its key/value rows
+ * into one before sending, and the core hands the same shape straight to fetch.
+ */
+export interface RestRequest {
+  /** GET/POST/PUT/PATCH/DELETE/HEAD/OPTIONS. Coerced/validated in the core. */
+  method: string
+  /** Absolute http/https URL; other schemes (file:, data:) are refused. */
+  url: string
+  headers: Record<string, string>
+  /** Text or JSON body; ignored for methods that take none (GET/HEAD). */
+  body?: string
+}
+
+/**
+ * The settled result of a REST send. Never a rejection: a network failure,
+ * timeout, or a bad URL comes back as `error` so the block renders it inline
+ * rather than catching a throw.
+ */
+export interface RestResponse {
+  status: number
+  statusText: string
+  /** Response headers, lower-cased names, as a flat map. */
+  headers: Record<string, string>
+  /** The response body as text (capped — see `truncated`). */
+  body: string
+  /** Wall-clock time from send to fully read, in milliseconds. */
+  timeMs: number
+  /** Bytes received on the wire (may exceed body length when truncated). */
+  size: number
+  /** Set when the body hit the size cap and was cut short. */
+  truncated?: boolean
+  /** Set when the request never produced a response (network, timeout, bad URL). */
+  error?: string
+}
+
+/**
+ * Database client (roadmap C8): the core runs SQL against a SQLite file (Node's
+ * built-in node:sqlite) — always with parameterized statements, read-only by
+ * default — and returns columns + rows. Never rejects: failures arrive as `error`.
+ */
+export interface DbQueryResult {
+  columns: string[]
+  rows: unknown[][]
+  /** Rows returned (after the cap), for SELECT/PRAGMA. */
+  rowCount: number
+  /** Rows changed, for INSERT/UPDATE/DELETE. */
+  rowsAffected: number
+  timeMs: number
+  /** Set when the result hit the row cap and was cut short. */
+  truncated?: boolean
+  error?: string
+}
+
+/** One schema object listed in the DB block's sidebar. */
+export interface DbTable {
+  name: string
+  type: 'table' | 'view'
+}
+
 /** Channels the renderer invokes (request/response). */
 export const IpcChannels = {
   appInfo: 'app:info',
@@ -271,6 +460,34 @@ export const IpcChannels = {
   browserFindStop: 'browser:find-stop',
   browserZoom: 'browser:zoom',
   browserPrint: 'browser:print',
+  // WebDeck split view (fork only, over the Mojo Shell): stage two tabs side by
+  // side on the one shell backdrop. setSplit binds the two tabs; the secondary
+  // stage rect is streamed separately. See SPLIT_VIEW_PLAN.md and webui/shell.ts.
+  browserSetSplit: 'browser:set-split',
+  browserSetSecondaryBounds: 'browser:set-secondary-bounds',
+  // Toggle Picture-in-Picture for a tab (fork only, over the Mojo Shell).
+  browserPictureInPicture: 'browser:picture-in-picture',
+  // Read the active (staged) tab's rendered visible text over the Mojo Shell —
+  // the "Chat with this page" assistant (roadmap A4) grounds on it. Fork-only;
+  // see webui/shell.ts pageText facade and PageAssistantBlock.tsx.
+  browserGetPageText: 'browser:get-page-text',
+  // Browser-level Chromium preferences, reached over the Mojo Shell because a
+  // WebDeck window blocks chrome://settings. Fork-only; see BrowserSettings.tsx
+  // and BROWSER_PREFS_PLAN.md.
+  browserGetCookieBlock: 'browser:get-cookie-block',
+  browserSetCookieBlock: 'browser:set-cookie-block',
+  browserGetDnt: 'browser:get-dnt',
+  browserSetDnt: 'browser:set-dnt',
+  browserGetHttpsOnly: 'browser:get-https-only',
+  browserSetHttpsOnly: 'browser:set-https-only',
+  browserGetPreload: 'browser:get-preload',
+  browserSetPreload: 'browser:set-preload',
+  browserGetAdblock: 'browser:get-adblock',
+  browserSetAdblock: 'browser:set-adblock',
+  browserGetAdblockCount: 'browser:get-adblock-count',
+  browserClearData: 'browser:clear-browsing-data',
+  browserDefaultStatus: 'browser:default-status',
+  browserMakeDefault: 'browser:make-default',
   appSettingsRead: 'app-settings:read',
   appSettingsReadSync: 'app-settings:read-sync',
   appSettingsWrite: 'app-settings:write',
@@ -311,6 +528,13 @@ export const IpcChannels = {
   exportPdf: 'export:pdf',
   exportCapture: 'export:capture',
   agentStart: 'agent:start',
+  agentAsk: 'agent:ask',
+  chatPage: 'chat:page',
+  agentEditCode: 'agent:edit-code',
+  // Abort an in-flight one-shot streamed call (ask/chatPage/editCode) by its id.
+  // Registered via core.register, so the coverage boundary test treats it as
+  // core-served — it must NOT be listed in HOST_OWNED/SHELL_OWNED.
+  agentCancel: 'agent:cancel',
   agentApprove: 'agent:approve',
   agentReject: 'agent:reject',
   agentStop: 'agent:stop',
@@ -340,6 +564,13 @@ export const IpcChannels = {
   gitBranches: 'git:branches',
   gitCheckout: 'git:checkout',
   gitBlame: 'git:blame',
+  gitLogGraph: 'git:log-graph',
+  gitShow: 'git:show',
+  restSend: 'rest:send',
+  dbConnect: 'db:connect',
+  dbQuery: 'db:query',
+  dbTables: 'db:tables',
+  dbClose: 'db:close',
   lspStart: 'lsp:start',
   lspSend: 'lsp:send',
   lspStop: 'lsp:stop',
@@ -399,6 +630,9 @@ export const IpcEvents = {
   termData: 'event:term-data',
   termExit: 'event:term-exit',
   agentUpdate: 'event:agent-update',
+  agentAskToken: 'event:agent-ask-token',
+  chatPageToken: 'event:chat-page-token',
+  agentEditToken: 'event:agent-edit-token',
   taskUpdate: 'event:task-update',
   debugMessage: 'event:debug-message',
   debugExit: 'event:debug-exit',
@@ -443,7 +677,9 @@ export const DOC_EXTENSIONS = new Set([
   'yml',
   'toml',
   'csv',
-  'tsv'
+  'tsv',
+  'xml',
+  'svg'
 ])
 
 export function isDocFile(path: string): boolean {
@@ -645,6 +881,58 @@ export interface AgwebApi {
     /** Start planning a task; resolves to the new session id. Attachments are
      *  passed to the model as explicit, named context. */
     start(task: string, attachments?: import('./agents').AgentAttachment[]): Promise<string>
+    /**
+     * One-shot streamed answer for the omnibox "Ask AI" affordance (A1). Not a
+     * session: no plan, no tools, no workspace writes. Tokens arrive on
+     * onAskToken keyed by `askId`; the promise settles with the whole answer and
+     * the links it referenced (or an error string, never a rejection for the
+     * expected "no key"/"declined" cases).
+     */
+    ask(askId: string, prompt: string, context?: AskContext): Promise<AskResult>
+    /** Subscribe to streamed answer tokens; filter by the askId you passed to ask(). */
+    onAskToken(listener: (payload: { askId: string; token: string }) => void): () => void
+    /**
+     * "Chat with this page" (roadmap A4): a one-shot streamed answer about the
+     * user's ACTIVE page. Not a session — no plan, no tools, no writes. The
+     * caller passes the page's visible text (read via getPageText) plus the
+     * question; the model answers using ONLY that text (page content is data,
+     * never instructions). Tokens arrive on onChatPageToken keyed by `chatId`;
+     * the promise settles with the whole answer (or an error string, never a
+     * rejection for the expected "no key"/"declined" cases).
+     */
+    chatPage(
+      chatId: string,
+      question: string,
+      pageText: string,
+      url?: string,
+      title?: string
+    ): Promise<ChatPageResult>
+    /** Subscribe to streamed page-chat tokens; filter by the chatId you passed to chatPage(). */
+    onChatPageToken(listener: (payload: { chatId: string; token: string }) => void): () => void
+    /**
+     * Inline code edit for the editor's ⌘I (roadmap A3). Not a session: no plan,
+     * no tools, no workspace writes — the model transforms `code` per `instruction`
+     * and streams the replacement. Tokens arrive on onEditToken keyed by `editId`;
+     * the promise settles with the settled replacement (or an error string, never
+     * a rejection for the expected "no key"/"declined" cases). The caller applies
+     * the result to the buffer itself, so nothing is written until the user accepts.
+     */
+    editCode(
+      editId: string,
+      instruction: string,
+      code: string,
+      language: string
+    ): Promise<EditCodeResult>
+    /** Subscribe to streamed edit tokens; filter by the editId you passed to editCode(). */
+    onEditToken(listener: (payload: { editId: string; token: string }) => void): () => void
+    /**
+     * Abort an in-flight one-shot streamed call — an ask, a page chat, or an
+     * inline edit — by the id it was started with (askId | chatId | editId, one
+     * shared id space). The backend stops the SDK stream so it no longer burns
+     * tokens; the call's promise then settles with `cancelled: true`. A no-op if
+     * the id is unknown or already settled.
+     */
+    cancel(id: string): Promise<void>
     approve(id: string): Promise<void>
     reject(id: string): Promise<void>
     stop(id: string): Promise<void>
@@ -724,6 +1012,31 @@ export interface AgwebApi {
     branches(): Promise<{ current: string; branches: string[] }>
     checkout(branch: string): Promise<{ error?: string }>
     blame(path: string): Promise<{ lines: import('./git').GitBlameLine[]; error?: string }>
+    /** Commit graph across all refs (roadmap C9), newest first, capped at `limit`. */
+    logGraph(limit?: number): Promise<GitGraphResult>
+    /** One commit's changed files as before/after blobs, for the diff overlay. */
+    show(hash: string): Promise<GitCommitDetail>
+  }
+
+  /**
+   * REST client (roadmap C7). The core runs the request with Node's `fetch`
+   * (undici) — the renderer's CSP forbids arbitrary cross-origin calls — and
+   * streams the response back. Never rejects: failures arrive as `error`.
+   */
+  rest: {
+    send(request: RestRequest): Promise<RestResponse>
+  }
+
+  /**
+   * Database client (roadmap C8). The core opens a SQLite file and runs
+   * parameterized queries; read-only unless `readonly` is explicitly false.
+   * Never rejects — failures arrive as `error` on the result.
+   */
+  db: {
+    connect(path: string, readonly: boolean): Promise<{ id: string; error?: string }>
+    query(id: string, sql: string, params: unknown[]): Promise<DbQueryResult>
+    tables(id: string): Promise<{ tables: DbTable[]; error?: string }>
+    close(id: string): Promise<void>
   }
 
   /**

@@ -4,18 +4,18 @@ import type { ChildProcess } from 'node:child_process'
 import { createRequire } from 'node:module'
 import { createInterface } from 'node:readline'
 import { join } from 'node:path'
-import { IpcEvents } from '@shared/ipc'
+import { IpcChannels, IpcEvents } from '@shared/ipc'
 import { coreBroadcast } from '../core/notify'
 import { getCurrentWorkspace } from './workspace'
-import { IpcChannels } from '@shared/ipc'
 import { core } from '../core/rpc'
 import { asString, asNumber } from '../core/coerce'
 
 /**
- * Terminal sessions live in the main process so they survive deck hide/reveal,
- * window moves, and detach. Preferred backend: node-pty in-process (packaged
- * builds run electron-rebuild). Fallback: a pty host child process under the
- * system Node, for dev setups where node-pty isn't built for Electron's ABI.
+ * Terminal sessions live in the host process so they survive deck hide/reveal,
+ * window moves, and detach. Preferred backend: node-pty in-process — loaded from
+ * node_modules under Electron, from the unpacked runtime inside the webdeck-core
+ * SEA (see nodeRequire below). Fallback: a pty-host child under a plain Node, for
+ * dev setups where node-pty isn't built for the host's ABI.
  */
 
 const BUFFER_LIMIT = 200_000
@@ -36,7 +36,16 @@ interface Session {
 }
 
 const sessions = new Map<string, Session>()
-const nodeRequire = createRequire(__filename)
+// Resolve node-pty from the right place on each host. Under Electron, __filename
+// sits in node_modules where the electron-rebuilt node-pty is reachable. Inside
+// the webdeck-core SEA, __filename is the embedded main path — node-pty is NOT
+// reachable from there — so anchor at the unpacked runtime dir (the same anchor
+// the SEA prologue uses to rebind the global require), where the prebuilt
+// node-pty/pty.node lives. Without this, both the native load and the pty-host
+// fallback fail and the terminal is dead in packaged fork builds.
+const nodeRequire = createRequire(
+  process.env.WEBDECK_CORE_RUNTIME ? join(process.env.WEBDECK_CORE_RUNTIME, 'noop.cjs') : __filename
+)
 
 type NodePtyModule = typeof import('node-pty')
 
@@ -47,7 +56,7 @@ function getNativePty(): NodePtyModule | null {
     nativePty = nodeRequire('node-pty') as NodePtyModule
   } catch {
     nativePty = null
-    console.warn('node-pty not loadable in Electron; using system-node pty host')
+    console.warn('node-pty not loadable in-process; falling back to the pty host')
   }
   return nativePty
 }
@@ -61,7 +70,12 @@ function getHost(): ChildProcess | null {
     const hostScript = join(coreEnv().appDir, 'resources', 'pty-host.cjs')
     const ptyModule = nodeRequire.resolve('node-pty')
     host = spawn(process.env.AGWEB_NODE ?? 'node', [hostScript, ptyModule], {
-      stdio: ['pipe', 'pipe', 'inherit']
+      stdio: ['pipe', 'pipe', 'inherit'],
+      // AGWEB_NODE may be the Electron or webdeck-core SEA executable; without
+      // ELECTRON_RUN_AS_NODE that would boot another app instead of running
+      // pty-host.cjs. Both Electron and the SEA prologue (build-core.mjs) honor
+      // it and behave as a plain Node; a real `node` binary ignores it.
+      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }
     })
     const hostDied = (): void => {
       for (const [id, session] of sessions) {
@@ -186,7 +200,14 @@ export function runInTerminal(
   const done = new Promise<{ code: number; output: string }>((resolve) => {
     const settle = (): void => {
       const session = sessions.get(sessionId)
-      if (!session || session.running) return
+      // Disposed mid-command (disposeTerminal deletes the session): resolve so
+      // the awaiting caller doesn't deadlock and the interval doesn't leak.
+      if (!session) {
+        clearInterval(poll)
+        resolve({ code: -1, output: '' })
+        return
+      }
+      if (session.running) return
       clearInterval(poll)
       resolve({ code: session.exitCode ?? 0, output: session.buffer })
     }

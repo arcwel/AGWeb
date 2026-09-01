@@ -9,11 +9,16 @@ assert(is_win || is_mac || is_linux)
 mojom("mojo_bindings") {
   sources = [ "webdeck.mojom" ]
   webui_module_path = "/"
+
+  # Shell.SetStageBounds takes a gfx.mojom.Rect.
+  public_deps = [ "//ui/gfx/geometry/mojom" ]
 }
 
 source_set("webdeck") {
   sources = [
+    "webdeck_adblock.h",
     "webdeck_agent_tabs.h",
+    "webdeck_shell.h",
     "webdeck_ui.h",
   ]
 
@@ -22,12 +27,15 @@ source_set("webdeck") {
     "//base",
     "//content/public/browser",
     "//mojo/public/cpp/bindings",
+    "//third_party/blink/public/common:headers",
   ]
 }
 
 source_set("impl") {
   sources = [
+    "webdeck_adblock.cc",
     "webdeck_agent_tabs.cc",
+    "webdeck_shell.cc",
     "webdeck_ui.cc",
   ]
 
@@ -35,13 +43,25 @@ source_set("impl") {
 
   deps = [
     ":webdeck",
+    "//chrome/browser/browsing_data:constants",
+    "//net",
+    "//services/network/public/cpp",
+    "//chrome/browser/picture_in_picture",
     "//chrome/browser/profiles:profile",
     "//chrome/browser/resources/webdeck:resources",
     "//chrome/browser/ui/browser_window",
     "//chrome/browser/ui/navigator",
     "//chrome/browser/webdeck:core_service",
+    "//chrome/browser/webdeck:shell_host",
     "//chrome/common",
     "//chrome/common:constants",
+    "//components/content_settings/core/browser",
+    "//components/content_settings/core/common",
+    "//components/find_in_page",
+    "//components/prefs",
+    "//components/tabs:public",
+    "//components/zoom",
+    "//services/media_session/public/mojom",
     "//services/network/public/mojom",
     "//ui/base",
     "//ui/webui",

@@ -9,3 +9,7 @@ resources/js-debug/
 # scripts/gen-mojo-bindings.mjs. Formatting it would churn on every
 # regeneration and the source of truth is the .mojom, not this.
 src/renderer/public/mojo/
+
+# Machine-generated license inventory (scripts/gen-licenses.mjs). Its format is
+# the generator's, verified by `gen:licenses --check`, not prettier's.
+src/renderer/src/generated/

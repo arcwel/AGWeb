@@ -1,0 +1,209 @@
+{
+  "product": "Arcwel WebDeck",
+  "productLicense": "MIT",
+  "generated": "by scripts/gen-licenses.mjs from installed dependencies",
+  "foundations": [
+    {
+      "name": "Chromium",
+      "version": "153.0.8010.12",
+      "license": "BSD-3-Clause",
+      "homepage": "https://www.chromium.org/",
+      "note": "Arcwel WebDeck is a derivative of Chromium. Chromium and its own third-party components are credited in the app at chrome://credits."
+    },
+    {
+      "name": "Node.js",
+      "version": "v24.20.0",
+      "license": "MIT",
+      "homepage": "https://nodejs.org/",
+      "note": "Embedded in webdeck-core. Includes components under their own licenses (V8, libuv, and others), reproduced with the Node distribution."
+    }
+  ],
+  "dependencies": [
+    {
+      "name": "@anthropic-ai/sdk",
+      "version": "0.122.0",
+      "license": "MIT",
+      "homepage": ""
+    },
+    {
+      "name": "@codingame/monaco-vscode-api",
+      "version": "25.1.2",
+      "license": "MIT",
+      "homepage": "ssh://git@github.com/CodinGame/monaco-vscode-api"
+    },
+    {
+      "name": "@xterm/addon-fit",
+      "version": "0.11.0",
+      "license": "MIT",
+      "homepage": ""
+    },
+    {
+      "name": "@xterm/addon-search",
+      "version": "0.16.0",
+      "license": "MIT",
+      "homepage": ""
+    },
+    {
+      "name": "@xterm/xterm",
+      "version": "6.0.0",
+      "license": "MIT",
+      "homepage": ""
+    },
+    {
+      "name": "fast-xml-parser",
+      "version": "5.11.1",
+      "license": "MIT",
+      "homepage": "https://github.com/NaturalIntelligence/fast-xml-parser"
+    },
+    {
+      "name": "js-yaml",
+      "version": "5.4.1",
+      "license": "MIT",
+      "homepage": ""
+    },
+    {
+      "name": "katex",
+      "version": "0.18.4",
+      "license": "MIT",
+      "homepage": "https://katex.org"
+    },
+    {
+      "name": "mermaid",
+      "version": "11.17.2",
+      "license": "MIT",
+      "homepage": "https://github.com/mermaid-js/mermaid"
+    },
+    {
+      "name": "monaco-editor",
+      "version": "25.1.2",
+      "license": "MIT",
+      "homepage": "ssh://git@github.com/CodinGame/monaco-vscode-api"
+    },
+    {
+      "name": "monaco-languageclient",
+      "version": "10.7.0",
+      "license": "MIT",
+      "homepage": "https://github.com/TypeFox/monaco-languageclient/blob/main/packages/client/README.md"
+    },
+    {
+      "name": "node-pty",
+      "version": "1.1.0",
+      "license": "MIT",
+      "homepage": "https://github.com/microsoft/node-pty"
+    },
+    {
+      "name": "papaparse",
+      "version": "5.7.0",
+      "license": "MIT",
+      "homepage": "https://www.papaparse.com/"
+    },
+    {
+      "name": "pyright",
+      "version": "1.1.413",
+      "license": "MIT",
+      "homepage": "https://github.com/Microsoft/pyright"
+    },
+    {
+      "name": "react",
+      "version": "19.2.8",
+      "license": "MIT",
+      "homepage": "https://react.dev/"
+    },
+    {
+      "name": "react-dom",
+      "version": "19.2.8",
+      "license": "MIT",
+      "homepage": "https://react.dev/"
+    },
+    {
+      "name": "react-markdown",
+      "version": "10.1.0",
+      "license": "MIT",
+      "homepage": ""
+    },
+    {
+      "name": "rehype-highlight",
+      "version": "7.0.2",
+      "license": "MIT",
+      "homepage": ""
+    },
+    {
+      "name": "rehype-katex",
+      "version": "7.0.1",
+      "license": "MIT",
+      "homepage": ""
+    },
+    {
+      "name": "rehype-sanitize",
+      "version": "6.0.0",
+      "license": "MIT",
+      "homepage": ""
+    },
+    {
+      "name": "remark-gfm",
+      "version": "4.0.1",
+      "license": "MIT",
+      "homepage": ""
+    },
+    {
+      "name": "remark-math",
+      "version": "6.0.0",
+      "license": "MIT",
+      "homepage": ""
+    },
+    {
+      "name": "reveal.js",
+      "version": "6.0.1",
+      "license": "MIT",
+      "homepage": "https://revealjs.com"
+    },
+    {
+      "name": "smol-toml",
+      "version": "1.8.0",
+      "license": "BSD-3-Clause",
+      "homepage": "github:squirrelchat/smol-toml"
+    },
+    {
+      "name": "typescript",
+      "version": "5.9.3",
+      "license": "Apache-2.0",
+      "homepage": "https://www.typescriptlang.org/"
+    },
+    {
+      "name": "typescript-language-server",
+      "version": "4.4.1",
+      "license": "Apache-2.0",
+      "homepage": "https://github.com/typescript-language-server/typescript-language-server"
+    },
+    {
+      "name": "vscode",
+      "version": "25.1.2",
+      "license": "MIT",
+      "homepage": "ssh://git@github.com/CodinGame/monaco-vscode-api"
+    },
+    {
+      "name": "vscode-jsonrpc",
+      "version": "8.2.1",
+      "license": "MIT",
+      "homepage": "https://github.com/Microsoft/vscode-languageserver-node"
+    },
+    {
+      "name": "vscode-languageclient",
+      "version": "9.0.1",
+      "license": "MIT",
+      "homepage": "https://github.com/Microsoft/vscode-languageserver-node"
+    },
+    {
+      "name": "ws",
+      "version": "8.21.3",
+      "license": "MIT",
+      "homepage": "https://github.com/websockets/ws"
+    },
+    {
+      "name": "zustand",
+      "version": "5.0.15",
+      "license": "MIT",
+      "homepage": "https://github.com/pmndrs/zustand"
+    }
+  ]
+}

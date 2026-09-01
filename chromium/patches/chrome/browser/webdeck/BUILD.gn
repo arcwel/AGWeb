@@ -15,3 +15,19 @@ source_set("core_service") {
     "//components/version_info",
   ]
 }
+
+# Links the WebDeck shell's WebContents back to its owning window. Kept in a tiny
+# leaf target (base + content only) so both the views layer
+# (ContentsContainerView) and the WebUI Shell impl can depend on it without a
+# dependency cycle.
+source_set("shell_host") {
+  sources = [
+    "webdeck_shell_host.cc",
+    "webdeck_shell_host.h",
+  ]
+
+  deps = [
+    "//base",
+    "//content/public/browser",
+  ]
+}

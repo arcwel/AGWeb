@@ -1,0 +1,162 @@
+/*
+ * Reader Mode overlay styles.
+ *
+ * ReaderView paints an opaque reading surface over the stage while the native
+ * WebContentsView is hidden (overlayCount > 0). Its palette is deliberately
+ * INDEPENDENT of the app theme — light/sepia/dark are a reading preference the
+ * user sets in the reader itself — so the tokens live here rather than reusing
+ * the --wd-* shell tokens. A serif measure gives the body real typographic
+ * hierarchy; the control bar stays in the app's sans font.
+ */
+
+.wd-reader {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  overflow-y: auto;
+  background: var(--wd-reader-bg);
+  color: var(--wd-reader-fg);
+  -webkit-font-smoothing: antialiased;
+  outline: none;
+}
+
+.wd-reader-light {
+  --wd-reader-bg: #faf9f7;
+  --wd-reader-fg: #1b1b1a;
+  --wd-reader-muted: #6c6c6a;
+  --wd-reader-rule: rgba(0, 0, 0, 0.12);
+  --wd-reader-btn: rgba(0, 0, 0, 0.05);
+  --wd-reader-btn-on: rgba(0, 0, 0, 0.13);
+}
+
+.wd-reader-sepia {
+  --wd-reader-bg: #f4ecd8;
+  --wd-reader-fg: #3a2f22;
+  --wd-reader-muted: #7a6a52;
+  --wd-reader-rule: rgba(90, 70, 40, 0.2);
+  --wd-reader-btn: rgba(90, 70, 40, 0.08);
+  --wd-reader-btn-on: rgba(90, 70, 40, 0.18);
+}
+
+.wd-reader-dark {
+  --wd-reader-bg: #17191c;
+  --wd-reader-fg: #d8dbe1;
+  --wd-reader-muted: #8b909a;
+  --wd-reader-rule: rgba(255, 255, 255, 0.12);
+  --wd-reader-btn: rgba(255, 255, 255, 0.06);
+  --wd-reader-btn-on: rgba(255, 255, 255, 0.16);
+}
+
+/* Sticky control bar — tinted with the reading surface so it never flashes. */
+.wd-reader-bar {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background: color-mix(in srgb, var(--wd-reader-bg) 88%, transparent);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--wd-reader-rule);
+}
+
+.wd-reader-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  min-width: 1.9rem;
+  height: 1.9rem;
+  padding: 0 0.55rem;
+  border-radius: 8px;
+  color: var(--wd-reader-fg);
+  background: var(--wd-reader-btn);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+
+.wd-reader-btn:hover:not(:disabled) {
+  background: var(--wd-reader-btn-on);
+}
+
+.wd-reader-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.wd-reader-btn[aria-pressed='true'] {
+  background: var(--wd-reader-btn-on);
+  font-weight: 600;
+}
+
+.wd-reader-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+}
+
+.wd-reader-sep {
+  width: 1px;
+  height: 1.1rem;
+  background: var(--wd-reader-rule);
+}
+
+/* The reading measure — serif body for genuine hierarchy against the sans UI. */
+.wd-reader-article {
+  margin: 0 auto;
+  padding: 2.5rem 1.5rem 6rem;
+  font-family: Georgia, 'Iowan Old Style', 'Times New Roman', Times, serif;
+}
+
+.wd-reader-title {
+  margin: 0 0 0.7em;
+  font-size: 1.95em;
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+}
+
+.wd-reader-heading {
+  margin: 1.6em 0 0.4em;
+  font-size: 1.4em;
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+}
+
+.wd-reader-para {
+  margin: 0 0 1.15em;
+  font-size: 1em;
+  line-height: 1.7;
+}
+
+.wd-reader-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  min-height: 50vh;
+  padding: 2rem;
+  text-align: center;
+  font-family:
+    system-ui,
+    -apple-system,
+    sans-serif;
+}
+
+.wd-reader-state-title {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.wd-reader-state-sub {
+  max-width: 28rem;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--wd-reader-muted);
+}

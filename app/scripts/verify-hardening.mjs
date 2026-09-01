@@ -3,6 +3,15 @@
 // ON: the process sandbox, and full site isolation. Plus the chrome://webdeck
 // CSP that keeps a compromised WebUI page from reaching the network or eval'ing.
 //
+// It also statically guards the Shell privilege boundary — the Mojo interface
+// that lets chrome://webdeck drive the window's real tab. That boundary lives in
+// source, so it is checked from source with no running browser: the renderer
+// bridge (webui/shell.ts) must route only a KNOWN allowlist of browser.*
+// channels onto the Shell (never a catch-all, never the core), and the browser
+// half (webdeck_shell.cc) must gate every caller-supplied URL through the
+// IsAllowedShellUrl scheme allowlist in BOTH Navigate and CreateTab. These run
+// even under --static-only, where no browser is launched.
+//
 // Electron gave us all of this for free. A fork is our own build, so a gn arg,
 // a stray command-line switch, or an edit to webdeck_ui.cc can switch any of it
 // off with NO visible symptom — the browser looks completely normal, the UI
@@ -17,6 +26,7 @@
 // Usage:
 //   node scripts/verify-hardening.mjs [--browser <path>] [--json] [--headless]
 //                                     [--args-gn <path>] [--keep-open] [--timeout <ms>]
+//                                     [--static-only]
 // Exit codes: 0 pass · 1 hardening is broken · 2 could not run the check
 import { execFileSync, spawn } from 'node:child_process'
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
@@ -45,6 +55,8 @@ if (flag('help') || flag('h')) {
   --json               machine-readable result
   --keep-open          leave the browser running after the check
   --timeout <ms>       per-step timeout (default 30000)
+  --static-only        run ONLY the source-level Shell privilege-boundary checks
+                       (no browser launch) and exit on their result
 
   --headless           run headless (default: a real window. Headless does not
                        arm the same restrictions, so it is the wrong thing to
@@ -65,7 +77,8 @@ function cannotRun(message) {
   process.exit(2)
 }
 
-if (!existsSync(browser)) {
+// --static-only never launches the browser, so a missing binary is fine there.
+if (!existsSync(browser) && !flag('static-only')) {
   cannotRun(`no browser at ${browser} — build it first, or pass --browser`)
 }
 
@@ -83,6 +96,153 @@ const fail = (name, detail) => checks.push({ name, status: 'fail', detail })
 const warn = (name, detail) => checks.push({ name, status: 'warn', detail })
 const unverified = (name, reason, critical = true) =>
   checks.push({ name, status: 'unverified', detail: reason, critical })
+
+// The exit code, raised as checks fail. Declared here — not just before the
+// browser launch — so the static checks below can move it and so --static-only
+// can report a result without ever starting a browser.
+let exitCode = 0
+
+// ── static Shell privilege-boundary checks (no browser needed) ──────────────
+// The Shell Mojo interface lets a chrome://webdeck page drive the window's REAL
+// tab, so its privilege boundary is load-bearing and it is measurable from
+// source alone. A future edit that turns the renderer's SHELL_BROWSER into a
+// catch-all, points navigation at the core, or drops the IsAllowedShellUrl
+// scheme gate from the browser's Navigate/CreateTab trips one of these.
+
+/**
+ * The body of a `WebDeckShell::<name>` method: from its signature to the first
+ * line that is exactly `}` — the patch closes every method with a column-0 brace,
+ * and the inner (indented) braces never match `\n}`.
+ */
+function cppMethodBody(source, name) {
+  const start = source.indexOf(`WebDeckShell::${name}`)
+  if (start === -1) return null
+  const end = source.indexOf('\n}', start)
+  return end === -1 ? source.slice(start) : source.slice(start, end + 2)
+}
+
+function checkShellBoundary() {
+  const shellTs = join(repoRoot, 'app/src/webui/shell.ts')
+  const adapterTs = join(repoRoot, 'app/src/webui/ipc-adapter.ts')
+  const shellCc = join(
+    repoRoot,
+    'chromium/patches/chrome/browser/ui/webui/webdeck/webdeck_shell.cc'
+  )
+
+  // 1. The renderer bridge exposes a KNOWN-channel allowlist, not a catch-all,
+  //    and drives navigation over the Shell rather than the core socket.
+  if (!existsSync(shellTs)) {
+    unverified('shell bridge: SHELL_BROWSER is a known-channel allowlist', `not found: ${shellTs}`)
+  } else {
+    const src = readFileSync(shellTs, 'utf8')
+    const problems = []
+    if (!/export\s+const\s+SHELL_BROWSER\b/.test(src)) {
+      problems.push('shell.ts no longer exports SHELL_BROWSER')
+    }
+    // A Proxy or computed default would forward arbitrary channels; the allowlist
+    // must stay a static object literal.
+    if (/\bnew\s+Proxy\b/.test(src)) {
+      problems.push('shell.ts builds a Proxy — a catch-all, not an allowlist')
+    }
+    // Navigation must reach the browser over the Shell remote, never the core.
+    if (/\bclient\.invoke\b/.test(src) || /\bCoreClient\b/.test(src)) {
+      problems.push(
+        'shell.ts reaches the core (client.invoke/CoreClient) — navigation must go over the Shell'
+      )
+    }
+    if (problems.length === 0) {
+      ok(
+        'shell bridge: SHELL_BROWSER is a known-channel allowlist, not a catch-all',
+        'shell.ts exports a static SHELL_BROWSER literal — no Proxy/default, no core forwarding'
+      )
+    } else {
+      fail(
+        'shell bridge: SHELL_BROWSER is a known-channel allowlist, not a catch-all',
+        problems.join('; ')
+      )
+      exitCode = 1
+    }
+
+    // Navigation is mapped onto the Shell's navigate() for the staged tab.
+    const mapsNav =
+      /\[\s*IpcChannels\.browserNavigate\s*\]/.test(src) && /\.navigate\(\s*ACTIVE\b/.test(src)
+    if (mapsNav) {
+      ok(
+        'shell bridge: navigation is routed onto the Shell tab',
+        'IpcChannels.browserNavigate maps to the Shell remote navigate() on the active tab'
+      )
+    } else {
+      fail(
+        'shell bridge: navigation is routed onto the Shell tab',
+        'shell.ts no longer maps IpcChannels.browserNavigate onto the Shell remote navigate(ACTIVE, …)'
+      )
+      exitCode = 1
+    }
+  }
+
+  // 1b. The adapter consults the allowlist as a guarded lookup, so an UNKNOWN
+  //     browser.* channel falls through to the core instead of being forwarded to
+  //     the Shell — this is what makes SHELL_BROWSER a real allowlist.
+  if (existsSync(adapterTs)) {
+    const src = readFileSync(adapterTs, 'utf8')
+    const guarded =
+      /SHELL_BROWSER\s*\[\s*channel\s*\]/.test(src) && /if\s*\(\s*browser\s*\)/.test(src)
+    if (guarded) {
+      ok(
+        'shell bridge: unknown browser.* channels are not forwarded to the Shell',
+        'ipc-adapter.ts looks up SHELL_BROWSER[channel] and only calls it when the channel is known'
+      )
+    } else {
+      fail(
+        'shell bridge: unknown browser.* channels are not forwarded to the Shell',
+        'ipc-adapter.ts no longer guards the SHELL_BROWSER[channel] lookup — an unknown channel may reach the Shell'
+      )
+      exitCode = 1
+    }
+  }
+
+  // 2. The browser half gates every caller-supplied URL through IsAllowedShellUrl
+  //    in BOTH the tab-creating and the navigating entry points.
+  if (!existsSync(shellCc)) {
+    unverified(
+      'shell host: IsAllowedShellUrl gates both Navigate and CreateTab',
+      `not found: ${shellCc}`
+    )
+  } else {
+    const src = readFileSync(shellCc, 'utf8')
+    if (!/\bIsAllowedShellUrl\s*\(/.test(src)) {
+      fail(
+        'shell host: IsAllowedShellUrl gates both Navigate and CreateTab',
+        'webdeck_shell.cc has no IsAllowedShellUrl scheme gate at all'
+      )
+      exitCode = 1
+    } else {
+      const ungated = ['CreateTab', 'Navigate'].filter((method) => {
+        const body = cppMethodBody(src, method)
+        return body === null || !/IsAllowedShellUrl\s*\(/.test(body)
+      })
+      if (ungated.length === 0) {
+        ok(
+          'shell host: IsAllowedShellUrl gates both Navigate and CreateTab',
+          'both WebDeckShell::CreateTab and WebDeckShell::Navigate pass the URL through IsAllowedShellUrl'
+        )
+      } else {
+        fail(
+          'shell host: IsAllowedShellUrl gates both Navigate and CreateTab',
+          `${ungated.map((m) => `WebDeckShell::${m}`).join(' and ')} do not gate the caller-supplied ` +
+            'URL through IsAllowedShellUrl — a compromised chrome://webdeck renderer could drive the ' +
+            'window to file://, chrome://, or javascript: over the Shell'
+        )
+        exitCode = 1
+      }
+    }
+  }
+}
+
+checkShellBoundary()
+
+// --static-only stops here: the source invariants above need no running browser.
+if (flag('static-only')) finish()
 
 // ── CDP plumbing (same shape as verify-fork.mjs) ────────────────────────────
 
@@ -389,7 +549,6 @@ function parseCsp(header) {
 const userDataDir = mkdtempSync(join(tmpdir(), 'wd-verify-hardening-'))
 const servers = []
 let child
-let exitCode = 0
 
 /** Two loopback origins that are cross-SITE: 127.0.0.1 and localhost differ. */
 function serveOn(host, body) {
@@ -962,55 +1121,60 @@ try {
 
 cdp?.close()
 cleanup()
+finish()
 
-// An unmeasurable security property is not a pass. If it is one of the ones
-// this script exists to assert, that is exit 2 — "could not check" — never 0.
-const failed = checks.filter((c) => c.status === 'fail')
-const blind = checks.filter((c) => c.status === 'unverified' && c.critical !== false)
-const warned = checks.filter((c) => c.status === 'warn')
-if (failed.length > 0) exitCode = 1
-else if (blind.length > 0) exitCode = 2
+// Print the ledger and exit. A function (hoisted) so --static-only can report
+// the source-level checks above without ever launching a browser.
+function finish() {
+  // An unmeasurable security property is not a pass. If it is one of the ones
+  // this script exists to assert, that is exit 2 — "could not check" — never 0.
+  const failed = checks.filter((c) => c.status === 'fail')
+  const blind = checks.filter((c) => c.status === 'unverified' && c.critical !== false)
+  const warned = checks.filter((c) => c.status === 'warn')
+  if (failed.length > 0) exitCode = 1
+  else if (blind.length > 0) exitCode = 2
 
-if (asJson) {
-  console.log(
-    JSON.stringify(
-      {
-        status: exitCode === 0 ? 'pass' : exitCode === 1 ? 'fail' : 'incomplete',
-        browser,
-        headless: flag('headless'),
-        platform: process.platform,
-        summary: {
-          passed: checks.filter((c) => c.status === 'ok').length,
-          failed: failed.length,
-          warnings: warned.length,
-          notVerified: checks.filter((c) => c.status === 'unverified').length
+  if (asJson) {
+    console.log(
+      JSON.stringify(
+        {
+          status: exitCode === 0 ? 'pass' : exitCode === 1 ? 'fail' : 'incomplete',
+          browser,
+          headless: flag('headless'),
+          platform: process.platform,
+          summary: {
+            passed: checks.filter((c) => c.status === 'ok').length,
+            failed: failed.length,
+            warnings: warned.length,
+            notVerified: checks.filter((c) => c.status === 'unverified').length
+          },
+          checks
         },
-        checks
-      },
-      null,
-      2
+        null,
+        2
+      )
     )
-  )
-} else {
-  const mark = { ok: '✓', fail: '✗', warn: '!', unverified: '?' }
-  console.log(
-    `Arcwel WebDeck — sandbox, site isolation and CSP (${process.platform}${flag('headless') ? ', headless' : ', windowed'})\n`
-  )
-  for (const c of checks) {
-    const label = c.status === 'unverified' ? `${c.name} — not verified` : c.name
-    console.log(`${mark[c.status]} ${label}${c.detail ? `\n      ${c.detail}` : ''}`)
-  }
-  if (exitCode === 0) {
-    console.log(
-      `\nThe fork is hardened.${warned.length ? ` ${warned.length} warning(s) above.` : ''}`
-    )
-  } else if (exitCode === 1) {
-    console.log(`\n${failed.length} security property/properties are BROKEN — see the ✗ lines.`)
   } else {
+    const mark = { ok: '✓', fail: '✗', warn: '!', unverified: '?' }
     console.log(
-      `\n${blind.length} security property/properties could NOT be measured — see the ? lines. ` +
-        'This is not a pass.'
+      `Arcwel WebDeck — sandbox, site isolation and CSP (${process.platform}${flag('headless') ? ', headless' : ', windowed'})\n`
     )
+    for (const c of checks) {
+      const label = c.status === 'unverified' ? `${c.name} — not verified` : c.name
+      console.log(`${mark[c.status]} ${label}${c.detail ? `\n      ${c.detail}` : ''}`)
+    }
+    if (exitCode === 0) {
+      console.log(
+        `\nThe fork is hardened.${warned.length ? ` ${warned.length} warning(s) above.` : ''}`
+      )
+    } else if (exitCode === 1) {
+      console.log(`\n${failed.length} security property/properties are BROKEN — see the ✗ lines.`)
+    } else {
+      console.log(
+        `\n${blind.length} security property/properties could NOT be measured — see the ? lines. ` +
+          'This is not a pass.'
+      )
+    }
   }
+  process.exit(exitCode)
 }
-process.exit(exitCode)

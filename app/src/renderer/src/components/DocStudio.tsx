@@ -13,6 +13,8 @@ import { JsonTree } from '@/components/JsonTree'
 import { JsonGraph } from '@/components/JsonGraph'
 import { CsvTable } from '@/components/CsvTable'
 import { conversionTargets, convertContent, parseTreeDoc } from '@/convert'
+import { XML_CONVERSION_TARGETS, convertXml, parseXml } from '@/xml'
+import { beautify, minify, structuredFormatFor } from '@/structuredFormat'
 import { DOC_THEMES, loadDocTheme, saveDocTheme, standaloneHtml, type DocTheme } from '@/docThemes'
 
 /**
@@ -67,6 +69,8 @@ export function DocStudio({ path }: { path: string }): React.JSX.Element {
   const name = path.split('/').pop() ?? path
   const isMarkdown = ext === 'md' || ext === 'markdown'
   const isTreeDoc = ext === 'json' || ext === 'yaml' || ext === 'yml' || ext === 'toml'
+  const isXml = ext === 'xml' || ext === 'svg'
+  const canFormat = structuredFormatFor(ext) !== null
 
   const pickTheme = (theme: DocTheme): void => {
     setDocTheme(theme)
@@ -78,7 +82,7 @@ export function DocStudio({ path }: { path: string }): React.JSX.Element {
     setMenu(null)
     if (content === null) return
     try {
-      const converted = convertContent(content, ext, target)
+      const converted = isXml ? convertXml(content, target) : convertContent(content, ext, target)
       const base = path.replace(/\.[^.]+$/, '')
       let outPath = `${base}.${target}`
       const created = await window.agweb.fs.create(outPath, 'file')
@@ -88,6 +92,30 @@ export function DocStudio({ path }: { path: string }): React.JSX.Element {
       openDoc(outPath)
     } catch (convertError) {
       setNotice(String(convertError instanceof Error ? convertError.message : convertError))
+    }
+  }
+
+  // Beautify/Minify act on the live editor buffer (the shared Monaco model),
+  // not the file on disk: the change is applied as an undoable edit and marks
+  // the file dirty so the user saves it with ⌘S, exactly like a manual edit.
+  const runFormat = async (kind: 'beautify' | 'minify'): Promise<void> => {
+    const model = await ensureModel(path)
+    if (!model) {
+      setNotice('Could not load the editor buffer to format.')
+      return
+    }
+    try {
+      const current = model.getValue()
+      const next = kind === 'beautify' ? beautify(ext, current) : minify(ext, current)
+      if (next !== current) {
+        model.pushEditOperations([], [{ range: model.getFullModelRange(), text: next }], () => null)
+      }
+      setNotice(null)
+    } catch (formatError) {
+      const label = kind === 'beautify' ? 'Beautify' : 'Minify'
+      setNotice(
+        `${label} failed: ${formatError instanceof Error ? formatError.message : String(formatError)}`
+      )
     }
   }
 
@@ -139,7 +167,7 @@ export function DocStudio({ path }: { path: string }): React.JSX.Element {
     </button>
   )
 
-  const targets = conversionTargets(ext)
+  const targets = isXml ? [...XML_CONVERSION_TARGETS] : conversionTargets(ext)
 
   return (
     <div className="flex h-full flex-col bg-white text-slate-900 dark:bg-[#0b0f14] dark:text-slate-100">
@@ -150,12 +178,30 @@ export function DocStudio({ path }: { path: string }): React.JSX.Element {
         </span>
         {dirty && <span className="text-[11px] text-amber-500">unsaved edits in source</span>}
         <div className="ml-auto flex items-center gap-2">
+          {mode === 'source' && canFormat && (
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => void runFormat('beautify')}
+                className="rounded-md border border-slate-300 px-2.5 py-1 text-xs font-medium text-slate-500 hover:bg-slate-100 dark:border-slate-600 dark:hover:bg-slate-800"
+                title={`Pretty-print this ${ext.toUpperCase()} buffer (2-space indent); save with ⌘S`}
+              >
+                Beautify
+              </button>
+              <button
+                onClick={() => void runFormat('minify')}
+                className="rounded-md border border-slate-300 px-2.5 py-1 text-xs font-medium text-slate-500 hover:bg-slate-100 dark:border-slate-600 dark:hover:bg-slate-800"
+                title={`Compact this ${ext.toUpperCase()} buffer; save with ⌘S`}
+              >
+                Minify
+              </button>
+            </div>
+          )}
           {isMarkdown && menuButton('theme', 'Theme')}
           {targets.length > 0 && menuButton('convert', 'Convert')}
           {menuButton('export', 'Export')}
           <div className="flex items-center gap-1 rounded-lg border border-slate-200 p-0.5 dark:border-slate-700">
             {segment('styled', 'Styled')}
-            {isTreeDoc && segment('graph', 'Graph')}
+            {(isTreeDoc || isXml) && segment('graph', 'Graph')}
             {segment('source', 'Source')}
           </div>
           <button
@@ -212,6 +258,9 @@ export function DocStudio({ path }: { path: string }): React.JSX.Element {
         {!error && content !== null && mode === 'source' && <SourcePane path={path} />}
         {!error && content !== null && mode === 'graph' && isTreeDoc && (
           <TreePane ext={ext} content={content} view="graph" />
+        )}
+        {!error && content !== null && mode === 'graph' && isXml && (
+          <XmlPane content={content} view="graph" />
         )}
         {!error && content !== null && mode === 'styled' && (
           <StyledView ext={ext} content={content} docTheme={docTheme} />
@@ -273,7 +322,37 @@ function StyledView({
   if (ext === 'csv' || ext === 'tsv') {
     return <CsvTable content={content} delimiter={ext === 'tsv' ? '\t' : undefined} />
   }
+  if (ext === 'xml' || ext === 'svg') {
+    return <XmlPane content={content} view="tree" />
+  }
   return <TreePane ext={ext} content={content} view="tree" />
+}
+
+/** XML tree/graph via the JSON inspectors: fast-xml-parser maps the document
+ *  to a plain object, so JsonTree/JsonGraph render it with no XML-specific UI. */
+function XmlPane({
+  content,
+  view
+}: {
+  content: string
+  view: 'tree' | 'graph'
+}): React.JSX.Element {
+  const parsed = useMemo<{ data: unknown } | { error: string }>(() => {
+    try {
+      return { data: parseXml(content) }
+    } catch (parseError) {
+      return { error: parseError instanceof Error ? parseError.message : String(parseError) }
+    }
+  }, [content])
+  if ('error' in parsed) {
+    return (
+      <div className="p-6 text-sm">
+        <div className="font-semibold text-red-500">This file doesn&apos;t parse as XML.</div>
+        <div className="mt-2 font-mono text-xs text-slate-500">{parsed.error}</div>
+      </div>
+    )
+  }
+  return view === 'graph' ? <JsonGraph data={parsed.data} /> : <JsonTree data={parsed.data} />
 }
 
 /** Shared memoized parse for the tree and graph views of json/yaml/toml. */

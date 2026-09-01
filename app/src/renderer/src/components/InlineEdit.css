@@ -1,0 +1,12 @@
+/*
+ * Inline AI edit (roadmap A3) overlay styles.
+ *
+ * The target-range highlight is a Monaco decoration, so it needs a real CSS
+ * class rather than a Tailwind utility — Monaco writes the class onto spans it
+ * owns inside the editor's DOM, which Tailwind's JIT never sees. Colors use the
+ * WebDeck accent so the highlight reads as "this is what ⌘I will replace".
+ */
+.agweb-inline-edit-target {
+  background: color-mix(in srgb, var(--wd-accent, #0ea5e9) 16%, transparent);
+  border-radius: 2px;
+}

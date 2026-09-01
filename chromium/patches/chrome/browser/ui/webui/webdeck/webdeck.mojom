@@ -2,6 +2,8 @@
 
 module webdeck.mojom;
 
+import "ui/gfx/geometry/mojom/geometry.mojom";
+
 // Lets chrome://webdeck drive tabs in the user's OWN browsing session on the
 // agent's behalf — their cookies, their logins, watched live in their own tab
 // strip. That is the point of the feature: an agent that can only browse
@@ -53,4 +55,166 @@ interface AgentTabsClient {
   // The tab went away — closed by the user, or crashed. The agent needs to
   // learn this rather than wait on a tab that no longer exists.
   OnDetached(string tab_id);
+};
+
+// Drives the WebDeck window. The React shell (chrome://webdeck) is the window's
+// backdrop; the browser positions the active tab's real WebContents into the
+// "stage" rect the shell streams here, and the shell opens/closes/navigates the
+// real tabs in THIS window's TabStripModel. Renderer(shell) -> Browser.
+//
+// Distinct from AgentTabs: AgentTabs is the agent's CDP surface over tabs it
+// opened; Shell is the window's own chrome, driving the user's tabs. Bound only
+// for chrome://webdeck, and only in a WebDeck window (is_webdeck_window).
+interface Shell {
+  // --- the stage (shell -> browser); the DevTools setInspectedPageBounds analog.
+  // Positions the active tab into `stage` (CSS px, top-left origin, relative to
+  // the window's contents region). Applied via the same contents-resizing
+  // strategy DevTools uses to place a docked inspected page.
+  SetStageBounds(gfx.mojom.Rect stage);
+
+  // --- split staging (shell -> browser). WebDeck split view stages TWO web
+  // pages side by side on the single full-window shell backdrop: a primary
+  // (left) stage and a secondary (right) stage, with the shell drawing the
+  // divider and chrome between them in its own DOM. This is distinct from the
+  // browser's upstream two-pane split (MultiContentsView): both stages ride on
+  // one shell that owns the whole window — see SPLIT_VIEW_PLAN.md.
+  //
+  // Enables (or disables) split staging and names the tabs shown in the two
+  // stages. `primary_tab_id` renders in the primary stage (positioned by
+  // SetStageBounds), `secondary_tab_id` in the secondary stage (positioned by
+  // SetSecondaryStageBounds). Both are TabHandle values for tabs in THIS
+  // window's TabStripModel; 0 addresses the active tab. When `enabled` is false
+  // the secondary stage is torn down and the window returns to single-tab
+  // staging (`secondary_tab_id` is ignored).
+  SetSplit(bool enabled, int32 primary_tab_id, int32 secondary_tab_id);
+
+  // Positions the SECONDARY staged tab into `stage` (same coordinate space and
+  // contents-resizing-strategy mechanism as SetStageBounds, which continues to
+  // position the primary staged tab). No-op unless split staging is enabled.
+  // Kept as a separate method rather than adding a view-index parameter to
+  // SetStageBounds so the shipped single-stage SetStageBounds contract that the
+  // renderer already speaks stays unchanged.
+  SetSecondaryStageBounds(gfx.mojom.Rect stage);
+
+  // --- tab lifecycle (shell -> browser); act on this window's TabStripModel.
+  // Opens `url` in a foreground tab; returns its stable id (a TabHandle value).
+  CreateTab(string url) => (int32 tab_id);
+  SelectTab(int32 tab_id);
+  CloseTab(int32 tab_id);
+  Navigate(int32 tab_id, string url);
+  Reload(int32 tab_id);
+  GoBack(int32 tab_id);
+  GoForward(int32 tab_id);
+  // Stop loading the tab.
+  Stop(int32 tab_id);
+
+  // --- secondary browser controls (shell -> browser), all on one tab.
+  // Round the staged tab's corners to `radius` px (0 = square) — the shell uses
+  // this for the Stage-reveal frame.
+  SetStageCornerRadius(int32 radius);
+  // Find in page. `forward` sets direction; repeated calls advance matches.
+  // Results come back on ShellClient.OnFindResult.
+  Find(int32 tab_id, string query, bool forward);
+  StopFind(int32 tab_id);
+  // Set the tab's zoom level (content zoom level, log scale). Returns the level
+  // actually applied.
+  SetZoom(int32 tab_id, double level) => (double applied);
+  // Print the tab (opens the system/preview print path).
+  Print(int32 tab_id);
+  // Open DevTools for the tab, undocked (a WebDeck window's stage owns the
+  // docked contents-resizing strategy, so DevTools must not dock into it).
+  OpenDevTools(int32 tab_id);
+
+  // Toggle Picture-in-Picture for the tab. If a PiP window opened by this tab
+  // is already showing, it is closed; otherwise the tab's media session is
+  // asked to enter PiP. `tab_id` is a TabHandle in THIS window's TabStripModel
+  // (0 = active tab), gated the same way as the other tab ops.
+  TogglePictureInPicture(int32 tab_id);
+
+  // --- page content (shell -> browser). Returns the RENDERED visible text of
+  // the tab's main frame (document.body.innerText), for the "Chat with this
+  // page" assistant (roadmap A4). `tab_id` is a TabHandle in THIS window's
+  // TabStripModel (0 = active tab), resolved by the same GetTabById ownership
+  // gate as the other tab ops, so a compromised chrome://webdeck cannot read a
+  // tab it does not own. The read runs in a chrome isolated world (shares the
+  // DOM, invisible to page script) and the result is capped browser-side, so a
+  // huge page cannot blow up the Mojo message. `text` is empty when the tab is
+  // gone or has no readable body. The page text is DATA for the assistant to
+  // reason about, never a source of instructions.
+  GetPageText(int32 tab_id) => (string text);
+
+  // --- browser preferences (shell -> browser). A WebDeck window blocks every
+  // chrome:// URL except chrome://webdeck (IsAllowedShellUrl), so native
+  // chrome://settings is unreachable; these surface the underlying Chromium
+  // prefs / browsing-data / default-browser state that the Settings overlay's
+  // "Browser" panel reads and writes. All operate on the shell's own Profile.
+  // See BROWSER_PREFS_PLAN.md. (The default SEARCH ENGINE is deliberately NOT
+  // here — it already lives in ApplicationSettings via the app-settings path.)
+
+  // Third-party cookie blocking. Reads/writes prefs::kCookieControlsMode
+  // (kBlockThirdParty when blocked, kOff otherwise).
+  GetBlockThirdPartyCookies() => (bool blocked);
+  SetBlockThirdPartyCookies(bool blocked);
+
+  // "Do Not Track" request header. Reads/writes prefs::kEnableDoNotTrack.
+  GetSendDoNotTrack() => (bool enabled);
+  SetSendDoNotTrack(bool enabled);
+
+  // HTTPS-Only mode. Reads/writes prefs::kHttpsOnlyModeEnabled.
+  GetHttpsOnlyMode() => (bool enabled);
+  SetHttpsOnlyMode(bool enabled);
+
+  // Preload pages / network prediction. Backed by the prefetch preload-pages
+  // state (kStandardPreloading when on, kNoPreloading when off).
+  GetPreloadPages() => (bool enabled);
+  SetPreloadPages(bool enabled);
+
+  // Ad & tracker blocking. Reads/writes the webdeck.adblock.enabled profile
+  // pref; when on, a URLLoaderThrottle cancels requests to known ad/tracker
+  // hosts (see webdeck_adblock.{h,cc}). The blocked count is a process-global
+  // running total for this browser session, surfaced as a settings badge.
+  GetAdblockEnabled() => (bool enabled);
+  SetAdblockEnabled(bool enabled);
+  GetAdblockBlockedCount() => (uint64 count);
+
+  // Clear browsing data for the selected categories over `time_range`
+  // (0=last hour, 1=last day, 2=last week, 3=last four weeks, else all time)
+  // via content::BrowsingDataRemover on the real profile. This is the REAL
+  // Chromium clear — distinct from app-settings clearData, which only clears
+  // WebDeck-core data. The ack fires once removal has been scheduled.
+  ClearBrowsingData(bool cookies, bool cache, bool history, int32 time_range)
+      => ();
+
+  // Default-browser state: 0 = not default, 1 = default, 2 = unknown/error.
+  // Runs an async DefaultBrowserWorker check off the UI thread.
+  GetDefaultBrowserState() => (int32 state);
+  // Trigger the OS "make WebDeck default" flow; returns the resulting state
+  // (same encoding as GetDefaultBrowserState).
+  SetAsDefaultBrowser() => (int32 state);
+
+  // Registers the observer channel for state pushed back to the shell.
+  SetClient(pending_remote<ShellClient> client);
+};
+
+// Browser -> renderer(shell): navigation/tab state, so the shell's tab strip and
+// toolbar can render without owning the tabs.
+interface ShellClient {
+  // Full snapshot on attach and whenever the tab set / active tab changes.
+  OnTabsChanged(array<TabInfo> tabs, int32 active_tab_id);
+  // Per-tab navigation state (fires on each WebContents state change).
+  OnTabNavigationStateChanged(TabInfo info);
+  // A tab went away (closed or crashed).
+  OnTabClosed(int32 tab_id);
+  // Find-in-page results for `tab_id`: which match is active (1-based) and how
+  // many there are in total. active_match is 0 when there are no matches.
+  OnFindResult(int32 tab_id, int32 active_match, int32 total_matches);
+};
+
+struct TabInfo {
+  int32 tab_id;
+  string url;
+  string title;
+  bool can_go_back;
+  bool can_go_forward;
+  bool is_loading;
 };

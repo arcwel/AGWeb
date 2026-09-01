@@ -9,6 +9,10 @@ import { SourceControlBlock } from '@/components/SourceControlBlock'
 import { TasksBlock } from '@/components/TasksBlock'
 import { SettingsBlock } from '@/components/SettingsBlock'
 import { DebugBlock } from '@/components/DebugBlock'
+import { PageAssistantBlock } from '@/components/PageAssistantBlock'
+import { GitGraphBlock } from '@/components/GitGraphBlock'
+import { RestClientBlock } from '@/components/RestClientBlock'
+import { DbClientBlock } from '@/components/DbClientBlock'
 
 /** Content for each block type. */
 export function BlockContent({ block }: { block: BlockInstance }): React.JSX.Element {
@@ -35,5 +39,13 @@ export function BlockContent({ block }: { block: BlockInstance }): React.JSX.Ele
       return <SettingsBlock />
     case 'debug':
       return <DebugBlock />
+    case 'chat':
+      return <PageAssistantBlock />
+    case 'gitgraph':
+      return <GitGraphBlock />
+    case 'rest':
+      return <RestClientBlock />
+    case 'db':
+      return <DbClientBlock />
   }
 }

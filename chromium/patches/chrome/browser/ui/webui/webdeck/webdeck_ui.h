@@ -23,6 +23,7 @@
 
 namespace webdeck {
 class WebDeckAgentTabs;
+class WebDeckShell;
 }
 
 class WebDeckUI;
@@ -49,8 +50,14 @@ class WebDeckUI : public content::WebUIController {
   void BindInterface(
       mojo::PendingReceiver<webdeck::mojom::AgentTabs> receiver);
 
+  // Drives the WebDeck window: the shell's own tab strip / toolbar act on the
+  // real tabs, and the shell streams the stage rect the active tab is sized to.
+  // Bound only for this WebUI (and only meaningful in a WebDeck window).
+  void BindInterface(mojo::PendingReceiver<webdeck::mojom::Shell> receiver);
+
  private:
   std::unique_ptr<webdeck::WebDeckAgentTabs> agent_tabs_;
+  std::unique_ptr<webdeck::WebDeckShell> shell_;
 
   WEB_UI_CONTROLLER_TYPE_DECL();
 };

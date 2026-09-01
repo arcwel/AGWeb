@@ -4,8 +4,10 @@ import { useMonacoReady } from '@/monaco-ready'
 import { useShellStore } from '@/store'
 import { ColorSettings } from '@/components/ColorSettings'
 import { ApplicationSettings } from '@/components/ApplicationSettings'
+import { BrowserSettings } from '@/components/BrowserSettings'
 import { AiSettings } from '@/components/AiSettings'
 import { SyncSettings } from '@/components/SyncSettings'
+import { AboutSettings } from '@/components/AboutSettings'
 
 /**
  * Settings and keybindings (task 12.6).
@@ -20,10 +22,20 @@ import { SyncSettings } from '@/components/SyncSettings'
  * an existing VS Code configuration paste in and just work.
  */
 
-type Scope = 'application' | 'ai' | 'sync' | 'user' | 'workspace' | 'keybindings' | 'colors'
+type Scope =
+  | 'application'
+  | 'browser'
+  | 'ai'
+  | 'sync'
+  | 'user'
+  | 'workspace'
+  | 'keybindings'
+  | 'colors'
+  | 'about'
 
 const TABS: Array<{ scope: Scope; label: string; hint: string }> = [
   { scope: 'application', label: 'Application', hint: 'How WebDeck itself behaves.' },
+  { scope: 'browser', label: 'Browser', hint: 'Privacy, cookies, and default browser.' },
   { scope: 'ai', label: 'AI', hint: 'Provider API keys for the agent.' },
   {
     scope: 'sync',
@@ -37,11 +49,16 @@ const TABS: Array<{ scope: Scope; label: string; hint: string }> = [
     hint: 'Saved to .vscode/settings.json; wins over user settings.'
   },
   { scope: 'keybindings', label: 'Keybindings', hint: 'A JSON array, same shape as VS Code.' },
-  { scope: 'colors', label: 'Color', hint: 'Every color the app paints, as RGBA.' }
+  { scope: 'colors', label: 'Color', hint: 'Every color the app paints, as RGBA.' },
+  {
+    scope: 'about',
+    label: 'About',
+    hint: 'Version and the open-source components WebDeck is built on.'
+  }
 ]
 
 /** Scopes that render a bespoke panel instead of the JSON editor. */
-const PANEL_SCOPES = ['application', 'ai', 'sync', 'colors'] as const
+const PANEL_SCOPES = ['application', 'browser', 'ai', 'sync', 'colors', 'about'] as const
 function isPanelScope(scope: Scope): boolean {
   return (PANEL_SCOPES as readonly string[]).includes(scope)
 }
@@ -197,9 +214,11 @@ export function SettingsBlock(): React.JSX.Element {
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         {scope === 'application' && <ApplicationSettings />}
+        {scope === 'browser' && <BrowserSettings />}
         {scope === 'ai' && <AiSettings />}
         {scope === 'sync' && <SyncSettings />}
         {scope === 'colors' && <ColorSettings />}
+        {scope === 'about' && <AboutSettings />}
         {/* The editor container is always in the DOM — only hidden behind a
             panel — so Monaco can be created once at mount. Rendering it
             conditionally meant that opening on a panel scope (the default) left

@@ -28,7 +28,13 @@ import { ensureWorkspaceRoot, monacoReady } from '@/monaco'
 
 /** Which language ids each server is responsible for. */
 const SERVER_LANGUAGES: Record<string, string[]> = {
-  typescript: ['typescript', 'typescriptreact', 'javascript', 'javascriptreact']
+  typescript: ['typescript', 'typescriptreact', 'javascript', 'javascriptreact'],
+  // Backends bundled in webdeck-core: pyright (Node), rust-analyzer + gopls
+  // (native binaries). Each degrades to no-IntelliSense if its server isn't
+  // installed, so listing them here is safe even where a binary is absent.
+  python: ['python'],
+  rust: ['rust'],
+  go: ['go']
 }
 
 /**

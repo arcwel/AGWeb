@@ -217,6 +217,8 @@ const EXT_LANGUAGES: Record<string, string> = {
   html: 'html',
   htm: 'html',
   py: 'python',
+  go: 'go',
+  rs: 'rust',
   md: 'markdown',
   yml: 'yaml',
   yaml: 'yaml',

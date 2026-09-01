@@ -118,4 +118,18 @@ Pre-release, and honest about it. The browser, the Dev Deck, Document Studio, th
 
 ---
 
+## License
+
+Arcwel WebDeck is [MIT licensed](LICENSE). It is a derivative of Chromium
+(BSD-3-Clause) and embeds the Node.js runtime (MIT); the full inventory of
+bundled components and their licenses is in
+[THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md) and in the app under
+**Settings → About**. The browser's own components are credited at
+`chrome://credits`.
+
+Building the browser from source and producing a release is documented in
+[chromium/RELEASING.md](chromium/RELEASING.md).
+
+---
+
 <p align="center"><sub>An <strong>Arcwel</strong> project · MIT licensed</sub></p>

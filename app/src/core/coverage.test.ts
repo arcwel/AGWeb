@@ -46,6 +46,26 @@ const HOST_OWNED: Record<string, string> = {
   'browser:find': 'Chromium owns the find bar',
   'browser:find-stop': 'Chromium owns the find bar',
   'browser:print': 'Chromium owns printing',
+  'browser:set-split': 'Chromium owns split view (two real tab contents views)',
+  'browser:set-secondary-bounds': 'Chromium owns split view (secondary stage geometry)',
+  'browser:picture-in-picture': 'Chromium owns Picture-in-Picture',
+  'browser:get-page-text': "Chromium owns the tab's rendered content (read for the Page Assistant)",
+  // Browser preferences: Chromium's PrefService / content settings, surfaced in
+  // the WebDeck settings panel over Mojo because chrome://settings is gated.
+  'browser:get-cookie-block': 'Chromium owns cookie settings',
+  'browser:set-cookie-block': 'Chromium owns cookie settings',
+  'browser:get-dnt': 'Chromium owns the Do-Not-Track pref',
+  'browser:set-dnt': 'Chromium owns the Do-Not-Track pref',
+  'browser:get-https-only': 'Chromium owns HTTPS-Only mode',
+  'browser:set-https-only': 'Chromium owns HTTPS-Only mode',
+  'browser:get-preload': 'Chromium owns network prediction',
+  'browser:set-preload': 'Chromium owns network prediction',
+  'browser:get-adblock': 'Chromium owns the host-level ad/tracker blocker',
+  'browser:set-adblock': 'Chromium owns the host-level ad/tracker blocker',
+  'browser:get-adblock-count': 'Chromium owns the host-level ad/tracker blocker',
+  'browser:clear-browsing-data': 'Chromium owns BrowsingDataRemover',
+  'browser:default-status': 'Chromium owns default-browser state',
+  'browser:make-default': 'Chromium owns default-browser registration',
   'permission:respond':
     'Chromium owns camera/mic/geolocation prompts (agent policy is policy:respond, which IS in the core)',
 

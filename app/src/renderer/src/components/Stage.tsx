@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { useShellStore } from '@/store'
 import { StartPage } from '@/components/StartPage'
 import { DocStudio } from '@/components/DocStudio'
+import { ReaderView } from '@/components/ReaderView'
+import { splitView } from '../../../webui/shell'
 
 /**
  * The stage hosts the active tab's page. With content, the main-process
@@ -20,6 +22,7 @@ export function Stage(): React.JSX.Element {
   const initialUrl = activeTab?.kind === 'web' ? activeTab.initialUrl : undefined
   const deckRevealed = useShellStore((s) => s.deckRevealed)
   const overlayCount = useShellStore((s) => s.overlayCount)
+  const readerOpen = useShellStore((s) => s.readerOpen)
   const loadError = useShellStore((s) => s.browserStates[s.activeTabId]?.loadError)
   const splitTabId = useShellStore((s) => s.splitTabId)
   const splitRatio = useShellStore((s) => s.splitRatio)
@@ -36,8 +39,18 @@ export function Stage(): React.JSX.Element {
     void window.agweb.browser
       .create(activeTabId)
       .then(() => {
+        // The tab may have been closed while the create round-tripped: closeTab
+        // saw hasContent===false and skipped browser.destroy, so the native view
+        // would leak. Tear it down here rather than mark content on a dead tab.
+        if (!useShellStore.getState().tabs.some((t) => t.id === activeTabId)) {
+          void window.agweb.browser.destroy(activeTabId)
+          return
+        }
         markTabHasContent(activeTabId)
         void window.agweb.browser.navigate(activeTabId, initialUrl)
+      })
+      .catch((error: unknown) => {
+        console.error('Failed to create browser view', error)
       })
       .finally(() => creating.delete(activeTabId))
   }, [activeTabId, initialUrl, hasContent])
@@ -60,8 +73,10 @@ export function Stage(): React.JSX.Element {
         })
         return
       }
-      // Split view (12.x / feedback 5): two live pages share the stage, with a
-      // 6px gutter between them so the divider is grabbable.
+      // Split view: two live pages share the stage with a 6px grabbable gutter.
+      // The primary rides the single stage (browser.setBounds); the secondary is
+      // a distinct backend view positioned through its own Mojo channel — NOT
+      // browser.setBounds, which only drives the one primary stage.
       const gutter = 6
       const left = Math.round((rect.width - gutter) * splitRatio)
       void window.agweb.browser.setBounds(activeTabId, {
@@ -70,7 +85,7 @@ export function Stage(): React.JSX.Element {
         width: left,
         height: rect.height
       })
-      void window.agweb.browser.setBounds(splitTabId, {
+      void splitView.setSecondaryBounds({
         x: rect.x + left + gutter,
         y: rect.y,
         width: rect.width - left - gutter,
@@ -82,34 +97,61 @@ export function Stage(): React.JSX.Element {
     // Menus/prompts render in the renderer DOM but the native view paints
     // above it — hide the view while one is open or it swallows them (P1-12).
     void window.agweb.browser.setVisible(activeTabId, overlayCount === 0)
-    if (splitTabId) {
-      // The companion pane may never have been opened; create it on demand.
-      const companion = useShellStore.getState().tabs.find((t) => t.id === splitTabId)
-      if (companion && !companion.hasContent) {
-        void window.agweb.browser.create(splitTabId).then(() => {
-          useShellStore.getState().markTabHasContent(splitTabId)
-          if (companion.initialUrl) {
-            void window.agweb.browser.navigate(splitTabId, companion.initialUrl)
-          }
-          syncBounds()
-        })
-      }
-      void window.agweb.browser.setVisible(splitTabId, overlayCount === 0)
-    }
 
     const observer = new ResizeObserver(syncBounds)
     observer.observe(el)
     window.addEventListener('resize', syncBounds)
     el.addEventListener('transitionend', syncBounds)
+    // The stage-reveal animation (see styles.css) may briefly scale the DOM
+    // frame; re-sync once it ends so the native view lands on the true rect.
+    el.addEventListener('animationend', syncBounds)
 
     return () => {
       observer.disconnect()
       window.removeEventListener('resize', syncBounds)
       el.removeEventListener('transitionend', syncBounds)
+      el.removeEventListener('animationend', syncBounds)
       void window.agweb.browser.setVisible(activeTabId, false)
-      if (splitTabId) void window.agweb.browser.setVisible(splitTabId, false)
     }
   }, [activeTabId, hasContent, overlayCount, splitTabId, splitRatio])
+
+  // Split view: bind the companion tab into the secondary backend view when
+  // split opens, and unbind on close. Kept separate from bounds streaming so
+  // SetSplit fires once per split change, not on every divider-drag frame. Once
+  // bound, the secondary view's visibility is the backend's to manage — the
+  // shell never calls setVisible on the split tab (that would activate it in the
+  // tab strip and steal it from the secondary pane).
+  useEffect(() => {
+    if (!splitTabId || !hasContent) return
+    // The create round-trip can resolve after this effect re-ran or tore down,
+    // which would bind() with stale ids. Guard both the content mark and the
+    // bind on a per-run cancelled flag the cleanup sets.
+    let cancelled = false
+    const companion = useShellStore.getState().tabs.find((t) => t.id === splitTabId)
+    const bind = (): void => void splitView.enable(activeTabId, splitTabId)
+    if (companion && !companion.hasContent) {
+      void window.agweb.browser
+        .create(splitTabId)
+        .then(() => {
+          if (cancelled) return
+          useShellStore.getState().markTabHasContent(splitTabId)
+          if (companion.initialUrl) {
+            void window.agweb.browser.navigate(splitTabId, companion.initialUrl)
+          }
+          bind()
+        })
+        .catch((error: unknown) => {
+          console.error('Failed to create split companion view', error)
+          useShellStore.getState().pushToast('Could not open the split view.', 'error')
+        })
+    } else {
+      bind()
+    }
+    return () => {
+      cancelled = true
+      void splitView.disable()
+    }
+  }, [activeTabId, splitTabId, hasContent])
 
   // Round the native view's corners to match the spotlit stage frame.
   useEffect(() => {
@@ -117,7 +159,9 @@ export function Stage(): React.JSX.Element {
   }, [activeTabId, hasContent, deckRevealed])
 
   return (
-    <div ref={ref} className="stage bg-white dark:bg-[#101418]">
+    // Keyed on the active tab so the CSS reveal (styles.css) replays each time a
+    // different tab takes the stage, and once when the stage first mounts.
+    <div key={activeTabId} ref={ref} className="stage bg-white dark:bg-[#101418]">
       {activeTab?.kind === 'doc' && activeTab.docPath ? (
         <DocStudio key={activeTab.id} path={activeTab.docPath} />
       ) : (
@@ -125,6 +169,7 @@ export function Stage(): React.JSX.Element {
       )}
       {loadError && !splitTabId && <LoadError error={loadError} tabId={activeTabId} />}
       {splitTabId && <SplitDivider />}
+      {readerOpen && hasContent && <ReaderView />}
     </div>
   )
 }

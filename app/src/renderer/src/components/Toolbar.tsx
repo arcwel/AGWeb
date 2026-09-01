@@ -1,7 +1,16 @@
 import { useCallback, useEffect, useState } from 'react'
 import { searchUrlFor } from '@shared/ipc'
 import { BLOCK_LABELS, useShellStore, type BlockType, type DeckPreset } from '@/store'
-import { DeckIcon, PopOutIcon } from '@/components/icons'
+import { asDirectUrl, type Suggestion } from '@/omnibox-rank'
+import {
+  OMNIBOX_LISTBOX_ID,
+  OmniboxDropdown,
+  currentSearchEngine,
+  omniboxOptionId,
+  useOmniboxSuggestions
+} from '@/components/Omnibox'
+import { DeckIcon, PopOutIcon, ReaderIcon } from '@/components/icons'
+import { AiAnswer } from '@/components/AiAnswer'
 import { BookmarkControls, FindBar, ZoomControls } from '@/components/BrowserControls'
 import {
   ArrowBackIcon,
@@ -21,6 +30,10 @@ import {
 import { GridIcon, ShieldIcon } from '@/components/UtilitiesBar'
 import { DownloadsIndicator } from '@/components/DownloadsIndicator'
 import { usePopover } from '@/popover'
+// Split view + Picture-in-Picture drive the window's real tabs over the Mojo
+// Shell, so they route through the shell bridge directly (the same blessed
+// cross-import BrowserSettings uses for browserPrefs), not window.agweb.browser.
+import { pictureInPicture } from '../../../webui/shell'
 
 const PRESETS: { id: DeckPreset; label: string; hint: string }[] = [
   { id: 'browsing', label: 'Browsing', hint: 'Deck hidden — just the web' },
@@ -28,29 +41,12 @@ const PRESETS: { id: DeckPreset; label: string; hint: string }[] = [
   { id: 'debugging', label: 'Debugging', hint: 'Terminals, logs & agents forward' }
 ]
 
-/** Local dev hosts: these serve plain http, so defaulting them to https
- *  would fail on the address a dev-focused browser is typed into most. */
-const LOCAL_HOST_PATTERN =
-  /^(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\]|[^\s/]+\.localhost)(:\d+)?(\/.*)?$/i
-
-/** The search engine chosen in Settings — read synchronously, DuckDuckGo default. */
-function currentSearchEngine(): string {
-  try {
-    return window.agweb.appSettings.readSync().searchEngine || 'duckduckgo'
-  } catch {
-    return 'duckduckgo'
-  }
-}
-
-/** Turn address-bar input into a navigable URL (or a search query). */
+/** Turn address-bar input into a navigable URL (or a search query). The
+ *  URL-vs-search decision lives in asDirectUrl, shared with the omnibox. */
 export function toNavigableUrl(input: string): string | null {
   const trimmed = input.trim()
   if (!trimmed) return null
-  if (/^(https?|data|about|file):/i.test(trimmed)) return trimmed
-  const bare = trimmed.replace(/^https?:\/\//, '')
-  if (LOCAL_HOST_PATTERN.test(bare)) return `http://${bare}`
-  if (/^[^\s]+\.[^\s/]+(\/.*)?$/.test(trimmed)) return `https://${bare}`
-  return searchUrlFor(currentSearchEngine(), trimmed)
+  return asDirectUrl(trimmed) ?? searchUrlFor(currentSearchEngine(), trimmed)
 }
 
 /** Ensure the tab's WebContentsView exists, then load the URL into it. */
@@ -78,10 +74,17 @@ export function Toolbar(): React.JSX.Element {
   const [urlInput, setUrlInput] = useState('')
   const [editing, setEditing] = useState(false)
   const [blocksOpen, setBlocksOpen] = useState(false)
+  const splitTabId = useShellStore((s) => s.splitTabId)
+  const toggleSplit = useShellStore((s) => s.toggleSplit)
   const proxyEnabled = useShellStore((s) => s.embedProxyEnabled)
   const setEmbedProxyEnabled = useShellStore((s) => s.setEmbedProxyEnabled)
   const utilitiesOpen = useShellStore((s) => s.utilitiesOpen)
   const setUtilitiesOpen = useShellStore((s) => s.setUtilitiesOpen)
+  const readerOpen = useShellStore((s) => s.readerOpen)
+  const setReaderOpen = useShellStore((s) => s.setReaderOpen)
+  // Reader Mode reads the staged page's text over the Mojo Shell, so it only
+  // makes sense once the active tab actually has a loaded page.
+  const tabHasContent = (activeTab?.kind === 'web' && activeTab.hasContent) ?? false
 
   const blocksRef = usePopover(
     blocksOpen,
@@ -98,6 +101,25 @@ export function Toolbar(): React.JSX.Element {
     }
   }, [setEmbedProxyEnabled])
 
+  const [selected, setSelected] = useState(-1)
+  // The open "Ask AI" answer, or null. Held here (not in the store) so the
+  // answer state stays local to the omnibox surface.
+  const [askOpen, setAskOpen] = useState<string | null>(null)
+  const isDocTab = activeTab?.kind === 'doc'
+  const suggestions = useOmniboxSuggestions(urlInput, editing && !isDocTab)
+  // The answer panel and the suggestion dropdown share one surface — only one is
+  // ever shown, the panel winning while an ask is open.
+  const omniboxOpen = editing && !isDocTab && askOpen === null && suggestions.length > 0
+  // The dropdown AND the answer panel paint over the stage, so the surface must
+  // register as an overlay (usePopover) or the native WebContentsView would
+  // swallow it. This also closes it on Escape and on any outside pointer press.
+  const overlayOpen = omniboxOpen || askOpen !== null
+  const closeOverlay = useCallback(() => {
+    setAskOpen(null)
+    setEditing(false)
+  }, [])
+  const omniboxRef = usePopover(overlayOpen, closeOverlay)
+
   const liveUrl = state?.url && state.url !== 'about:blank' ? state.url : ''
   const displayedUrl = editing ? urlInput : liveUrl
 
@@ -105,6 +127,80 @@ export function Toolbar(): React.JSX.Element {
     const url = toNavigableUrl(urlInput)
     if (url) void navigateTab(activeTabId, url)
     setEditing(false)
+  }
+
+  // Route selected suggestions through the same navigate path the bar already
+  // uses on submit — never bypass it. The "Ask AI" row is the exception: it
+  // opens the inline answer panel instead of navigating anywhere.
+  const pickSuggestion = (suggestion: Suggestion): void => {
+    if (suggestion.kind === 'ask') {
+      setAskOpen(suggestion.title)
+      setSelected(-1)
+      return
+    }
+    void navigateTab(activeTabId, suggestion.url)
+    setEditing(false)
+    setSelected(-1)
+  }
+
+  // Open a source link from the answer panel through the toolbar's own navigate
+  // path, then dismiss the panel.
+  const openFromAnswer = (url: string): void => {
+    void navigateTab(activeTabId, url)
+    closeOverlay()
+    setSelected(-1)
+  }
+
+  const handleAddressKeyDown = (e: React.KeyboardEvent<HTMLInputElement>): void => {
+    // While the answer panel is open the input is inert: Esc dismisses it, and
+    // Enter is swallowed so a stray keystroke can't navigate out from under it.
+    if (askOpen !== null) {
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        closeOverlay()
+      } else if (e.key === 'Enter') {
+        e.preventDefault()
+      }
+      return
+    }
+    if (e.key === 'ArrowDown' && omniboxOpen) {
+      e.preventDefault()
+      setSelected((i) => (i + 1) % suggestions.length)
+      return
+    }
+    if (e.key === 'ArrowUp' && omniboxOpen) {
+      e.preventDefault()
+      setSelected((i) => (i <= 0 ? suggestions.length - 1 : i - 1))
+      return
+    }
+    if (e.key === 'Enter') {
+      if (omniboxOpen && selected >= 0 && selected < suggestions.length) {
+        e.preventDefault()
+        pickSuggestion(suggestions[selected])
+        return
+      }
+      navigate()
+      return
+    }
+    if (e.key === 'Escape' && omniboxOpen) {
+      e.preventDefault()
+      setSelected(-1)
+      setEditing(false)
+    }
+  }
+
+  // Split view + PiP drive the window's real tabs over the Mojo Shell, which
+  // only exists on the Arcwel WebDeck (Chromium) build. Off that host the calls
+  // reject, so hide the controls rather than surface a button that silently
+  // does nothing (the anti-pattern this codebase calls out for host-owned ops).
+  const forkHost = window.agweb.host?.kind === 'chromium'
+  // Split view is store-driven: toggleSplit picks a companion tab (or opens one)
+  // and sets splitTabId; Stage streams the two stage rects and the browser binds
+  // each tab. This button is one entry point (the utilities bar + command are
+  // others) — all share the store so the on-state stays consistent.
+
+  const togglePip = (): void => {
+    void pictureInPicture.toggle(activeTabId)
   }
 
   const navButton = 'wd-icon'
@@ -150,11 +246,22 @@ export function Toolbar(): React.JSX.Element {
         >
           <ChromeHomeIcon />
         </button>
+        <button
+          className={`${navButton} ${readerOpen ? 'wd-icon-on' : ''}`}
+          disabled={!tabHasContent}
+          onClick={() => setReaderOpen(!readerOpen)}
+          aria-label="Reader mode"
+          aria-pressed={readerOpen}
+          title="Reader mode"
+          data-testid="reader-toggle"
+        >
+          <ReaderIcon />
+        </button>
       </div>
 
       {/* Address, centred: the icon clusters flank it on both sides. The
           bookmark star leads the bar on the far left; zoom sits on the right. */}
-      <div className="relative flex min-w-0 flex-1 items-center">
+      <div ref={omniboxRef} className="relative flex min-w-0 flex-1 items-center">
         <div className="absolute left-1.5 flex items-center">
           <BookmarkControls
             tabId={activeTabId}
@@ -164,27 +271,57 @@ export function Toolbar(): React.JSX.Element {
           />
         </div>
         <input
-          value={activeTab?.kind === 'doc' ? `studio · ${activeTab.docPath}` : displayedUrl}
-          disabled={activeTab?.kind === 'doc'}
+          value={isDocTab ? `studio · ${activeTab?.docPath}` : displayedUrl}
+          disabled={isDocTab}
           placeholder="Enter URL or search…"
           spellCheck={false}
+          role="combobox"
+          aria-autocomplete="list"
+          aria-expanded={omniboxOpen}
+          aria-controls={OMNIBOX_LISTBOX_ID}
+          aria-activedescendant={
+            omniboxOpen && selected >= 0 ? omniboxOptionId(selected) : undefined
+          }
           onChange={(e) => {
             setEditing(true)
             setUrlInput(e.target.value)
+            // Typing rebuilds the ranked list, so any highlighted row is stale —
+            // drop back to "nothing selected" (Enter then submits the raw input).
+            setSelected(-1)
           }}
           onFocus={(e) => {
             setEditing(true)
             setUrlInput(liveUrl)
+            setSelected(-1)
             e.target.select()
           }}
           onBlur={() => setEditing(false)}
-          onKeyDown={(e) => e.key === 'Enter' && navigate()}
+          onKeyDown={handleAddressKeyDown}
           style={{ borderRadius: 'var(--wd-r-pill)' }}
           className="m w-full border border-[var(--wd-glass-border)] bg-[var(--wd-field)] py-1.5 pr-14 pl-[4.6rem] text-[12px] text-[var(--wd-text)] outline-none placeholder:text-[var(--wd-dim)] focus:border-[var(--wd-accent-line)]"
         />
         <div className="absolute right-1.5 flex items-center">
           <ZoomControls tabId={activeTabId} />
         </div>
+        {askOpen !== null ? (
+          <AiAnswer
+            query={askOpen}
+            url={liveUrl || undefined}
+            title={activeTab?.title || state?.title || undefined}
+            onOpen={openFromAnswer}
+            onClose={closeOverlay}
+          />
+        ) : (
+          omniboxOpen && (
+            <OmniboxDropdown
+              suggestions={suggestions}
+              selectedIndex={selected}
+              query={urlInput}
+              onHover={setSelected}
+              onPick={pickSuggestion}
+            />
+          )
+        )}
       </div>
 
       {proxyEnabled && (
@@ -213,6 +350,29 @@ export function Toolbar(): React.JSX.Element {
         >
           <GridIcon />
         </button>
+        {forkHost && (
+          <>
+            <button
+              onClick={toggleSplit}
+              className={`wd-icon ${splitTabId ? 'wd-icon-on' : ''}`}
+              title={splitTabId ? 'Exit split view' : 'Split view — stage two tabs side by side'}
+              aria-label="Split view"
+              aria-pressed={splitTabId !== null}
+              data-testid="split-toggle"
+            >
+              <SplitscreenIcon />
+            </button>
+            <button
+              onClick={togglePip}
+              className="wd-icon"
+              title="Picture-in-Picture — pop the video out"
+              aria-label="Picture-in-Picture"
+              data-testid="pip-toggle"
+            >
+              <PopOutIcon />
+            </button>
+          </>
+        )}
         <ExtensionsButton />
         <DownloadsIndicator />
         <FindBar tabId={activeTabId} />

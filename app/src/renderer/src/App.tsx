@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { TabStrip } from '@/components/TabStrip'
 import { UtilitiesBar } from '@/components/UtilitiesBar'
 import { Toolbar } from '@/components/Toolbar'
@@ -6,6 +6,9 @@ import { Stage } from '@/components/Stage'
 import { Deck } from '@/components/Deck'
 import { PermissionPrompts } from '@/components/PermissionPrompts'
 import { SettingsOverlay } from '@/components/SettingsOverlay'
+import { SnapshotPanel } from '@/components/SnapshotPanel'
+import { CommandPalette } from '@/components/CommandPalette'
+import { TabSwitcher } from '@/components/TabSwitcher'
 import { ToastHost } from '@/components/ToastHost'
 import { useShellStore } from '@/store'
 import { useThemeEffect } from '@/theme'
@@ -29,6 +32,11 @@ export default function App(): React.JSX.Element {
   const setTheme = useShellStore((s) => s.setTheme)
   const applyPreset = useShellStore((s) => s.applyPreset)
 
+  // The ⌘K command palette and ⌘⇧A tab switcher are renderer overlays, so
+  // their open state lives here beside the other shell-level surfaces.
+  const [paletteOpen, setPaletteOpen] = useState(false)
+  const [tabSwitcherOpen, setTabSwitcherOpen] = useState(false)
+
   useThemeEffect()
   useWindowReconciler()
 
@@ -46,8 +54,8 @@ export default function App(): React.JSX.Element {
     const offOpen = window.agweb.browser.onOpenTab((url) => {
       useShellStore.getState().newTab(url)
     })
-    const offAdopt = window.agweb.browser.onAdoptTab((tabId) => {
-      useShellStore.getState().adoptBrowserTab(tabId)
+    const offAdopt = window.agweb.browser.onAdoptTab((tabId, url) => {
+      useShellStore.getState().adoptBrowserTab(tabId, url)
     })
     // A file: navigation to a workspace doc renders it in Document Studio (P3-3).
     const offDoc = window.agweb.browser.onOpenDoc((path) => {
@@ -131,6 +139,26 @@ export default function App(): React.JSX.Element {
     'Layout preset: Debugging',
     useCallback(() => applyPreset('debugging'), [applyPreset])
   )
+  // ⌘K opens the command palette; ⌘⇧A opens the tab switcher. Both ride the
+  // same registry as the bindings above, so a key press or a menu accelerator
+  // reaches them the same way.
+  useShortcut(
+    'mod+k',
+    'Open the command palette',
+    useCallback(() => setPaletteOpen(true), [])
+  )
+  useShortcut(
+    'mod+shift+a',
+    'Switch tab',
+    useCallback(() => setTabSwitcherOpen(true), [])
+  )
+  // ⌘⇧S opens Session Snapshots. Store-driven visibility (like Settings), so
+  // the command palette can raise the same surface.
+  useShortcut(
+    'mod+shift+s',
+    'Open session snapshots',
+    useCallback(() => useShellStore.getState().setSnapshotsOpen(true), [])
+  )
 
   // Commands the native menu sends. They ride the same registry as keyboard
   // combos — a menu item and its accelerator are then one handler, not two
@@ -157,6 +185,16 @@ export default function App(): React.JSX.Element {
       {!window.agweb.host.ownsBrowserChrome && <UtilitiesBar />}
       <PermissionPrompts />
       <SettingsOverlay />
+      <SnapshotPanel />
+      <CommandPalette
+        open={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+        onOpenTabSwitcher={() => {
+          setPaletteOpen(false)
+          setTabSwitcherOpen(true)
+        }}
+      />
+      <TabSwitcher open={tabSwitcherOpen} onClose={() => setTabSwitcherOpen(false)} />
       <ToastHost />
       <div
         className={`workspace ${revealed ? 'revealed' : ''} ${hasRail ? 'has-rail' : ''} ${

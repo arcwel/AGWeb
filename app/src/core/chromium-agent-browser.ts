@@ -543,13 +543,3 @@ export async function browserReachable(port: number): Promise<boolean> {
     return false
   }
 }
-
-/** Tear down a spawned agent browser and its throwaway profile. */
-export function shutdownAgentBrowser(child: ChildProcess | null, profileDir: string): void {
-  try {
-    child?.kill()
-  } catch {
-    // already gone
-  }
-  if (profileDir) rmSync(profileDir, { recursive: true, force: true })
-}

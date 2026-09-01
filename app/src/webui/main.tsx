@@ -141,10 +141,11 @@ async function main(): Promise<void> {
   // the preload would have.
   window.agweb = createAgwebApi(createWebUiIpc(client), {
     kind: 'chromium',
-    // The page sits inside a real browser tab: Chromium owns the tab strip,
-    // address bar, downloads, profiles, extensions, zoom and find. Drawing our
-    // own would put a second, non-functional copy under the real one.
-    ownsBrowserChrome: true,
+    // WebDeck owns the window: there is no native tab strip or address bar, so
+    // the shell draws its own glass tab strip and toolbar and drives the real
+    // tab over the Mojo Shell (see webui/shell.ts). ownsBrowserFeatures stays
+    // true — downloads, zoom and find are still Chromium's, reached its own way.
+    ownsBrowserChrome: false,
     ownsBrowserFeatures: true,
     // No native pickers or extra OS windows yet.
     canOpenWindows: false,

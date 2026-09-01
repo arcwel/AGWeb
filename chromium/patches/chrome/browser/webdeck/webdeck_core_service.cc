@@ -154,6 +154,23 @@ void WebDeckCoreService::EnsureStarted() {
   options.environment["WEBDECK_CHROME_VERSION"] =
       std::string(version_info::GetVersionNumber());
 
+  // Tell the core where its runtime payload lives.
+  //
+  // The core executable sits in Contents/MacOS, but its runtime — node-pty's
+  // native addon, the js-debug adapter, reveal.js data — is a tree of mixed
+  // resources, and codesign rejects any non-executable under Contents/MacOS
+  // (that directory is for code only). So the payload ships in
+  // Contents/Resources instead, and the core cannot find it by looking beside
+  // itself. This hands it the path. `core` is Contents/MacOS/webdeck-core, so
+  // its grandparent is Contents.
+  const base::FilePath runtime_payload = core.DirName()
+                                             .DirName()
+                                             .Append(FILE_PATH_LITERAL("Resources"))
+                                             .Append(FILE_PATH_LITERAL("webdeck-core-runtime"));
+  if (base::PathExists(runtime_payload)) {
+    options.environment["WEBDECK_CORE_RUNTIME"] = runtime_payload.value();
+  }
+
   process_ = base::LaunchProcess(command_line, options);
   if (!process_.IsValid()) {
     LOG(ERROR) << "failed to launch webdeck-core";

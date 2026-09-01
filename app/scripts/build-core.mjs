@@ -84,7 +84,24 @@ const RUNTIME_PACKAGES = [
     name: 'node-pty',
     include: ['package.json', 'lib', `prebuilds/${process.platform}-${process.arch}`]
   },
-  { name: 'reveal.js', include: ['package.json', 'dist', 'plugin'] }
+  { name: 'reveal.js', include: ['package.json', 'dist', 'plugin'] },
+  // The TypeScript language server (lsp.ts spawns lib/cli.mjs) and its typescript
+  // peer (which provides tsserver). typescript-language-server declares no npm
+  // dependencies — it pre-bundles them into lib/ — so these two packages are the
+  // whole closure. Without them, editor IntelliSense is silently absent on the
+  // fork (resolveServer returns null → "not installed").
+  { name: 'typescript-language-server', include: ['package.json', 'lib'] },
+  { name: 'typescript', include: ['package.json', 'lib', 'bin'] },
+  // The Pyright language server (lsp.ts spawns pyright/langserver.index.js). Like
+  // typescript-language-server, pyright pre-bundles its whole dependency tree into
+  // dist/ — its package.json declares no runtime `dependencies`, only an optional
+  // `fsevents` (macOS file-watching speedup that vscode-languageserver already
+  // require()s inside a try/catch) — so this one package is the complete closure.
+  // dist/ carries the bundled JS *and* typeshed-fallback (the Python stdlib type
+  // stubs pyright resolves via global.__rootDirectory); langserver.index.js is the
+  // stdio entry. Without these, Python IntelliSense is silently absent on the fork
+  // (resolveServer returns null -> "not installed").
+  { name: 'pyright', include: ['package.json', 'langserver.index.js', 'dist'] }
 ]
 
 /**
@@ -114,9 +131,16 @@ const __wdRuntime =
 process.env.WEBDECK_CORE_RUNTIME = __wdRuntime
 require = createRequire(__wdPath.join(__wdRuntime, 'noop.cjs'))
 
-if (process.env.ELECTRON_RUN_AS_NODE === '1' && process.argv[1]) {
+if (process.env.ELECTRON_RUN_AS_NODE === '1' && process.argv.length > 2) {
+  // Node sets process.argv[1] to the SEA executable path itself (NOT the passed
+  // script), so a caller that spawns \`execPath [entry, ...args]\` — the language
+  // server and debug adapter both do — lands \`entry\` at argv[2]. Splicing out
+  // the duplicated exe path at [1] restores a normal \`node <script> <args>\`
+  // layout the spawned tool expects; using argv[1] verbatim (as before) required
+  // the Mach-O binary and threw "Invalid or unexpected token", disabling LSP/DAP.
+  process.argv.splice(1, 1)
   const script = __wdPath.resolve(process.argv[1])
-  process.argv.splice(1, 1, script)
+  process.argv[1] = script
   delete process.env.ELECTRON_RUN_AS_NODE
   if (/\\.mjs$/.test(script)) {
     import(require('node:url').pathToFileURL(script).href)
@@ -205,12 +229,43 @@ const spawnHelper = join(
 )
 if (existsSync(spawnHelper)) chmodSync(spawnHelper, 0o755)
 
+// Native-binary language servers (roadmap C1): gopls, rust-analyzer. Vendored
+// under resources/lsp-bin/<tool>/<platform>-<arch>/ so the core can spawn them
+// directly (lsp.ts). Fetched here so a core build carries them, but a failed or
+// offline fetch must NOT fail the build — the script warns and ships without the
+// binary (that language degrades to "not installed"). --no-sea already exited
+// above, so this only runs on a full SEA build.
+try {
+  execFileSync(process.execPath, [join(root, 'scripts', 'fetch-lsp-bins.mjs')], {
+    cwd: root,
+    stdio: asJson ? 'ignore' : 'inherit'
+  })
+} catch {
+  // The script itself never throws on a failed download; this guard only covers
+  // the script being unrunnable. Never break the core build over LSP binaries.
+}
+
 // resources/ is looked up relative to appDir, which the core points at the
-// runtime directory. js-debug is vendored at install time and may be absent.
+// runtime directory. js-debug and lsp-bin are vendored separately and may be
+// absent (offline install/build); copy whatever is present.
 mkdirSync(join(runtimeDir, 'resources'), { recursive: true })
-for (const entry of ['pty-host.cjs', 'js-debug']) {
+for (const entry of ['pty-host.cjs', 'js-debug', 'lsp-bin']) {
   const src = join(root, 'resources', entry)
   if (existsSync(src)) cpSync(src, join(runtimeDir, 'resources', entry), { recursive: true })
+}
+
+// Native LSP binaries are exec'd; restore the execute bit the copy (and Google
+// Drive checkout) can drop — same fix as node-pty's spawn-helper above.
+for (const tool of ['rust-analyzer', 'gopls']) {
+  const bin = join(
+    runtimeDir,
+    'resources',
+    'lsp-bin',
+    tool,
+    `${process.platform}-${process.arch}`,
+    tool
+  )
+  if (existsSync(bin)) chmodSync(bin, 0o755)
 }
 
 // js-debug ships prebuilt native addons for every platform it supports, so the

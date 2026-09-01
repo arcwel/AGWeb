@@ -15,6 +15,7 @@
 #include "base/values.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/webui/webdeck/webdeck_agent_tabs.h"
+#include "chrome/browser/ui/webui/webdeck/webdeck_shell.h"
 #include "chrome/browser/webdeck/webdeck_core_service.h"
 #include "chrome/grit/webdeck_resources.h"
 #include "chrome/grit/webdeck_resources_map.h"
@@ -175,4 +176,13 @@ void WebDeckUI::BindInterface(
   agent_tabs_ = std::make_unique<webdeck::WebDeckAgentTabs>(
       std::move(receiver),
       Profile::FromWebUI(web_ui()));
+}
+
+void WebDeckUI::BindInterface(
+    mojo::PendingReceiver<webdeck::mojom::Shell> receiver) {
+  // One implementation per page; rebinding replaces it. The shell's WebContents
+  // (this WebUI's) carries a WebDeckShellHost naming the owning window, which is
+  // how WebDeckShell reaches that window's tabs and contents view.
+  shell_ = std::make_unique<webdeck::WebDeckShell>(web_ui()->GetWebContents(),
+                                                   std::move(receiver));
 }

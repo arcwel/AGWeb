@@ -3,6 +3,7 @@ import { mkdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { AgentSessionInfo } from '@shared/agents'
+import type { AskResult, EditCodeResult } from '@shared/ipc'
 import { setCoreEnv } from '../core/env'
 import { core } from '../core/rpc'
 import { IpcChannels } from '@shared/ipc'
@@ -135,5 +136,100 @@ describe('agent registry validation', () => {
     const status = agent.getAgentKeyStatus()
     expect(status).toBeTypeOf('object')
     expect(status).not.toBeNull()
+  })
+})
+
+// True backend cancellation for the one-shot streamed calls. Driven with the
+// mock provider, so it is deterministic and offline: the abort is triggered
+// from inside an onToken callback (function level) or once the call is in the
+// in-flight registry (register level), never on a wall-clock timer.
+describe('one-shot stream cancellation', () => {
+  /** Poll a predicate until true (the handler registers its controller a
+   *  microtask after dispatch is called). */
+  async function waitUntil(pred: () => boolean, tries = 200): Promise<void> {
+    for (let i = 0; i < tries; i++) {
+      if (pred()) return
+      await new Promise((r) => setTimeout(r, 5))
+    }
+    throw new Error('condition never became true')
+  }
+
+  it('askOmnibox aborts mid-stream and emits no tokens after abort', async () => {
+    const controller = new AbortController()
+    const tokens: string[] = []
+    const promise = agent.askOmnibox(
+      'Cancel me',
+      {},
+      (token) => {
+        tokens.push(token)
+        // Abort as soon as the stream is visibly flowing.
+        if (tokens.length === 2) controller.abort()
+      },
+      controller.signal
+    )
+    // The mock provider throws an AbortError once the signal fires.
+    await expect(promise).rejects.toThrowError(/abort/i)
+    const countAtAbort = tokens.length
+    // Give any stray scheduled emissions a chance to (wrongly) fire.
+    await new Promise((r) => setTimeout(r, 200))
+    expect(tokens.length).toBe(countAtAbort) // nothing streamed past the abort
+    expect(countAtAbort).toBeGreaterThanOrEqual(2)
+  })
+
+  it('editCode is abortable too (shared signal path)', async () => {
+    const controller = new AbortController()
+    const tokens: string[] = []
+    const promise = agent.editCode(
+      'rename x to y',
+      'const x = 1\n',
+      'typescript',
+      (token) => {
+        tokens.push(token)
+        if (tokens.length === 1) controller.abort()
+      },
+      controller.signal
+    )
+    await expect(promise).rejects.toThrowError(/abort/i)
+    const countAtAbort = tokens.length
+    await new Promise((r) => setTimeout(r, 200))
+    expect(tokens.length).toBe(countAtAbort)
+  })
+
+  it('agentCancel aborts an in-flight ask and settles cancelled:true', async () => {
+    const askId = `ask-cancel-${process.pid}-${Date.now()}`
+    const dispatched = core.dispatch(IpcChannels.agentAsk, [
+      askId,
+      'Cancel via the registry',
+      {}
+    ]) as Promise<AskResult>
+
+    // The handler stores its AbortController before awaiting the stream.
+    await waitUntil(() => agent.inFlightCount() > 0)
+    await core.dispatch(IpcChannels.agentCancel, [askId])
+
+    const result = await dispatched
+    expect(result.cancelled).toBe(true)
+    expect(result.error).toBeUndefined()
+    expect(result.text).toBe('')
+    // The register layer cleaned up its in-flight entry in the finally.
+    expect(agent.inFlightCount()).toBe(0)
+  })
+
+  it('agentCancel is a no-op for an unknown id', async () => {
+    await expect(core.dispatch(IpcChannels.agentCancel, ['not-a-real-id'])).resolves.not.toThrow()
+    expect(agent.inFlightCount()).toBe(0)
+  })
+
+  it('a normal edit still settles when never cancelled', async () => {
+    const result = (await core.dispatch(IpcChannels.agentEditCode, [
+      `edit-${Date.now()}`,
+      'add a comment',
+      'let a = 1\n',
+      'typescript'
+    ])) as EditCodeResult
+    expect(result.cancelled).toBeUndefined()
+    expect(result.error).toBeUndefined()
+    expect(result.text).toContain('let a = 1')
+    expect(agent.inFlightCount()).toBe(0)
   })
 })

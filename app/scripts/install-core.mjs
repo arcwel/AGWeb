@@ -2,11 +2,12 @@
 // Places the built webdeck-core executable, and the runtime it needs beside it,
 // into a WebDeck .app bundle.
 //
-// The browser spawns webdeck-core out of base::DIR_MODULE, which on macOS is
-// the directory of the running executable — Contents/MacOS. So the core goes
-// there, next to the main binary, and its runtime directory (node-pty's native
-// addon, reveal.js's data files, the js-debug adapter) goes right beside it,
-// which is where main.ts looks for it.
+// The browser spawns webdeck-core from beside the main executable
+// (Contents/MacOS), so the core goes there. Its runtime — node-pty's native
+// addon, reveal.js's data, the js-debug adapter — is a tree of mixed
+// resources, and codesign rejects any non-executable under Contents/MacOS
+// (that directory is code only). So the runtime goes in Contents/Resources
+// instead, and the browser hands the core that path via WEBDECK_CORE_RUNTIME.
 //
 // This replaces the dev shim: a 281-byte shell script that ran the developer's
 // Homebrew Node against a .cjs at an absolute path in their home directory. That
@@ -17,7 +18,7 @@
 // and signing is one job done once over the whole bundle rather than piecemeal.
 //
 // Usage: node scripts/install-core.mjs --app "<path to .app>" [--core <dir>] [--json]
-import { chmodSync, cpSync, existsSync, rmSync, statSync } from 'node:fs'
+import { chmodSync, cpSync, existsSync, mkdirSync, rmSync, statSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -71,11 +72,17 @@ try {
 const macos = join(appPath, 'Contents', 'MacOS')
 if (!existsSync(macos)) fail(`${appPath} has no Contents/MacOS — is this a real .app?`)
 
-const destBinary = join(macos, 'webdeck-core')
-const destRuntime = join(macos, 'webdeck-core-runtime')
+const resources = join(appPath, 'Contents', 'Resources')
+if (!existsSync(resources)) mkdirSync(resources, { recursive: true })
 
-// Replace whatever is there (the dev shim, or a stale copy).
-for (const stale of [destBinary, destRuntime]) {
+const destBinary = join(macos, 'webdeck-core')
+const destRuntime = join(resources, 'webdeck-core-runtime')
+
+// Replace whatever is there — the dev shim, a stale copy, or a runtime left in
+// the OLD Contents/MacOS location before it moved to Resources. Leaving that
+// behind puts a resource tree under Contents/MacOS, which codesign rejects.
+const staleMacOsRuntime = join(macos, 'webdeck-core-runtime')
+for (const stale of [destBinary, destRuntime, staleMacOsRuntime]) {
   if (existsSync(stale)) rmSync(stale, { recursive: true, force: true })
 }
 

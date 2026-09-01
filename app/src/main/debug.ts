@@ -1,4 +1,4 @@
-import { spawn, type ChildProcess } from 'node:child_process'
+import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
 import { connect, type Socket } from 'node:net'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
@@ -59,6 +59,110 @@ function adapterPath(): string | null {
 
 export function isDebuggerAvailable(): boolean {
   return adapterPath() !== null
+}
+
+/**
+ * Debug adapters by language id.
+ *
+ * Only `node` (Microsoft js-debug, covering pwa-node / pwa-chrome / pwa-msedge)
+ * is fully wired into the socket transport below: it is vendored, Node-based,
+ * and rides the `ELECTRON_RUN_AS_NODE` path that lets a spawned script run
+ * inside the SEA, so it is shippable today. The other entries are launch recipes
+ * for adapters whose toolchain we do not bundle. `resolveDebugAdapter` reports
+ * how — and whether — each one can start on this machine, so the remaining
+ * transport work does not have to re-derive the spawn command. Adding a language
+ * is one entry here plus its transport wiring.
+ */
+type AdapterKind = 'bundled-node' | 'system-python' | 'todo'
+
+interface DebugAdapterSpec {
+  kind: AdapterKind
+  /** DAP transport the adapter speaks (js-debug opens a TCP socket; debugpy
+   *  speaks DAP over the adapter process's own stdio). */
+  transport: 'socket' | 'stdio'
+  /** Human-readable summary for logs and docs. */
+  note: string
+}
+
+const ADAPTERS: Record<string, DebugAdapterSpec> = {
+  node: {
+    kind: 'bundled-node',
+    transport: 'socket',
+    note: 'Microsoft js-debug (pwa-node / pwa-chrome / pwa-msedge), vendored and Node-based.'
+  },
+  // Python via debugpy. debugpy is a *Python* program, not a Node one, so it
+  // cannot ride the ELECTRON_RUN_AS_NODE path the other adapters use and is not
+  // bundled — it launches against the user's own interpreter as
+  // `python3 -m debugpy.adapter` (stdio DAP) and requires `pip install debugpy`.
+  python: {
+    kind: 'system-python',
+    transport: 'stdio',
+    note: 'debugpy.adapter via system python3 (interpreter dependency, not bundled).'
+  },
+  // TODO(go): Delve. Large native binary — do NOT bundle here; vendor per
+  // docs/LANGUAGE_SUPPORT.md, then wire the stdio transport.
+  go: {
+    kind: 'todo',
+    transport: 'stdio',
+    note: 'TODO: vendor Delve (`dlv dap`) — see docs/LANGUAGE_SUPPORT.md.'
+  },
+  // TODO(rust): codelldb. Large native binary — do NOT bundle here; vendor per
+  // docs/LANGUAGE_SUPPORT.md, then wire the stdio transport.
+  rust: {
+    kind: 'todo',
+    transport: 'stdio',
+    note: 'TODO: vendor codelldb (`codelldb --port`) — see docs/LANGUAGE_SUPPORT.md.'
+  }
+}
+
+/** Locate a system Python 3 interpreter, or null. Unlike the Node adapters,
+ *  debugpy needs a real interpreter on the host; probe the usual names rather
+ *  than assume one is installed. */
+function findPython(): string | null {
+  for (const candidate of ['python3', 'python']) {
+    const probe = spawnSync(candidate, ['--version'], { stdio: 'ignore' })
+    if (!probe.error && probe.status === 0) return candidate
+  }
+  return null
+}
+
+/**
+ * Resolve how a language's debug adapter would launch, or a clear reason it
+ * cannot on this machine.
+ *
+ * Non-throwing, mirroring the language-server resolver: a missing toolchain must
+ * degrade to "no debugging for this language", never crash the service. Today
+ * only the `node` (js-debug) recipe is consumed by startDebugSession; the Python
+ * recipe is returned guarded (debugpy present on a discoverable python3) and the
+ * go/rust entries report as not-yet-available.
+ */
+export function resolveDebugAdapter(
+  id: string
+): { command: string; args: string[]; transport: 'socket' | 'stdio' } | { error: string } {
+  const spec = ADAPTERS[id]
+  if (!spec) return { error: `No debug adapter configured for '${id}'.` }
+
+  if (spec.kind === 'bundled-node') {
+    const path = adapterPath()
+    if (!path)
+      return { error: 'The debug adapter is not installed. Run scripts/fetch-js-debug.mjs.' }
+    // Same argv js-debug's own start path uses: port 0 = pick a free port.
+    return { command: process.execPath, args: [path, '0', '127.0.0.1'], transport: 'socket' }
+  }
+
+  if (spec.kind === 'system-python') {
+    const python = findPython()
+    if (!python) {
+      return {
+        error:
+          'Python debugging needs a system Python 3 with debugpy installed ' +
+          '(`pip install debugpy`); no python3 was found on PATH.'
+      }
+    }
+    return { command: python, args: ['-m', 'debugpy.adapter'], transport: 'stdio' }
+  }
+
+  return { error: `Debugging for '${id}' is not vendored yet. See docs/LANGUAGE_SUPPORT.md.` }
 }
 
 /** Wait for the adapter to print its listening banner, then read the port. */

@@ -2,6 +2,7 @@ import { CoreClient } from '../core/transports/ws-client'
 import type { IpcLike } from '../preload/api'
 import { exportCapture, exportHtml, exportPdf } from './export'
 import { confirmDialog, pickJsonFile, pickPaths, unavailableHere } from './pickers'
+import { SHELL_BROWSER, SHELL_BROWSER_EVENTS, onShellBrowserEvent } from './shell'
 import { IpcChannels } from '@shared/ipc'
 import type { AppSettings } from '@shared/ipc'
 
@@ -129,7 +130,16 @@ export function createWebUiIpc(client: CoreClient): IpcLike {
 
   return {
     invoke: (channel, ...args) => {
-      const shell = SHELL_OWNED[channel]
+      // When WebDeck owns the window, the browser.* channels drive the real tab
+      // over the Mojo Shell rather than the core (which does not own tabs).
+      // Own-property guards: SHELL_BROWSER/SHELL_OWNED are plain object literals,
+      // so a channel like 'constructor'/'toString'/'__proto__' would otherwise
+      // resolve to an inherited Object.prototype member and be treated as a
+      // handler. hasOwn ensures only real, declared channels dispatch to the
+      // Shell — an unknown channel falls through to the core, as intended.
+      const browser = Object.hasOwn(SHELL_BROWSER, channel) ? SHELL_BROWSER[channel] : undefined
+      if (browser) return browser(...args)
+      const shell = Object.hasOwn(SHELL_OWNED, channel) ? SHELL_OWNED[channel] : undefined
       // Arguments are forwarded: some shell-owned channels (the exports) need
       // them, and silently dropping them made every handler look argument-free.
       if (shell) return Promise.resolve(shell(...args))
@@ -157,7 +167,15 @@ export function createWebUiIpc(client: CoreClient): IpcLike {
       const existing = perChannel.get(listener)
       if (existing) existing.push(wrapped)
       else perChannel.set(listener, [wrapped])
-      unsubscribes.set(wrapped, client.on(channel, wrapped))
+      // Browser state events come from the browser over the Mojo ShellClient,
+      // not the core — deliver those through the shell's local bus. Both return
+      // an unsubscribe, so removeListener stays uniform.
+      unsubscribes.set(
+        wrapped,
+        SHELL_BROWSER_EVENTS.has(channel)
+          ? onShellBrowserEvent(channel, wrapped)
+          : client.on(channel, wrapped)
+      )
       return undefined
     },
 
