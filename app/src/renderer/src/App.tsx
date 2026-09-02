@@ -47,6 +47,19 @@ export default function App(): React.JSX.Element {
   // VS Code's command registry (task 12.8) for as long as the shell is up.
   useEffect(() => installEditorAgentBridge(), [])
 
+  // The core is the source of truth for the open workspace. The Files block's
+  // own path field applies the reply it gets, but a project opened any other
+  // way — a Recent entry, the agent, a synced setting, another window — only
+  // announces itself through this event; without a subscriber the Deck kept
+  // saying "No project open" while the core had already switched.
+  useEffect(
+    () =>
+      window.agweb.onWorkspaceChanged((workspace) => {
+        useShellStore.getState().setWorkspace(workspace)
+      }),
+    []
+  )
+
   // Load the active profile's bookmarks at boot (they are stored per profile).
   useEffect(() => {
     void window.agweb.profiles.list().then((state) => {
