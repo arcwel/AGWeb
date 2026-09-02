@@ -82,6 +82,23 @@ function runtimeDir(): string | undefined {
   return existsSync(beside) ? beside : undefined
 }
 
+/**
+ * Which browser the agent drives. `isolated` (default) spawns a throwaway
+ * profile over CDP — Agent Vision and the navigation guard are complete there.
+ * `session` drives the user's own tabs through the page; it works end to end
+ * for open/read/click/type but its event forwarding does not yet feed vision
+ * or the guard (verify-session-mode.mjs), so it is opt-in:
+ * `--agent-browser session` or WEBDECK_AGENT_BROWSER=session.
+ */
+function agentBrowserMode(): 'session' | 'isolated' {
+  const raw = arg('agent-browser') ?? process.env.WEBDECK_AGENT_BROWSER ?? 'isolated'
+  if (raw === 'session' || raw === 'isolated') return raw
+  process.stderr.write(
+    `webdeck-core: unknown --agent-browser "${raw}"; expected session|isolated\n`
+  )
+  process.exit(2)
+}
+
 async function main(): Promise<void> {
   const portArg = arg('port')
   const userDataDir = arg('user-data')
@@ -98,7 +115,8 @@ async function main(): Promise<void> {
     host: requireLoopback(arg('host')),
     userDataDir,
     appDir,
-    portFile: handoffFile(userDataDir)
+    portFile: handoffFile(userDataDir),
+    agentBrowserMode: agentBrowserMode()
   })
 
   // The one thing a supervisor needs from stdout: where to connect.
