@@ -16,7 +16,7 @@ import { pageText as shellPageText } from '../../../webui/shell'
  * (`pageText.get(0)`) when it opens and whenever the page changes, then hands
  * that text plus the question to `agents.chatPage`, which streams a grounded
  * answer keyed by a per-chat id. The page text is treated as DATA — the system
- * prompt (main/agent.ts) forbids following instructions embedded in it, and
+ * prompt (core/domains/agent.ts) forbids following instructions embedded in it, and
  * there are no tools/actions for injected text to reach.
  *
  * Off the fork there is no Mojo Shell, so `pageText.get` rejects; the block

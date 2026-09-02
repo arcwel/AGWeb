@@ -8,7 +8,7 @@ import { useVirtualRows } from '@/virtual'
  * Pure UI. It never touches a database directly — `chrome://webdeck` has no file
  * access — but hands every operation to the core over `window.agweb.db`, which
  * runs them through Node's built-in `node:sqlite` in the main process (see
- * `app/src/main/db.ts`). The core opens read-only by default, always binds query
+ * `app/src/core/domains/db.ts`). The core opens read-only by default, always binds query
  * parameters, and returns errors as data, so this block only has to build the
  * request and render what comes back.
  *

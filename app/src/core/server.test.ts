@@ -136,7 +136,7 @@ describe('policy confirmation over the transport (the fork path)', () => {
 
     // Drive a real gated action through the engine (checkAction is not an RPC,
     // so call it directly — the transport is what's under test here).
-    const { checkAction } = await import('../main/policy')
+    const { checkAction } = await import('./domains/policy')
     const verdict = checkAction('command', 'ls', 'fork-session')
     const seen = await prompted
     expect(seen.kind).toBe('command')
@@ -147,7 +147,7 @@ describe('policy confirmation over the transport (the fork path)', () => {
   it('fails closed when no client is connected to ask', async () => {
     await rpc(IpcChannels.policySetMode, ['review'])
     await waitForNoClients()
-    const { checkAction } = await import('../main/policy')
+    const { checkAction } = await import('./domains/policy')
     expect(await checkAction('command', 'ls', 'fork-nobody')).toBe(false)
   })
 
@@ -156,7 +156,7 @@ describe('policy confirmation over the transport (the fork path)', () => {
     await waitForNoClients()
     const ws = new WebSocket(`ws://127.0.0.1:${handle.port}`, [coreAuthSubprotocol(handle.token)])
     await new Promise((r) => ws.on('open', r))
-    const { checkAction } = await import('../main/policy')
+    const { checkAction } = await import('./domains/policy')
     // Ask, then have the only client vanish without answering. Without the
     // disconnect hook this would hang the agent forever.
     const verdict = checkAction('command', 'ls', 'fork-drop')

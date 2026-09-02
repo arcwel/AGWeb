@@ -432,7 +432,7 @@ try {
   cleanups.push(() => fixtures.close())
 
   // Policy: full autonomy, with ONE per-site deny — the strongest rule there is,
-  // and the only one that outranks autonomous mode (see src/main/policy.ts).
+  // and the only one that outranks autonomous mode (see src/core/domains/policy.ts).
   // The agent works on 127.0.0.1; "localhost" is the denied destination.
   const userDataDir = join(runtimeDir, 'core-data')
   mkdirSync(userDataDir, { recursive: true })

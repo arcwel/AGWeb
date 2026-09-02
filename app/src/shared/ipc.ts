@@ -500,7 +500,7 @@ export interface DbTable {
  * and opens a kernel, and relays each cell's outputs back as `JupyterOutput`
  * events keyed by the execId the block minted. There is no `@jupyterlab/services`
  * dependency — the v5.3 messaging protocol is spoken directly (see
- * `src/main/jupyter.ts`). Never rejects: failures arrive as `error` on a result.
+ * `src/core/domains/jupyter.ts`). Never rejects: failures arrive as `error` on a result.
  */
 
 /** One kernel as listed by the server, or the one we started. */

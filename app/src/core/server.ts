@@ -10,15 +10,15 @@ import { nodeCoreEnv } from './node-env'
 
 import { IpcChannels, IpcEvents } from '@shared/ipc'
 import type { AppInfo } from '@shared/ipc'
-import { registerSecretsRpc } from '../main/secrets'
-import { registerVsxRpc } from '../main/vsx'
+import { registerSecretsRpc } from './domains/secrets'
+import { registerVsxRpc } from './domains/vsx'
 import {
   abortPendingEditorCommands,
   respondEditorCommand,
   setEditorCommandSink
-} from '../main/editor-bridge'
+} from './domains/editor-bridge'
 import type { EditorCommandResponse } from '../shared/ipc'
-import { registerAppSettingsRpc } from '../main/app-settings'
+import { registerAppSettingsRpc } from './domains/app-settings'
 import {
   abortPendingPrompts,
   audit,
@@ -27,30 +27,30 @@ import {
   setPolicyBroadcaster,
   setPolicyDenyNotifier,
   setPolicyPromptSink
-} from '../main/policy'
+} from './domains/policy'
 import type { PolicyActionKind } from '../shared/ipc'
-import { registerGitRpc } from '../main/git'
-import { registerRestRpc } from '../main/rest'
-import { registerDbRpc } from '../main/db'
-import { registerJupyterRpc } from '../main/jupyter'
+import { registerGitRpc } from './domains/git'
+import { registerRestRpc } from './domains/rest'
+import { registerDbRpc } from './domains/db'
+import { registerJupyterRpc } from './domains/jupyter'
 import { setAgentBrowserPort } from './agent-browser-port'
 import { chromiumAgentBrowser } from './chromium-agent-browser'
 import { pageAgentBrowser } from './page-agent-browser'
-import { registerTasksRpc } from '../main/tasks'
-import { registerSearchRpc } from '../main/search'
-import { registerFsRpc } from '../main/fs'
-import { registerWorkspaceRpc } from '../main/workspace'
-import { registerSettingsRpc } from '../main/settings'
-import { registerSyncRpc } from '../main/sync'
-import { registerLspRpc } from '../main/lsp'
-import { registerDebugRpc } from '../main/debug'
-import { registerTerminalRpc } from '../main/terminal'
-import { registerAgentRpc } from '../main/agent'
-import { registerSlidesRpc } from '../main/slides'
-import { registerDevServersRpc } from '../main/dev-servers'
-import { watchWorkspace } from '../main/fs'
-import { setWorkspaceOpenedHook } from '../main/workspace'
-import { setSyncBroadcaster, setSyncPulledNotifier } from '../main/sync'
+import { registerTasksRpc } from './domains/tasks'
+import { registerSearchRpc } from './domains/search'
+import { registerFsRpc } from './domains/fs'
+import { registerWorkspaceRpc } from './domains/workspace'
+import { registerSettingsRpc } from './domains/settings'
+import { registerSyncRpc } from './domains/sync'
+import { registerLspRpc } from './domains/lsp'
+import { registerDebugRpc } from './domains/debug'
+import { registerTerminalRpc } from './domains/terminal'
+import { registerAgentRpc } from './domains/agent'
+import { registerSlidesRpc } from './domains/slides'
+import { registerDevServersRpc } from './domains/dev-servers'
+import { watchWorkspace } from './domains/fs'
+import { setWorkspaceOpenedHook } from './domains/workspace'
+import { setSyncBroadcaster, setSyncPulledNotifier } from './domains/sync'
 
 /**
  * `webdeck-core` as a standalone process — the app running on the fork.

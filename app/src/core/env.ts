@@ -9,7 +9,7 @@
  * `electron` directly. They read everything through this injected environment.
  *
  * One `setCoreEnv()` at startup wires the concrete host; the Electron adapter
- * lives in `src/main/core-env.ts`, a future standalone adapter in the core
+ * lives in `the old Electron adapter (removed)`, a future standalone adapter in the core
  * process. Tests inject a fake env and need no Electron mock. This file imports
  * nothing platform-specific, so it runs anywhere Node does.
  */

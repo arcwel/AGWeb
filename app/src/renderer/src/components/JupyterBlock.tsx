@@ -8,7 +8,7 @@ import { CloseIcon } from '@/components/icons'
  * Pure UI. It never opens a socket itself — `chrome://webdeck` runs under a CSP
  * that forbids it — but hands every operation to the core over
  * `window.agweb.jupyter`, which connects to a running Jupyter Server over REST +
- * a kernel WebSocket (see `src/main/jupyter.ts`). Cell outputs stream back on
+ * a kernel WebSocket (see `src/core/domains/jupyter.ts`). Cell outputs stream back on
  * `onOutput`, keyed by an execId the block mints per run.
  *
  * Flow: enter the server URL + token and Connect → the core validates the server
