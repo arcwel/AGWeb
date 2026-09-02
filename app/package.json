@@ -7,7 +7,7 @@
   "scripts": {
     "build": "npm run build:webui",
     "build:webui": "node scripts/gen-licenses.mjs && vite build --config vite.webui.config.ts",
-    "pack:webui": "npm run build:webui && node scripts/pack-webui.mjs",
+    "pack:webui": "node scripts/gen-mojo-bindings.mjs && npm run build:webui && node scripts/pack-webui.mjs",
     "gen:licenses": "node scripts/gen-licenses.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "lint": "eslint . && prettier --check .",
@@ -24,7 +24,9 @@
     "update:check": "node scripts/update-check.mjs",
     "perf": "node scripts/perf.mjs",
     "verify:patches": "node scripts/verify-patches.mjs",
-    "verify:fork:all": "npm run verify:patches && npm run verify:fork && npm run verify:hardening"
+    "verify:fork:all": "npm run verify:patches && npm run verify:fork && npm run verify:hardening",
+    "gen:mojo": "node scripts/gen-mojo-bindings.mjs",
+    "pack:webui:release": "node scripts/gen-mojo-bindings.mjs --build-dir out/webdeck-release && npm run build:webui && node scripts/pack-webui.mjs --build-dir out/webdeck-release"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.122.0",

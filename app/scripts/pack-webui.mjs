@@ -20,6 +20,7 @@ import {
   writeFileSync
 } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
+import { checkBindingsAgainstBuild } from './mojo-ids.mjs'
 import { fileURLToPath } from 'node:url'
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)))
@@ -67,6 +68,40 @@ for (const entry of readdirSync(dest)) {
 }
 mkdirSync(dest, { recursive: true })
 cpSync(built, dest, { recursive: true })
+
+// The page's Mojo bindings must carry the message ids of the build that will
+// serve them. An official build scrambles the ids; the component build does
+// not; a mojom edit renumbers both. Packing bindings from the wrong out dir
+// ships a page the browser kills at its first Shell call — so refuse it here,
+// where it is cheap, rather than find it in a release candidate.
+{
+  const buildIndex = process.argv.indexOf('--build-dir')
+  const buildDir =
+    buildIndex !== -1 && process.argv[buildIndex + 1] ? process.argv[buildIndex + 1] : 'out/webdeck'
+  const bindings = join(built, 'mojo', 'webdeck.mojom-webui.js')
+  let result
+  try {
+    result = checkBindingsAgainstBuild(bindings, chromiumSrc, buildDir)
+  } catch (error) {
+    console.error(`cannot check the Mojo bindings against ${buildDir}: ${error.message}`)
+    console.error(
+      `build the generator first: autoninja -C ${buildDir} chrome/browser/ui/webui/webdeck:mojo_bindings_ts__generator`
+    )
+    process.exit(2)
+  }
+  if (!result.ok) {
+    console.error(`Mojo bindings do not match ${buildDir} (${result.headerPath}):`)
+    for (const m of result.mismatches.slice(0, 5)) {
+      console.error(`  ${m.key}: page sends ${m.page}, browser expects ${m.browser}`)
+    }
+    for (const key of result.missing.slice(0, 5)) console.error(`  ${key}: unknown to this build`)
+    console.error(
+      `regenerate them for this build: node scripts/gen-mojo-bindings.mjs --build-dir ${buildDir} && npm run build:webui`
+    )
+    process.exit(1)
+  }
+  console.log(`mojo bindings match ${buildDir} (${result.methods} methods)`)
+}
 
 /** IDR_WEBDECK_ASSETS_INDEX_JS from assets/index.js. */
 const idFor = (path) => `IDR_WEBDECK_${path.toUpperCase().replace(/[^A-Z0-9]+/g, '_')}`

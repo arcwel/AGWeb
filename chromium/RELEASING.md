@@ -76,6 +76,21 @@ Notes:
 - `chrome_pgo_phase = 0` is required because this checkout has no PGO profiles.
   The cost is a browser measurably slower than stock Chrome; acceptable for
   testing, revisit before a real launch (see SHIPPABLE.md §4).
+- **Generated Mojo bindings can go stale in one out dir and not the other.** The
+  build is content-hashed (siso), so a `webdeck.mojom` restored with an old
+  mtime (for example copied back from `chromium/patches`) may leave
+  `out/webdeck-release`'s generated bindings at an older interface while the
+  component build regenerates. The symptom is silent: `chrome://webdeck`'s
+  renderer is killed at its first new Shell call (`Validation failed for
+webdeck.mojom.Shell [UNKNOWN_METHOD]` in the browser log). After touching the
+  mojom, force it:
+
+  ```bash
+  rm -rf out/webdeck-release/gen/chrome/browser/ui/webui/webdeck \
+         out/webdeck-release/obj/chrome/browser/ui/webui/webdeck
+  autoninja -C out/webdeck-release chrome
+  ```
+
 - This is a whole-program ThinLTO build. Expect **2–4 hours cold**, and every
   later source change re-runs the whole-program link (tens of minutes), not the
   ~3-minute incremental of the component build. Keep the component build
@@ -88,7 +103,25 @@ Confirm the settings resolved as intended — `dcheck_always_on` never appears i
 gn args out/webdeck-release --list --short | grep -E 'dcheck_always_on|is_official_build|is_component_build'
 ```
 
-## 3. Assemble the deliverable
+## 3. Pack the WebUI for the release build
+
+The page's Mojo bindings must carry the message ids of the build that serves
+them, and an official build scrambles them. Pack for the release dir, not the
+component dir — `pack:webui:release` regenerates the bindings from
+`out/webdeck-release`, rebuilds the bundle, and refuses to pack if they do not
+match that build's `webdeck.mojom-shared-message-ids.h`:
+
+```bash
+cd /Volumes/BG_Dev/webdeck-chromium/chromium/src
+autoninja -C out/webdeck-release chrome/browser/ui/webui/webdeck:mojo_bindings_ts__generator
+npm --prefix <repo>/app run pack:webui:release
+autoninja -C out/webdeck-release chrome
+```
+
+After the release is cut, `npm run pack:webui` (no suffix) puts the component
+build's bindings back for development.
+
+## 4. Assemble the deliverable
 
 From the repo root, with the release build finished:
 
@@ -107,7 +140,7 @@ environment to what a fresh Mac has, and runs it there. If it reports anything
 under a ✗, a tester would hit exactly that and you would not — do not ship past
 a red line.
 
-## 4. Package and sign
+## 5. Package and sign
 
 ```bash
 npm --prefix app run package:fork -- --build-dir "$(dirname "$APP")" --out dist
@@ -147,15 +180,15 @@ xcrun stapler staple "out/webdeck-release/signed/Arcwel WebDeck.app"
 Then re-run `install-core` and `package:fork` against the signed app, or DMG the
 signed bundle directly with `hdiutil`.
 
-## 5. Give it to a tester
+## 6. Give it to a tester
 
 Hand over the DMG. To install: open it, drag **Arcwel WebDeck** to Applications.
 
-## 6. What macOS says about an unsigned build
+## 7. What macOS says about an unsigned build
 
 An ad-hoc / unsigned build is not notarized, so on first open Gatekeeper shows
-*"Arcwel WebDeck can't be opened because Apple cannot check it for malicious
-software."* The correct handling for an internal tester — **not** disabling
+_"Arcwel WebDeck can't be opened because Apple cannot check it for malicious
+software."_ The correct handling for an internal tester — **not** disabling
 Gatekeeper system-wide:
 
 1. Open the app once. The warning appears; dismiss it.
@@ -166,17 +199,17 @@ Gatekeeper system-wide:
 Tell testers this is expected for an internal build and will go away once the
 app is notarized (§4 [YOU]).
 
-## 7. The keychain prompt ("wants to use the Arcwel WebDeck Safe Storage key")
+## 8. The keychain prompt ("wants to use the Arcwel WebDeck Safe Storage key")
 
 Chromium keeps the key that encrypts cookies and saved passwords in the login
-keychain, under an item named *Arcwel WebDeck Safe Storage*. macOS lets an app
+keychain, under an item named _Arcwel WebDeck Safe Storage_. macOS lets an app
 read its own keychain item without asking only when it can bind the item's
 access control to a stable code identity. A notarized app has a Team ID and
 binds cleanly. An ad-hoc build has none — macOS binds to the code hash instead,
 which works **only if two things hold**:
 
 - **The app runs from a stable path.** A quarantined un-notarized app launched
-  from the DMG or Downloads is *App-Translocated* — macOS runs it from a random
+  from the DMG or Downloads is _App-Translocated_ — macOS runs it from a random
   read-only path that changes each launch, so the binding never matches and the
   prompt returns every time. **Dragging the app to /Applications in Finder clears
   translocation** (this is why §5 says drag to Applications, not run-in-place).
@@ -187,7 +220,7 @@ which works **only if two things hold**:
 So for a tester on a **single delivered build installed to /Applications**: the
 prompt appears **once**, they click **Always Allow**, and it does not return.
 
-If a machine was used to run *several* builds (e.g. this one), a stale item from
+If a machine was used to run _several_ builds (e.g. this one), a stale item from
 an earlier build's hash lingers and prompts on every launch. Clear it once:
 
 ```bash

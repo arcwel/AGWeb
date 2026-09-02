@@ -11,22 +11,31 @@
 // So it is transpiled once, with that import left external, and shipped as a
 // static asset. The page loads it with a runtime import the bundler ignores.
 //
-// Usage: node scripts/gen-mojo-bindings.mjs [--chromium <src>] [--check]
+// --build-dir matters. An official build SCRAMBLES Mojo message IDs (a hash
+// per chrome/VERSION instead of 0, 1, 2…), so bindings generated from the
+// component build send ordinals the release browser does not recognise — and
+// it kills the renderer for a bad IPC message at the page's first Shell call.
+// Generate from the out dir you are about to pack for; pack-webui.mjs refuses
+// a mismatch (see mojo-ids.mjs).
+//
+// Usage: node scripts/gen-mojo-bindings.mjs [--chromium <src>] [--build-dir <out dir>]
 import { build } from 'esbuild'
 import { existsSync, mkdirSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)))
-const argIndex = process.argv.indexOf('--chromium')
-const chromium =
-  argIndex !== -1 && process.argv[argIndex + 1]
-    ? resolve(process.argv[argIndex + 1])
-    : '/Volumes/BG_Dev/webdeck-chromium/chromium/src'
+function arg(name, fallback) {
+  const i = process.argv.indexOf(`--${name}`)
+  return i !== -1 && process.argv[i + 1] ? process.argv[i + 1] : fallback
+}
+const chromium = resolve(arg('chromium', '/Volumes/BG_Dev/webdeck-chromium/chromium/src'))
+const buildDir = arg('build-dir', 'out/webdeck')
 
 const generated = join(
   chromium,
-  'out/webdeck/gen/chrome/browser/ui/webui/webdeck/webdeck.mojom-webui.ts'
+  buildDir,
+  'gen/chrome/browser/ui/webui/webdeck/webdeck.mojom-webui.ts'
 )
 const outFile = join(root, 'src/renderer/public/mojo/webdeck.mojom-webui.js')
 
@@ -34,7 +43,7 @@ if (!existsSync(generated)) {
   console.error(`no generated bindings at ${generated}`)
   console.error('build them first:')
   console.error(
-    '  autoninja -C out/webdeck chrome/browser/ui/webui/webdeck:mojo_bindings_ts__generator'
+    `  autoninja -C ${buildDir} chrome/browser/ui/webui/webdeck:mojo_bindings_ts__generator`
   )
   process.exit(2)
 }
@@ -50,7 +59,8 @@ await build({
   // The browser resolves this, not us. Bundling it is impossible and inlining
   // a stub would produce a module that silently does nothing.
   external: ['//resources/*'],
-  logLevel: 'warning'
+  logLevel: 'warning',
+  banner: { js: `// GENERATED from ${buildDir} by scripts/gen-mojo-bindings.mjs — do not edit.` }
 })
 
-console.log(`mojo bindings -> ${outFile.replace(root + '/', '')}`)
+console.log(`mojo bindings (${buildDir}) -> ${outFile.replace(root + '/', '')}`)

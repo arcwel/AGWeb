@@ -4,3 +4,6 @@ dist/
 *.log
 .env
 .DS_Store
+
+# Scratch copies of drivers run from the app dir
+.*.tmp.mjs

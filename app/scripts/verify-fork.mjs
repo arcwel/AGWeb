@@ -220,17 +220,25 @@ try {
   )
   record('UI bundle mounts', true, '.wd-shell present')
 
-  // 2. The preload surface is installed and reports the right host.
+  // 2. The API surface is installed and reports the right host. WebDeck owns
+  //    the window on the fork: Chromium draws no tab strip or toolbar, the
+  //    shell draws its own glass chrome and drives the real tab over the Mojo
+  //    Shell — so ownsBrowserChrome is FALSE here by design (webui/main.tsx),
+  //    while downloads, zoom and find stay Chromium's (ownsBrowserFeatures).
   const host = await evaluate(cdp, 'JSON.stringify(window.agweb?.host ?? null)')
   const parsedHost = host ? JSON.parse(host) : null
-  const hostOk = parsedHost?.kind === 'chromium' && parsedHost?.ownsBrowserChrome === true
-  record('host reports chromium', hostOk, host)
+  const hostOk =
+    parsedHost?.kind === 'chromium' &&
+    parsedHost?.ownsBrowserChrome === false &&
+    parsedHost?.ownsBrowserFeatures === true
+  record('host reports chromium (shell draws the chrome)', hostOk, host)
   if (!hostOk) exitCode = 1
 
-  // 3. Chromium's own chrome is not duplicated inside the page.
-  const dupChrome = await evaluate(cdp, 'document.querySelectorAll(".wd-chrome").length')
-  record('no duplicate browser chrome', dupChrome === 0, `${dupChrome} .wd-chrome nodes`)
-  if (dupChrome !== 0) exitCode = 1
+  // 3. Exactly one shell chrome — the page's own. Zero would mean the tab
+  //    strip is missing; two would mean it is drawn twice.
+  const chromeNodes = await evaluate(cdp, 'document.querySelectorAll(".wd-chrome").length')
+  record('exactly one shell chrome', chromeNodes === 1, `${chromeNodes} .wd-chrome nodes`)
+  if (chromeNodes !== 1) exitCode = 1
 
   // 4. The core socket answers — the whole point of the fork build.
   const appInfo = await waitFor(
