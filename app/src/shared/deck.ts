@@ -16,6 +16,7 @@ export type BlockType =
   | 'gitgraph'
   | 'rest'
   | 'db'
+  | 'jupyter'
 
 /** Zones a group can dock into inside a window. */
 export type DockZone = 'left' | 'right' | 'bottom'

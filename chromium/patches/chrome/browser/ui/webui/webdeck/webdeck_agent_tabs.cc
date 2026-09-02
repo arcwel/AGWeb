@@ -171,6 +171,21 @@ void WebDeckAgentTabs::SendCommand(const std::string& tab_id,
     }
   }
 
+  // Page.navigate carries its destination in params.url, which never went
+  // through OpenTab's IsAllowedScheme gate. Without this check the method
+  // allowlist happily forwards Page.navigate to file:///…, turning the agent's
+  // read-back tools into arbitrary local-file disclosure against the user's own
+  // logged-in session. Gate it with the same http/https allowlist OpenTab uses.
+  if (method == "Page.navigate") {
+    const std::string* url =
+        params && params->is_dict() ? params->GetDict().FindString("url")
+                                    : nullptr;
+    if (!url || !IsAllowedScheme(GURL(*url))) {
+      std::move(callback).Run("", "navigation URL scheme not permitted");
+      return;
+    }
+  }
+
   const int command_id = it->second.next_command_id++;
   base::DictValue message;
   message.Set("id", command_id);

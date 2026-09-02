@@ -83,8 +83,12 @@ async function waitForLoad(wc: WebContents): Promise<void> {
 /** JSON-quote a string for safe embedding inside injected page scripts. */
 const q = (value: string): string => JSON.stringify(value)
 
-/** Schemes an agent may open or navigate to. Shared by open and navigate. */
-const AGENT_URL_SCHEME = /^(https?|data|about|file):/i
+/** Schemes an agent may open or navigate to. Shared by open and navigate.
+ *  `file:` is DELIBERATELY excluded — navigating a tab to `file:///…` and
+ *  reading it back is arbitrary local-file disclosure; the agent has proper
+ *  workspace-scoped file tools for that. `data:`/`about:` stay (about:blank is
+ *  the empty-tab state; data: is used for internal rendering). */
+const AGENT_URL_SCHEME = /^(https?|data|about):/i
 
 export async function agentOpenTab(url: string): Promise<string> {
   // Same scheme allowlist as agentNavigate — opening a tab must not be a way

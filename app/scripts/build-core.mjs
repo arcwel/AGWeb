@@ -335,10 +335,14 @@ rmSync(exeFile, { force: true })
 cpSync(baseNode, exeFile)
 chmodSync(exeFile, 0o755)
 
-// postject rewrites the Mach-O load commands, which invalidates whatever
-// signature the download carried. Strip it first, re-sign after — this is the
-// sequence Node's own SEA documentation prescribes on macOS.
-execFileSync('codesign', ['--remove-signature', exeFile], { stdio: 'inherit' })
+// postject rewrites the executable's load commands. On macOS that invalidates
+// whatever signature the Node download carried, so strip it first and re-sign
+// after — the sequence Node's own SEA documentation prescribes, and an
+// unsigned, load-command-edited Mach-O is killed by the kernel on arm64.
+// codesign is a macOS-only tool (it is absent on the Linux CI runners), so on
+// any other platform the ELF/PE SEA is edited in place with no signing step.
+const isMac = process.platform === 'darwin'
+if (isMac) execFileSync('codesign', ['--remove-signature', exeFile], { stdio: 'inherit' })
 execFileSync(
   process.execPath,
   [
@@ -353,12 +357,12 @@ execFileSync(
   ],
   { stdio: asJson ? 'ignore' : 'inherit' }
 )
-// Ad-hoc only. A real Developer ID signature is applied later by Chromium's
-// sign_chrome.py, which re-signs every part of the bundle anyway; signing here
-// just proves the binary is well-formed enough to sign at all, and leaves it
-// runnable (an unsigned, load-command-edited Mach-O is killed by the kernel on
-// arm64).
-execFileSync('codesign', ['--sign', '-', exeFile], { stdio: 'inherit' })
+// Ad-hoc only, and macOS-only (see isMac above). A real Developer ID signature
+// is applied later by Chromium's sign_chrome.py, which re-signs every part of
+// the bundle anyway; signing here just proves the binary is well-formed enough
+// to sign at all, and leaves it runnable (an unsigned, load-command-edited
+// Mach-O is killed by the kernel on arm64). A Linux/Windows SEA needs no signature.
+if (isMac) execFileSync('codesign', ['--sign', '-', exeFile], { stdio: 'inherit' })
 
 rmSync(seaDir, { recursive: true, force: true })
 

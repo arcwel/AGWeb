@@ -126,6 +126,21 @@ function handleFor(shellId: unknown): number {
 }
 
 /**
+ * Shell ids with a `browser.create` in flight, oldest first.
+ *
+ * `Shell.createTab` foregrounds the new tab, which makes the browser fire
+ * `onTabsChanged` (over the separate ShellClient pipe) with the new handle
+ * BEFORE createTab's own reply lands — so without this the handler would mint a
+ * phantom `adopted-tab-N`, add a second tab to the strip, and steal activeTabId
+ * from the tab the user is navigating (the "navigated page never shows" bug).
+ * When a create is pending, onTabsChanged binds the first new handle to that
+ * shell id instead of adopting it. FIFO because concurrent creates are all
+ * about:blank staged tabs — the exact pairing does not matter, only that no
+ * phantom is coined and focus is not stolen.
+ */
+const pendingCreates: string[] = []
+
+/**
  * The shell tab id the browser's active-tab state is attributed to.
  *
  * The browser drives a single staged (active) tab and reports its state without
@@ -219,6 +234,14 @@ async function ensureShellClient(): Promise<void> {
         for (const tab of tabs) {
           seen.add(tab.tabId)
           if (shellIdByHandle.has(tab.tabId)) continue
+          // A shell-initiated create is waiting for exactly this new handle:
+          // bind it to that shell id rather than coining a phantom adopted tab
+          // and stealing focus. See `pendingCreates`.
+          const pending = pendingCreates.shift()
+          if (pending !== undefined) {
+            mapTab(pending, tab.tabId)
+            continue
+          }
           const shellId = mintAdoptedShellId()
           mapTab(shellId, tab.tabId)
           emitShellBrowserEvent(IpcEvents.browserAdoptTab, {
@@ -268,8 +291,11 @@ async function ensureShellClient(): Promise<void> {
   }
 }
 
-/** Where the transpiled Mojo bindings are served from (see agent-tabs.ts). */
-const BINDINGS_URL = './mojo/webdeck.mojom-webui.js'
+/** Where the transpiled Mojo bindings are served from (see agent-tabs.ts).
+ *  ABSOLUTE ("/mojo/…"): this module is bundled under assets/, so a relative
+ *  "./mojo/…" would resolve to chrome://webdeck/assets/mojo/… and 404 — the
+ *  file is served at the WebUI root, chrome://webdeck/mojo/…. */
+const BINDINGS_URL = '/mojo/webdeck.mojom-webui.js'
 
 let remote: ShellRemote | null = null
 let unavailable: string | null = null
@@ -320,8 +346,26 @@ export function toRect(value: unknown): { x: number; y: number; width: number; h
 export const SHELL_BROWSER: Record<string, (...args: unknown[]) => Promise<unknown>> = {
   // Open a real tab and remember the shell id -> handle mapping.
   [IpcChannels.browserCreate]: async (shellId) => {
-    const { tabId } = await (await getShell()).createTab('about:blank')
-    mapTab(String(shellId), tabId)
+    const id = String(shellId)
+    // Register BEFORE createTab so the onTabsChanged that createTab triggers
+    // (which arrives first, on the ShellClient pipe) binds the new handle to
+    // this id instead of adopting a phantom. See `pendingCreates`.
+    pendingCreates.push(id)
+    try {
+      const { tabId } = await (await getShell()).createTab('about:blank')
+      // Usually onTabsChanged already bound the handle to `id`. If it did not
+      // (its event lost or reordered), bind the returned handle now.
+      if (!handleByShellId.has(id)) {
+        // createTab returns 0 on failure (disallowed URL / null WebContents).
+        // 0 is also the "active tab" sentinel, so mapping it would silently
+        // alias this tab onto whatever is active — surface a failure instead.
+        if (!tabId) throw new Error('Shell.createTab failed (no tab handle)')
+        mapTab(id, tabId)
+      }
+    } finally {
+      const i = pendingCreates.indexOf(id)
+      if (i !== -1) pendingCreates.splice(i, 1)
+    }
   },
   // Closing the shell's tab closes the real one; drop the mapping.
   [IpcChannels.browserDestroy]: async (shellId) => {

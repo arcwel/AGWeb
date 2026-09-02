@@ -434,6 +434,68 @@ export interface DbTable {
   type: 'table' | 'view'
 }
 
+/**
+ * Jupyter notebook (roadmap C10): the core connects to a running Jupyter Server
+ * over its REST + kernel-WebSocket API and runs code cells for the Notebook block.
+ *
+ * The renderer's CSP (`chrome://webdeck`) forbids arbitrary cross-origin fetches
+ * and sockets, so the core owns the connection: it validates the server, starts
+ * and opens a kernel, and relays each cell's outputs back as `JupyterOutput`
+ * events keyed by the execId the block minted. There is no `@jupyterlab/services`
+ * dependency — the v5.3 messaging protocol is spoken directly (see
+ * `src/main/jupyter.ts`). Never rejects: failures arrive as `error` on a result.
+ */
+
+/** One kernel as listed by the server, or the one we started. */
+export interface JupyterKernelInfo {
+  id: string
+  name: string
+}
+
+/** Result of validating a server URL + token — a GET of its kernel list. */
+export interface JupyterConnectResult {
+  ok: boolean
+  kernels?: JupyterKernelInfo[]
+  error?: string
+}
+
+/** Result of starting a kernel and opening its WebSocket. */
+export interface JupyterStartResult {
+  kernel?: JupyterKernelInfo
+  error?: string
+}
+
+/**
+ * Settled result of one `execute()`. Resolves when the kernel returns to idle;
+ * the cell's outputs arrive separately as `JupyterOutput` events, so this only
+ * signals completion (or a transport-level failure the block renders inline).
+ */
+export interface JupyterExecuteResult {
+  error?: string
+}
+
+/**
+ * The MIME bundle surfaced from an `execute_result` / `display_data` message.
+ * Only the representations the block renders are carried; `text/html` is shown
+ * as escaped text (never executed) to keep untrusted kernel output inert.
+ */
+export interface JupyterOutputData {
+  'text/plain'?: string
+  'image/png'?: string
+  'text/html'?: string
+}
+
+/**
+ * One rendered output from a running cell, streamed to the block and appended in
+ * order. `done` is the terminal message for an execId (kernel back to idle), and
+ * carries the cell's execution count when the kernel reported one.
+ */
+export type JupyterOutput =
+  | { kind: 'stream'; name: string; text: string }
+  | { kind: 'result'; data: JupyterOutputData }
+  | { kind: 'error'; ename: string; evalue: string; traceback: string[] }
+  | { kind: 'done'; executionCount?: number }
+
 /** Channels the renderer invokes (request/response). */
 export const IpcChannels = {
   appInfo: 'app:info',
@@ -571,6 +633,11 @@ export const IpcChannels = {
   dbQuery: 'db:query',
   dbTables: 'db:tables',
   dbClose: 'db:close',
+  jupyterConnect: 'jupyter:connect',
+  jupyterStartKernel: 'jupyter:start-kernel',
+  jupyterExecute: 'jupyter:execute',
+  jupyterInterrupt: 'jupyter:interrupt',
+  jupyterDisconnect: 'jupyter:disconnect',
   lspStart: 'lsp:start',
   lspSend: 'lsp:send',
   lspStop: 'lsp:stop',
@@ -650,7 +717,8 @@ export const IpcEvents = {
   terminalAdopt: 'event:terminal-adopt',
   syncStatusChanged: 'event:sync-status',
   syncPulled: 'event:sync-pulled',
-  themeChanged: 'event:theme-changed'
+  themeChanged: 'event:theme-changed',
+  jupyterOutput: 'event:jupyter-output'
 } as const
 
 /** WebDeck Sync (settings sync via a local-first file) status for the UI. */
@@ -1037,6 +1105,30 @@ export interface AgwebApi {
     query(id: string, sql: string, params: unknown[]): Promise<DbQueryResult>
     tables(id: string): Promise<{ tables: DbTable[]; error?: string }>
     close(id: string): Promise<void>
+  }
+
+  /**
+   * Jupyter notebook (roadmap C10). The core connects to a running Jupyter
+   * Server over REST + a kernel WebSocket and runs code cells; outputs stream
+   * back on `onOutput` keyed by the execId passed to `execute()`. Never rejects
+   * — failures arrive as `error` on the result.
+   */
+  jupyter: {
+    /** Validate a server URL + token by listing its kernels. */
+    connect(baseUrl: string, token: string): Promise<JupyterConnectResult>
+    /** Start a kernel (defaults to `python3`) and open its socket. */
+    startKernel(name?: string): Promise<JupyterStartResult>
+    /**
+     * Run code on the open kernel. Resolves when the kernel returns to idle;
+     * the cell's outputs arrive via `onOutput` keyed by `execId` meanwhile.
+     */
+    execute(execId: string, code: string): Promise<JupyterExecuteResult>
+    /** Interrupt the running kernel (a long cell, an infinite loop). */
+    interrupt(): Promise<{ error?: string }>
+    /** Close our kernel socket. The kernel keeps running server-side (v1). */
+    disconnect(): Promise<void>
+    /** Subscribe to streamed cell outputs; filter by the execId you passed to execute(). */
+    onOutput(listener: (payload: { execId: string; output: JupyterOutput }) => void): () => void
   }
 
   /**

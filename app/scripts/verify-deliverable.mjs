@@ -215,16 +215,38 @@ try {
   record('starts from the copied bundle', up, up ? 'DevTools answering' : 'never came up')
   if (!up) throw new Error('browser did not start')
 
-  await fetch(`http://127.0.0.1:${debugPort}/json/new?chrome://webdeck`, { method: 'PUT' })
+  // WebDeck is the DEFAULT window for this build: launched with no URL and no
+  // --webdeck (see the spawn args above), the shell (chrome://webdeck) must own
+  // the startup window on its own. We deliberately do NOT open it ourselves —
+  // an earlier build shipped as plain Chrome because nothing passed --webdeck,
+  // and a check that navigates to chrome://webdeck itself would have missed it.
+  // If the shell does not auto-appear, fall back to opening it so the remaining
+  // resource/core checks still run, but record the default-window failure.
   let page = null
   const pageDeadline = Date.now() + 60_000
-  while (Date.now() < pageDeadline && !page) {
+  const findShell = async () => {
     const targets = await (await fetch(`http://127.0.0.1:${debugPort}/json/list`)).json()
-    page = targets.find((t) => String(t.url).startsWith('chrome://webdeck')) ?? null
+    return targets.find((t) => String(t.url).startsWith('chrome://webdeck')) ?? null
+  }
+  while (Date.now() < pageDeadline && !page) {
+    page = await findShell()
     if (!page) await sleep(500)
   }
-  record('chrome://webdeck exists', Boolean(page), page ? page.url : 'never appeared')
-  if (!page) throw new Error('no webdeck page')
+  record(
+    'the default window is WebDeck (shell owns the window)',
+    Boolean(page),
+    page ? page.url : 'chrome://webdeck did not auto-appear — launched as plain Chrome?'
+  )
+  if (!page) {
+    // Open it manually so the downstream UI/core checks can still report.
+    await fetch(`http://127.0.0.1:${debugPort}/json/new?chrome://webdeck`, { method: 'PUT' })
+    const fallbackDeadline = Date.now() + 30_000
+    while (Date.now() < fallbackDeadline && !page) {
+      page = await findShell()
+      if (!page) await sleep(500)
+    }
+    if (!page) throw new Error('no webdeck page')
+  }
 
   // The UI and the core both have to be inside the bundle for this to answer.
   const { WebSocket } = await import('ws')
@@ -262,6 +284,24 @@ try {
     mounted ? '.wd-shell mounted' : 'never mounted'
   )
   if (!mounted) exitCode = 1
+
+  // The WebDeck window has no native title bar; the shell draws its own and
+  // marks it -webkit-app-region: drag so BrowserView::NonClientHitTest can make
+  // it draggable (see the ShellWebView draggable-region wiring). If a shell CSS
+  // refactor drops the .drag-region, or the app-region computed style regresses,
+  // the whole window silently becomes undraggable — so guard the renderer half
+  // of that contract here. (The C++ half that consumes the region can only be
+  // confirmed by an on-screen drag.)
+  const draggable = await evaluate(
+    '(() => { const e = document.querySelector(".drag-region"); if (!e) return "no .drag-region"; const r = getComputedStyle(e).getPropertyValue("-webkit-app-region") || getComputedStyle(e).webkitAppRegion; return r === "drag" ? "ok" : ("app-region=" + r) })()'
+  )
+  const draggableOk = draggable === 'ok'
+  record(
+    'the shell exposes a draggable title bar',
+    draggableOk,
+    draggableOk ? '.drag-region is -webkit-app-region: drag' : String(draggable)
+  )
+  if (!draggableOk) exitCode = 1
 
   const info = await evaluate(
     'window.agweb.getAppInfo().then(i => JSON.stringify(i)).catch(e => "FAILED: " + e.message)'

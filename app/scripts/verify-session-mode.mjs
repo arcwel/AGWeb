@@ -522,6 +522,11 @@ try {
       ...(flag('headless') ? ['--headless=new'] : []),
       '--no-first-run',
       '--no-default-browser-check',
+      // Mock the OS keychain. A headless / non-interactive session cannot unlock
+      // the login keychain, so the cookie store's OSCrypt "Safe Storage" key
+      // fetch blocks forever — stalling every cookie-reading request, including
+      // the shell's WebSocket to the core, so chrome://webdeck never boots.
+      '--use-mock-keychain',
       `--user-data-dir=${join(runtimeDir, 'browser-profile')}`,
       'about:blank'
     ],

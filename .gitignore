@@ -8,3 +8,7 @@ app/resources/js-debug/
 # Native LSP binaries vendored by app/scripts/fetch-lsp-bins.mjs (roadmap C1).
 app/resources/lsp-bin/
 .DS_Store
+
+# Release update-channel private signing key — NEVER commit (10.2)
+update-signing-key.pem
+app/release/update-signing-key.pem

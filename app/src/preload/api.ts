@@ -6,6 +6,7 @@ import type {
   BrowserTabState,
   DevServerStatus,
   DownloadInfo,
+  JupyterOutput,
   PermissionRequestInfo,
   PolicyPromptInfo,
   PolicyDeniedInfo,
@@ -296,6 +297,20 @@ export function createAgwebApi(ipcRenderer: IpcLike, host: HostCapabilities): Ag
       query: (id, sql, params) => ipcRenderer.invoke(IpcChannels.dbQuery, id, sql, params),
       tables: (id) => ipcRenderer.invoke(IpcChannels.dbTables, id),
       close: (id) => ipcRenderer.invoke(IpcChannels.dbClose, id)
+    },
+
+    jupyter: {
+      connect: (baseUrl, token) => ipcRenderer.invoke(IpcChannels.jupyterConnect, baseUrl, token),
+      startKernel: (name) => ipcRenderer.invoke(IpcChannels.jupyterStartKernel, name),
+      execute: (execId, code) => ipcRenderer.invoke(IpcChannels.jupyterExecute, execId, code),
+      interrupt: () => ipcRenderer.invoke(IpcChannels.jupyterInterrupt),
+      disconnect: () => ipcRenderer.invoke(IpcChannels.jupyterDisconnect),
+      onOutput: (listener) => {
+        const handler = (_e: unknown, payload: { execId: string; output: JupyterOutput }): void =>
+          listener(payload)
+        ipcRenderer.on(IpcEvents.jupyterOutput, handler)
+        return () => ipcRenderer.removeListener(IpcEvents.jupyterOutput, handler)
+      }
     },
 
     lsp: {

@@ -57,8 +57,13 @@ let unavailable: string | null = null
  * which exists only for a WebUI page inside the browser, so it cannot go
  * through Vite or tsc on any other host. `scripts/gen-mojo-bindings.mjs`
  * produces it.
+ *
+ * ABSOLUTE from the WebUI root ("/mojo/…"), NOT relative ("./mojo/…"): the code
+ * that imports this is bundled into assets/index.js, so a relative specifier
+ * resolves to chrome://webdeck/assets/mojo/… — which 404s (the file is served
+ * at chrome://webdeck/mojo/…). The leading slash pins it to the origin root.
  */
-const BINDINGS_URL = './mojo/webdeck.mojom-webui.js'
+const BINDINGS_URL = '/mojo/webdeck.mojom-webui.js'
 
 /**
  * Resolve the browser-process interface, once.

@@ -13,6 +13,7 @@ import { PageAssistantBlock } from '@/components/PageAssistantBlock'
 import { GitGraphBlock } from '@/components/GitGraphBlock'
 import { RestClientBlock } from '@/components/RestClientBlock'
 import { DbClientBlock } from '@/components/DbClientBlock'
+import { JupyterBlock } from '@/components/JupyterBlock'
 
 /** Content for each block type. */
 export function BlockContent({ block }: { block: BlockInstance }): React.JSX.Element {
@@ -47,5 +48,7 @@ export function BlockContent({ block }: { block: BlockInstance }): React.JSX.Ele
       return <RestClientBlock />
     case 'db':
       return <DbClientBlock />
+    case 'jupyter':
+      return <JupyterBlock />
   }
 }

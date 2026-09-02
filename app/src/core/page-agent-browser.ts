@@ -22,8 +22,16 @@ import {
  */
 
 const TEXT_CAP = 8_000
-/** Same allowlist the isolated mode enforces, and the C++ enforces again. */
-const AGENT_URL_SCHEME = /^(https?|file):/i
+/**
+ * Navigable schemes for the agent browser: http/https only. `file:` is
+ * DELIBERATELY excluded — navigating a tab to `file:///…` and reading it back
+ * (browser_read/browser_eval) is arbitrary local-file disclosure, and in
+ * session mode this drives the user's REAL logged-in tab. The agent has proper
+ * workspace-scoped file tools for reading files; this interface is for the web.
+ * (The C++ Shell gates its own staged-tab navigation, but the agent's
+ * Page.navigate passthrough does not, so this client allowlist is load-bearing.)
+ */
+const AGENT_URL_SCHEME = /^https?:/i
 
 /** What the core needs from its transport to reach the page. */
 export interface PageChannel {

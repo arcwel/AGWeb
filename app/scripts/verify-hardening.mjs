@@ -57,6 +57,11 @@ if (flag('help') || flag('h')) {
   --timeout <ms>       per-step timeout (default 30000)
   --static-only        run ONLY the source-level Shell privilege-boundary checks
                        (no browser launch) and exit on their result
+  --release            this build claims to be a shippable release: additionally
+                       assert the release gn args (is_official_build = true,
+                       is_component_build = false, no fatal DCHECKs) as HARD
+                       FAILS rather than notes — a silent revert of these ships a
+                       component build with fatal DCHECKs (it has bitten us once)
 
   --headless           run headless (default: a real window. Headless does not
                        arm the same restrictions, so it is the wrong thing to
@@ -69,6 +74,19 @@ Exit: 0 pass · 1 hardening broken · 2 could not check`)
 const browser = arg('browser', DEFAULT_BROWSER)
 const timeout = Number(arg('timeout', '30000'))
 const asJson = flag('json')
+const releaseMode = flag('release')
+
+// The gn args a shippable release MUST resolve to. Their absence is not cosmetic:
+// is_official_build = false silently turns dcheck_always_on ON (fatal DCHECKs),
+// and is_component_build = true produces a non-distributable 520-dylib tree.
+// Documented in chromium/RELEASING.md and chromium/SHIPPABLE.md; enforced under
+// --release so a config drift on a release build fails CI instead of shipping.
+const REQUIRED_RELEASE_GN_ARGS = {
+  is_official_build: 'true',
+  is_component_build: 'false',
+  dcheck_always_on: 'false',
+  is_debug: 'false'
+}
 
 /** Fail with exit 2: we could not run the check, which is NOT a pass. */
 function cannotRun(message) {
@@ -583,6 +601,11 @@ try {
       ...(flag('headless') ? ['--headless=new'] : []),
       '--no-first-run',
       '--no-default-browser-check',
+      // Mock the OS keychain. A headless / non-interactive session cannot unlock
+      // the login keychain, so the cookie store's OSCrypt "Safe Storage" key
+      // fetch blocks forever — stalling browser startup. This check measures
+      // process isolation/sandboxing, not cookie encryption, so mocking is safe.
+      '--use-mock-keychain',
       `--user-data-dir=${userDataDir}`,
       'about:blank'
     ],
@@ -897,6 +920,38 @@ try {
 
     for (const [name, cost] of Object.entries(NOTEWORTHY_GN_ARGS)) {
       if (effective[name] === 'true') warn(`gn args: ${name} = true`, `${cost} (${source})`)
+    }
+
+    // Under --release, the shippable gn args stop being notes and become
+    // invariants: a release build that resolved is_official_build = false (→
+    // fatal DCHECKs) or is_component_build = true (→ non-distributable) is a
+    // FAIL, not a warning. Needs gn's resolved values — args.gn overrides alone
+    // cannot confirm a default-valued arg, so say so rather than pass blindly.
+    if (releaseMode) {
+      if (!resolved) {
+        unverified(
+          'gn args: release build config is shippable',
+          'no gn binary in the checkout, so resolved args could not be read — a ' +
+            'release claim cannot be confirmed from args.gn overrides alone',
+          true
+        )
+      } else {
+        const drift = Object.entries(REQUIRED_RELEASE_GN_ARGS).filter(
+          ([k, want]) => (resolved[k] ?? '(unset)') !== want
+        )
+        if (drift.length === 0) {
+          ok(
+            'gn args: release build config is shippable',
+            `is_official_build=true, is_component_build=false, dcheck_always_on=false, is_debug=false (${source})`
+          )
+        } else {
+          fail(
+            'gn args: release build config is shippable',
+            drift.map(([k, want]) => `${k} = ${resolved[k] ?? '(unset)'}, want ${want}`).join('; ')
+          )
+          exitCode = 1
+        }
+      }
     }
   }
 

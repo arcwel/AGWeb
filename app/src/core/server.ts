@@ -25,6 +25,7 @@ import {
 import { registerGitRpc } from '../main/git'
 import { registerRestRpc } from '../main/rest'
 import { registerDbRpc } from '../main/db'
+import { registerJupyterRpc } from '../main/jupyter'
 import { setAgentBrowserPort } from './agent-browser-port'
 import { chromiumAgentBrowser } from './chromium-agent-browser'
 import { pageAgentBrowser } from './page-agent-browser'
@@ -100,6 +101,7 @@ export async function startWebdeckCore(opts: CoreServerOptions = {}): Promise<Ws
   registerGitRpc()
   registerRestRpc()
   registerDbRpc()
+  registerJupyterRpc()
   registerTasksRpc()
   registerSearchRpc()
   registerFsRpc()

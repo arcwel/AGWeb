@@ -49,6 +49,11 @@ on:
         description: 'Path to the Chromium src checkout. Leave empty to use "checkout" from chromium/fork.json.'
         required: false
         default: ''
+      release:
+        description: 'The browser under test is a shippable release build (is_official_build=true, is_component_build=false). Adds --release to verify:hardening so those gn args become hard failures, not notes.'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -133,6 +138,7 @@ jobs:
         run: |
           args=()
           if [ -n "$BROWSER_PATH" ]; then args+=(--browser "$BROWSER_PATH"); fi
+          if [ "${{ inputs.release }}" = "true" ]; then args+=(--release); fi
           set +e
           npm run verify:hardening -- "${args[@]}"
           code=$?

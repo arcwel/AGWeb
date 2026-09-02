@@ -254,6 +254,14 @@ export function BlockTypeIcon({
           <path d="M5 12c0 1.5 3.1 2.8 7 2.8s7-1.3 7-2.8" />
         </svg>
       )
+    case 'jupyter':
+      return (
+        <svg {...common}>
+          <rect x="4" y="4" width="16" height="16" rx="2" />
+          <path d="M8 4v16" />
+          <path d="M11 9l3 3-3 3" />
+        </svg>
+      )
   }
 }
 

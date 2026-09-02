@@ -35,9 +35,11 @@ import {
 
 const LOAD_TIMEOUT_MS = 20_000
 const TEXT_CAP = 8_000
-/** Same allowlist the Electron path enforces — opening a tab must not be a way
- *  around the check navigation performs. */
-const AGENT_URL_SCHEME = /^(https?|file):/i
+/** http/https only. `file:` is DELIBERATELY excluded — an agent that can point a
+ *  staged tab at `file:///…` and read it back is arbitrary local-file
+ *  disclosure. Opening a tab must not be a way around the check navigation
+ *  performs, so open and navigate share this allowlist. */
+const AGENT_URL_SCHEME = /^https?:/i
 
 export interface ChromiumAgentBrowserOptions {
   /**

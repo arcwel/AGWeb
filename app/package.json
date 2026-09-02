@@ -27,6 +27,7 @@
     "verify:session": "node scripts/verify-session-mode.mjs",
     "verify:hardening": "node scripts/verify-hardening.mjs",
     "upstream:check": "node scripts/upstream-check.mjs",
+    "update:check": "node scripts/update-check.mjs",
     "verify:patches": "node scripts/verify-patches.mjs",
     "verify:fork:all": "npm run verify:patches && npm run verify:fork && npm run verify:hardening"
   },

@@ -84,7 +84,8 @@ export const BLOCK_LABELS: Record<BlockType, string> = {
   chat: 'Page Assistant',
   gitgraph: 'Git Graph',
   rest: 'REST Client',
-  db: 'Database'
+  db: 'Database',
+  jupyter: 'Notebook'
 }
 
 /** Which shell window this renderer is: the browser, the detached deck, or a float. */
