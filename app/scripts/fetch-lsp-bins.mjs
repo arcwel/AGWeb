@@ -36,6 +36,11 @@ const LSP_BIN = join('resources', 'lsp-bin')
 // Pinned so a release cannot change under us (rust-analyzer keeps dated releases;
 // bump deliberately). rust-analyzer speaks LSP on stdio with no flags.
 const RA_VERSION = '2026-08-31'
+// sha256 of the release .gz per platform, pinned with the version (13.8d). A
+// platform with no pin is refused rather than trusted — add the digest here.
+const RA_SHA256 = {
+  'darwin-arm64': '5de5c20b8b49bdc9339ef537b4029af7f97214fb88d6fc86af57ab9344467625'
+}
 
 /**
  * The rust-analyzer release-asset target triple for this platform-arch, or null
@@ -86,6 +91,14 @@ function vendorRustAnalyzer() {
     })
     const packed = readFileSync(gz)
     const digest = createHash('sha256').update(packed).digest('hex')
+    const expected = RA_SHA256[PLATFORM_ARCH]
+    if (!expected)
+      throw new Error(
+        `no pinned sha256 for rust-analyzer on ${PLATFORM_ARCH}; refusing an unverified binary`
+      )
+    if (digest !== expected) {
+      throw new Error(`rust-analyzer  download does not match the pinned sha256 (got )`)
+    }
     const binary = gunzipSync(packed)
     writeFileSync(destBin, binary)
     // Google Drive / CloudStorage mounts strip the execute bit; the server is

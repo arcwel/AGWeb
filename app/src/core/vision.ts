@@ -73,7 +73,7 @@ const SECRET_KEY =
  * redacts the word "Bearer" and prints the token. A test using a token with no
  * space in it passes and hides that completely.
  */
-const SECRET_VALUE = new RegExp(`("?(?:${SECRET_KEY})"?\\s*[:=]\\s*)("[^"]*"|[^,;}\\n\\r]+)`, 'gi')
+const SECRET_VALUE = new RegExp(`("?(?:${SECRET_KEY})"?\\s*[:=]\\s*)("[^"]*"|[^,;&}\\n\\r]+)`, 'gi')
 
 /** JWTs carry their own claims, so they are secrets wherever they appear. */
 const JWT = /eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g

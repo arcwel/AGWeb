@@ -5,16 +5,13 @@ extension loading, the agent runtime, and the trust boundaries between them.
 Extended for the Chromium fork under task 13.8e.
 
 > Reviewed and hardened after the v0.1 QA audit (see `QA_AUDIT.md`): the agent
-> policy gate now covers `browser_eval` and re-checks redirects, and both local
-> servers require a loopback `Host`. Fixed findings are marked in that doc.
-> (`browser_click` and `browser_type` are still ungated — see below.)
+> policy gate covers `browser_eval`, `browser_click` and `browser_type` and
+> re-checks redirects; both local servers require a loopback `Host` and carry a
+> capability token. Fixed findings are marked in that doc.
 
-> **Two shells, one core.** WebDeck ships as an Electron app _and_ runs as
-> `chrome://webdeck` inside a forked Chromium. The application logic is the
-> same either way — it lives in `webdeck-core` — but the boundaries around it
-> are not. Sections below are marked **(Electron shell)** where they describe
-> machinery that exists only there; the fork is covered in its own sections and
-> in **Known gaps**.
+> **One product.** WebDeck is the forked Chromium: the application runs as
+> `chrome://webdeck` inside it and talks to a standalone `webdeck-core`. The
+> Electron shell was removed on 2026-09-02; nothing below describes it.
 
 ## The Chromium fork — where the boundaries now are
 
@@ -33,7 +30,7 @@ Five participants, in decreasing order of privilege:
    token, and a Mojo handle to `AgentTabs` (below).
 3. **`webdeck-core`** — a plain Node process the browser launches. **Outside
    the sandbox, with the user's full privileges.**
-4. **The agent** — runs inside the core, gated by `src/main/policy.ts`.
+4. **The agent** — runs inside the core, gated by `src/core/domains/policy.ts`.
 5. **The pages the agent visits** — untrusted, and the source of every
    injection concern in this document.
 
@@ -46,9 +43,9 @@ holds a macOS seatbelt handle, `chrome://process-internals` reports Site Per
 Process, a cross-site iframe really does land in its own renderer, and on the
 page itself `eval` and an injected inline `<script>` are both _refused at
 runtime_ — measured inside a same-origin worker, because a DevTools evaluation
-is exempt from the page's CSP and would have passed either way. It also raises
-three warnings: the unsandboxed core (next section), `is_component_build` and
-`dcheck_always_on` (both in **Known gaps**).
+is exempt from the page's CSP and would have passed either way. Against the development (component) build it also warns about the
+unsandboxed core (next section), `is_component_build` and `dcheck_always_on`;
+`--release` makes the last two hard failures, and the release build passes them.
 
 The boundary between 2 and 3 is ours. It is the next two sections.
 
@@ -60,7 +57,7 @@ the debug adapter and the agent SDK, and holds the provider API key. Every one
 of those is something the sandbox exists to deny, so the core could not be a
 sandboxed child and still be the core. `verify-hardening` names it explicitly
 rather than letting a page of ticks imply the whole tree is contained —
-"outside the sandbox, with full user privileges: … `webdeck-core.cjs`".
+"outside the sandbox, with full user privileges: … `webdeck-core`".
 
 The page is _allowed_ to reach it. `connect-src` on `chrome://webdeck` includes
 `ws://127.0.0.1:*` and `ws://localhost:*` precisely so that socket can be
@@ -181,7 +178,7 @@ the user, and this section needs rewriting rather than extending.
 
 ### What stops an injected page, and what does not
 
-The policy gate (`src/main/policy.ts`) is the backstop, and its precedence
+The policy gate (`src/core/domains/policy.ts`) is the backstop, and its precedence
 order _is_ the security property: an explicit per-site **deny** first (nothing,
 including full autonomy, overrides it), then a per-site **allow** (which also
 lifts the sensitive-site check — that check exists to catch sites the user has
@@ -262,70 +259,37 @@ One escalation path is closed: a synced settings file cannot set `autonomous`.
 a shared folder must not be able to mean "act as the user, without ever asking,
 on every device they own".
 
-## Process & trust boundaries (Electron shell)
+## Process & trust boundaries
 
-- **Main** is the only privileged tier. **Renderers** run sandboxed with
-  context isolation, no Node access, and a strict CSP (`frame-src` opened for
-  localhost origins only). The typed `window.agweb` bridge is the sole surface;
-  every IPC handler validates its inputs before acting.
-- **Web content** runs in a separate persistent partition
-  (`persist:agweb-browser`), fully sandboxed, with no preload. Web permissions
-  (geolocation, media, …) resolve through a user prompt with per-site,
-  per-run memory; every decision is audited.
-- **Workspace scoping**: all agent/file IPC resolves paths against the open
-  workspace root and rejects traversal outside it. The static preview server
-  and slide server apply the same prefix checks; the slide server additionally
-  serves only `*.slides.md` sources and files under the bundled reveal dist.
+The Electron shell is gone (2026-09-02); there is one product, the fork.
 
-**Under the fork, two of those three sentences do not carry over.** There is no
-preload and no Electron IPC, so `window.agweb` is rebuilt on the WebSocket
-client instead — and the page has a _second_ surface the Electron renderer did
-not: the `AgentTabs` Mojo handle. There is also no `persist:agweb-browser`
-partition; web content is ordinary Chromium tabs in the user's profile, with
-site isolation doing the work the partition used to describe. Workspace scoping
-is unchanged — `resolveInWorkspace` is in the shared core and applies either way.
+- **The browser process** is Chromium's, with two WebDeck additions: the
+  `chrome://webdeck` WebUI host (`webdeck_ui.cc`) and the `Shell`/`AgentTabs`
+  Mojo interfaces (`webdeck_shell.cc`, `webdeck_agent_tabs.cc`). Both are
+  bound only for `chrome://webdeck`; a web page has no path to either.
+- **The `chrome://webdeck` renderer** runs under Chromium's WebUI CSP, tightened
+  as described under _The fork_: no eval, no remote origin, framed by nobody,
+  `require-trusted-types-for 'script'` with a **default Trusted Types policy**
+  (`webui/main.tsx`) that admits script URLs only from `chrome://webdeck/` and
+  same-origin blobs. `src/core/csp-policy.test.ts` reads the C++ and fails if
+  any of that is loosened.
+- **Web content** is ordinary Chromium tabs in the user's profile, with site
+  isolation doing the work a separate partition used to describe;
+  `verify:hardening` proves the sandbox and site isolation positively at
+  runtime. Web permissions (camera, geolocation, …) are Chromium's own prompts.
+- **`webdeck-core`** is the unsandboxed tier — see the section above. Its
+  `window.agweb` surface is rebuilt on the WebSocket client; every RPC handler
+  validates its inputs, and **workspace scoping** (`resolveInWorkspace`) pins
+  every file and agent operation under the open workspace root.
+- **Browser extensions** are Chromium's own, installed and managed at
+  `chrome://extensions`. WebDeck does not carry its own extension loader; the
+  editor extensions from Open VSX are a different system, isolated as described
+  under _VS Code extensions_ below.
 
-## Embed proxy (header stripping) — scope and rationale (Electron shell)
-
-The embed proxy lives in `src/main/embed-proxy.ts` and has **no counterpart in
-the fork**: there is no `webRequest` header rewriting there. What the fork
-offers instead is narrower and static — `chrome://webdeck`'s `frame-src` admits
-`http://127.0.0.1:*` and `http://localhost:*` so the Preview block and Reveal
-decks render, and nothing rewrites any site's headers.
-
-The dev-preview embed proxy removes `X-Frame-Options` and only the
-`frame-ancestors` CSP directive so local dev servers can render in preview
-iframes. Containment:
-
-- **Origin-limited**: the rewrite matches `http://localhost/*` and
-  `http://127.0.0.1/*` only. Arbitrary web origins are never rewritten, so
-  clickjacking protections of real sites stay intact.
-- **Off by default, never persisted**: each run starts disabled; enabling it
-  is an explicit user action with a visible amber toolbar indicator, and it
-  can be disabled with one click.
-- **Residual risk**: a malicious page could redirect to a local dev port and
-  be framed while the proxy is on. Mitigated by the preview iframe's sandbox
-  (`allow-scripts allow-same-origin allow-forms`, no top-navigation, no
-  popups) and by the proxy's off-by-default posture.
-
-## Extensions (Electron shell)
-
-> Under the fork this section describes the wrong system: extensions are
-> Chromium's own, with Chromium's full `chrome.*` surface rather than
-> Electron's subset. Whether the Web Store install path stays open in the fork
-> is an unmade decision, and it is a larger one than it was here — a real Web
-> Store install is a remote update channel we would be carrying.
-
-- Only **unpacked MV3** extensions load, from explicit user-chosen
-  directories, into the browser partition only — never into the shell
-  renderer. `allowFileAccess` is false.
-- Electron implements a subset of `chrome.*`; there is no Web Store install
-  path, no remote update channel, and no action-popup UI. Extensions are
-  listed and removable in the Web menu; persisted paths reload only while
-  they still load cleanly.
-- **Residual risk**: a content script runs in every matching page in the
-  browser partition (standard extension power). Loading an extension is
-  treated as trusting its author, same as Chrome's unpacked-extension mode.
+There is no embed proxy and no header rewriting anywhere in the fork:
+`chrome://webdeck`'s `frame-src` admits `http://127.0.0.1:*` and
+`http://localhost:*` so the Preview block and Reveal decks render, and nothing
+touches any site's headers.
 
 ### VS Code extensions (task 12.8) — shipped, and the isolation model
 
@@ -380,7 +344,7 @@ not weaken either. Browser (MV3) extensions are a separate mechanism (Phase
 ## Workspace roots (task 3B.4)
 
 Path containment is the boundary the whole app rests on, so it lives in one
-function — `resolveInWorkspace` in `src/main/fs.ts`. Multi-root widened what
+function — `resolveInWorkspace` in `src/core/domains/fs.ts`. Multi-root widened what
 that function accepts, and the rules were chosen to widen it as little as
 possible:
 
@@ -413,7 +377,7 @@ folder being special. Revoking is one click in the Files block.
 ## Agent runtime — escape paths considered
 
 The agent executes only through workspace-scoped tools; the Phase 9 policy
-engine (`src/main/policy.ts`) is the central gate:
+engine (`src/core/domains/policy.ts`) is the central gate:
 
 - **File writes** resolve inside the workspace (traversal rejected at the fs
   layer) and pass the policy gate (`secure` confirms each; `review`/`agent`
@@ -466,15 +430,14 @@ Both are registered by the core (`registerDevServersRpc`, `registerSlidesRpc`),
 so they behave identically on the fork; `chrome://webdeck`'s `frame-src` is what
 lets their pages be framed, and it admits loopback only.
 
-**Residual risk, and the contrast with the core socket is the point.** The
-`Host` check defeats DNS rebinding; it is not authentication. The static
-preview server serves everything under the workspace root, and while it is
-running **any local process — including one belonging to another user on the
-machine — can read the whole workspace through it** simply by sending a correct
-`Host` header. The core socket got a per-boot token for exactly this reason;
-these servers did not. They are shorter-lived and started by an explicit user
-action, which is why this has not been treated as urgent, but it is the same
-class of exposure and it is not currently tracked.
+Both also carry a **per-server capability token** (`local-server-auth.ts`:
+`mintServerToken` / `takeToken`), minted from the CSPRNG when the server starts
+and required as the first path segment of every request. The `Host` check
+defeats DNS rebinding; the token is what makes the port useless to any other
+local process — the same reasoning as the core socket, applied to a server that
+otherwise serves everything under the workspace root. The residual is that the
+token rides in the URL the page frames, which is the only carrier an iframe
+`src` has; it is loopback-only and lives as long as the server does.
 
 ## Audit trail
 
@@ -584,58 +547,69 @@ protected by the same thing — POSIX file permissions on this user's own files 
 so an attacker who can read one can read the other. That is a single limit, not
 two layers, and it is the same one stated under _The core socket_ above.
 
+## What the tests hold us to (security pass, 2026-09-02)
+
+Each of these is a test that fails on drift, not a sentence in this file:
+
+- **Every agent tool that writes, runs, navigates or types passes the policy
+  gate**, and the model has no tool over the policy itself —
+  `domains/agent-gate.test.ts` reads `agent.ts` and refuses a new handler
+  without a `gate()` call unless it is added to the read-only allowlist.
+  `domains/agent-execute.test.ts` drives the real gate to a denial.
+- **The `chrome://webdeck` CSP** — no eval, no remote origin, `frame-ancestors
+'none'`, `require-trusted-types-for` intact, workers only from self or
+  same-origin blobs — `csp-policy.test.ts` reads `webdeck_ui.cc`.
+- **Redaction on every path that can carry a secret into the agent's context**
+  (captured bodies, console lines) — `vision-redact.test.ts`.
+- **What Sync may carry** — `sync-boundary.test.ts` boots the core and pins the
+  registered sections to a reviewed allowlist; nothing named like a secret, a
+  key or a command source may ever register.
+- **Every UI channel is served by the core or named as host-owned** —
+  `coverage.test.ts`.
+- **The core socket** — token + `Origin`, fail-closed — `transports/*.test.ts`.
+- **Vendored artifacts are pinned by digest**: the Node runtime against its
+  release `SHASUMS256.txt`, js-debug and rust-analyzer against digests recorded
+  beside their versions in `scripts/fetch-*.mjs`; a changed asset under the same
+  tag is refused.
+- **The shipped configuration**: `verify:hardening --release` fails on a
+  component build, fatal DCHECKs or a disabled sandbox; `package-fork.mjs`
+  refuses to package a non-distributable build.
+
 ## Known gaps
 
 Named rather than implied. A threat model that overstates coverage is worse
 than none, so anything below is something we do **not** have today.
 
-### Both shells
+### The core
 
-- **Agent commands are unsandboxed at the OS level** (see above); OS-level
-  sandboxing (e.g. seatbelt profiles) is future work. Commands do run in their
-  own process group so a timeout reaps the whole tree rather than orphaning
-  backgrounded children. On the fork this is the smaller version of a larger
-  statement: the entire core is unsandboxed.
+- **`webdeck-core` and the agent's commands are unsandboxed at the OS level**
+  (see _webdeck-core is outside the sandbox_ above); seatbelt profiles for the
+  core are future work. Commands run in their own process group so a timeout
+  reaps the whole tree.
 - **The audit log has no tamper-evidence.**
 - **No injection screening on agent actions**, no alignment check, no
-  provenance marking on page-derived text. Task 13.8c covers _adversarial tests_
-  against the policy gate, which is a different thing — screening itself is not
-  on the plan and nothing is implemented.
-- **`browser_click` and `browser_type` pass no policy gate.** Tracked nowhere.
-- **The preview and slide servers have no authentication** — a loopback `Host`
-  check only, so any local process can read the served workspace while they
-  run. Tracked nowhere.
+  provenance marking on page-derived text. The gate tests above prove an
+  injected page cannot _escalate_ past the policy; they do not detect
+  injection, and nothing does.
+- **The core stops itself, not the browser.** `main.ts` watches its parent and
+  exits when the browser is gone; `WebDeckCoreService::Shutdown()` still has no
+  caller, so the stop is a few seconds late rather than immediate.
 
 ### The fork specifically
 
-- **No code signing, no notarisation, no update integrity, and no update
-  channel at all.** A user cannot tell our binary from someone else's. Tracked
-  as 13.7c (an unsigned update channel is a code-execution channel) and 13.8d.
-  The old note here — "asar integrity, code signing lands with Phase 10" —
-  described the Electron packaging path and does not cover the fork.
-- **`is_component_build = true`.** A developer build split across dylibs; not a
-  shippable configuration, and a wider load surface than one signed binary.
-  Reported as a warning by `verify:hardening`.
-- **`dcheck_always_on = true`.** DCHECKs are fatal, so conditions a release
-  build tolerates crash the browser outright. This is availability rather than
-  confidentiality — and it has already happened once, on `chrome://webdeck`.
-- **`webdeck-core` is not a shipped executable.** It is a shell script that
-  execs the user's own Node against a bundle in the repo checkout. Whoever can
-  write either path gets code execution as the user, launched by the browser.
-  Tracked in `chromium/README.md` remaining work.
-- **The core is started lazily and never stopped.** `WebDeckCoreService::Shutdown()`
-  exists and nothing calls it, so a core holding the provider key and a listening
-  port outlives the page that spawned it.
+- **Ad-hoc signing only.** `package-fork.mjs` signs with `-`; there is no
+  Developer ID, no notarisation, and the update manifest key (`release/`) is a
+  development key. A user cannot yet tell our binary from someone else's.
 - **`connect-src` on `chrome://webdeck` allows any loopback port**, not just the
   core's, because the core's port is ephemeral and a static header cannot pin it.
-- **`trusted-types *`** allows any policy name (sinks still guarded — see above).
+- **`trusted-types *`** allows any policy name; the default policy in
+  `webui/main.tsx` is what restricts script URLs, so a page-side bug there is a
+  page-side bug in the CSP.
 - **Only macOS arm64 has been measured.** `verify:hardening`'s renderer-sandbox
-  evidence is macOS seatbelt-specific and reports `unverified` elsewhere;
-  Windows and Linux hardening is unmeasured, not known-good.
-- **The fork's navigation guard is untested**, and denies rather than prompting
-  on a `confirm` verdict.
-- **Session mode is half-wired.** The page and core halves both exist;
-  `pageAgentBrowser` has no call site, so nothing selects it. When they are
-  joined the agent acts as the user, the ungated `browser_click`/`browser_type`
-  above stop being bounded by "no cookies", and this document needs rewriting
-  rather than extending.
+  evidence is macOS seatbelt-specific and reports `unverified` elsewhere.
+- **The fork's navigation guard denies rather than prompting** on a `confirm`
+  verdict.
+- **Session mode is selectable, not default.** The core boots the agent
+  browser in isolated mode unless started with session mode; when session mode
+  is on the agent acts as the user in their own tabs, bounded only by the gate
+  (every click and keystroke is gated, but "no cookies" no longer applies).

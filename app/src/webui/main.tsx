@@ -35,6 +35,10 @@ declare global {
      */
     WEBDECK_CORE_TOKEN?: string
     __WEBDECK_ASSETS?: Record<string, string>
+    /** Trusted Types factory (lib.dom does not declare it yet). */
+    trustedTypes?: {
+      createPolicy(name: string, rules: { createScriptURL?: (input: string) => string }): unknown
+    }
   }
 }
 
@@ -61,6 +65,31 @@ function installAssetFetchShim(): void {
     return Promise.resolve(
       new Response(body, { status: 200, headers: { 'content-type': 'application/json' } })
     )
+  }
+}
+
+/**
+ * Trusted Types: the page runs under `require-trusted-types-for 'script'`, so
+ * every script-URL sink — `new Worker(url)` above all — needs a policy. Monaco
+ * and VS Code's worker host build their worker URLs as plain strings, so a
+ * *default* policy is the one place to vet them: only this origin's own bundle
+ * and same-origin blobs pass; anything else is refused at the sink, which is
+ * exactly the guarantee the CSP directive exists to give.
+ */
+function installTrustedTypesPolicy(): void {
+  const tt = window.trustedTypes
+  if (!tt) return
+  const own = `${location.origin}/`
+  const ownBlob = `blob:${location.origin}/`
+  try {
+    tt.createPolicy('default', {
+      createScriptURL: (url: string) => {
+        if (url.startsWith(own) || url.startsWith(ownBlob)) return url
+        throw new TypeError(`Refused script URL outside chrome://webdeck: ${url.slice(0, 120)}`)
+      }
+    })
+  } catch {
+    // A default policy already exists (only possible if this ran twice).
   }
 }
 
@@ -102,6 +131,7 @@ function fail(message: string, detail: string): void {
 }
 
 async function main(): Promise<void> {
+  installTrustedTypesPolicy()
   installAssetFetchShim()
   const port = corePort()
   if (!port) {

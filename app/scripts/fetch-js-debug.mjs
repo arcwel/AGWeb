@@ -15,6 +15,9 @@ import { execFileSync } from 'node:child_process'
 import { join } from 'node:path'
 
 const VERSION = '1.117.0'
+// Pinned with the version: a release asset that changes under the same tag is
+// exactly the supply-chain event this exists to catch (13.8d).
+const SHA256 = 'ad8d04ede9d4b75cc290fd5438a65047a06f786d04f604b6112485b36f090772'
 const URL = `https://github.com/microsoft/vscode-js-debug/releases/download/v${VERSION}/js-debug-dap-v${VERSION}.tar.gz`
 
 const dest = join('resources', 'js-debug')
@@ -34,6 +37,11 @@ try {
   })
 
   const digest = createHash('sha256').update(readFileSync(tarball)).digest('hex')
+  if (digest !== SHA256) {
+    throw new Error(
+      `js-debug  download does not match the pinned sha256 (got ); refusing to vendor it`
+    )
+  }
 
   rmSync(dest, { recursive: true, force: true })
   mkdirSync(dest, { recursive: true })

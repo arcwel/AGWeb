@@ -30,7 +30,7 @@ That ordering matters for the work people actually do now. You're reading docs, 
 
 WebDeck is a Chromium fork: the browser is the real thing, with the chrome a browser is supposed to have. Tabs sit inline with the window's traffic lights, show real site **favicons**, and shrink to fit; the address bar is centred with the bookmark star leading it and zoom on the right. There's a **native application menu** (File / Edit / View / History / Window / Help) wired to real shortcuts, a **right-click context menu** on every page (open/copy link and image, cut/copy/paste, search the selection, inspect), and the everyday essentials: back/forward/reload, **find in page**, **zoom** (⌘0 restores 100%), **print**, **new window**, **reopen closed tab**, per-tab **devtools**, downloads with progress, and site permission prompts.
 
-**Split view** splits the *page* — two live tabs share the stage with a draggable divider — separate from the Dev Deck. A **favourites bar** is summoned rather than permanent, and can be locked open.
+**Split view** splits the _page_ — two live tabs share the stage with a draggable divider — separate from the Dev Deck. A **favourites bar** is summoned rather than permanent, and can be locked open.
 
 **Profiles** work like Chrome's people: each is an isolated, persistent session with its own cookies and logins, so you can stay signed into different Google (or any) accounts side by side. Switch them from the avatar beside the Deck button; the browser presents a real Chrome user-agent so provider sign-in flows accept it.
 
@@ -52,7 +52,7 @@ The agent plans first, and the plan is editable before you approve it. Then it e
 
 The composer is what you'd expect from a modern assistant: attachments, `@mention` to pull in workspace files, `/` commands, voice input, model picker. Conversations can be renamed, branched from any turn, exported, or handed back to the composer to edit and resend.
 
-**Permissions are the point.** A policy engine sits between the agent and anything irreversible, in four modes from *Secure* (ask about everything) to *Agent* (run freely). Prompts appear inline, exactly where the agent is asking. Every decision is written to an audit log.
+**Permissions are the point.** A policy engine sits between the agent and anything irreversible, in four modes from _Secure_ (ask about everything) to _Agent_ (run freely). Prompts appear inline, exactly where the agent is asking. Every decision is written to an audit log.
 
 ### A genuine IDE underneath
 
@@ -99,22 +99,22 @@ The smoke test drives the real application end to end — browser, deck, editor,
 
 ## Project map
 
-| File | What it holds |
-| :-- | :-- |
-| [`PRD.md`](PRD.md) | Product requirements and the technology decisions |
-| [`TASKS.md`](TASKS.md) | The phased build plan with live status |
-| [`DESIGN.md`](DESIGN.md) | The Dev Deck's design spec and motion |
-| [`IDE_FOUNDATION.md`](IDE_FOUNDATION.md) | Why the IDE is built on VS Code's services rather than a fork |
-| [`SECURITY.md`](SECURITY.md) | Trust boundaries, the agent's limits, residual risks |
-| [`RESOURCES.md`](RESOURCES.md) | Every library and technique, with licences |
-| [`docs/`](docs/README.md) | User guides — getting started, permission modes, agent workflows, Document Studio |
-| `app/` | The application — the chrome://webdeck WebUI (React, TypeScript, Tailwind) and the webdeck-core service (Node) |
+| File                                     | What it holds                                                                                                  |
+| :--------------------------------------- | :------------------------------------------------------------------------------------------------------------- |
+| [`PRD.md`](PRD.md)                       | Product requirements and the technology decisions                                                              |
+| [`TASKS.md`](TASKS.md)                   | The phased build plan with live status                                                                         |
+| [`DESIGN.md`](DESIGN.md)                 | The Dev Deck's design spec and motion                                                                          |
+| [`IDE_FOUNDATION.md`](IDE_FOUNDATION.md) | Why the IDE is built on VS Code's services rather than a fork                                                  |
+| [`SECURITY.md`](SECURITY.md)             | Trust boundaries, the agent's limits, residual risks                                                           |
+| [`RESOURCES.md`](RESOURCES.md)           | Every library and technique, with licences                                                                     |
+| [`docs/`](docs/README.md)                | User guides — getting started, permission modes, agent workflows, Document Studio                              |
+| `app/`                                   | The application — the chrome://webdeck WebUI (React, TypeScript, Tailwind) and the webdeck-core service (Node) |
 
 ## Status
 
 Pre-release, and honest about it. The browser, the Dev Deck, Document Studio, the agent runtime with its permission engine, and the IDE layer (language intelligence, debugging, source control, tasks, settings) are built and covered by the end-to-end smoke test.
 
-**Next:** packaged installers. **Deferred to a future release:** VS Code *editor* extensions from Open VSX — the sandbox they need doesn't hold on the current renderer, and the reasoning is written up in [`SECURITY.md`](SECURITY.md). Browser extensions are unaffected and work today.
+**Next:** packaged installers. **Deferred to a future release:** VS Code _editor_ extensions from Open VSX — the sandbox they need doesn't hold on the current renderer, and the reasoning is written up in [`SECURITY.md`](SECURITY.md). Browser extensions are unaffected and work today.
 
 ---
 

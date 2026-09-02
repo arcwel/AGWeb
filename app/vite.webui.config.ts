@@ -77,6 +77,10 @@ export default defineConfig({
     emptyOutDir: true,
     // Chromium serves these; a source map per chunk would double the pak.
     sourcemap: false,
+    // The TextMate tokenizer fetches its oniguruma wasm. fetch() refuses
+    // chrome:// URLs, so the file rides inside the bundle as a data: URI —
+    // which connect-src allows and fetch() accepts.
+    assetsInlineLimit: (file) => (file.endsWith('onig.wasm') ? true : undefined),
 
     rollupOptions: {
       output: {
