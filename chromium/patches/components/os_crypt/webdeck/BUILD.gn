@@ -1,0 +1,33 @@
+# Copyright 2026 Arcwel. All rights reserved.
+
+import("//build/buildflag_header.gni")
+import("//components/os_crypt/webdeck/dev_keychain.gni")
+
+assert(is_mac)
+
+# webdeck_dev_keychain (dev_keychain.gni) is the switch: OFF compiles the
+# development keychain to a constant "no", so a shippable build cannot carry it.
+buildflag_header("buildflags") {
+  header = "buildflags.h"
+  flags = [ "WEBDECK_DEV_KEYCHAIN=$webdeck_dev_keychain" ]
+}
+
+# The development keychain: a stable per-profile secret that stands in for the
+# macOS Keychain's "Chromium Safe Storage" item on builds that carry no Team
+# Identifier (ad-hoc or unsigned). See dev_keychain.h for why it exists and
+# exactly when it is active. Kept as a leaf (base only) so both
+# //components/os_crypt/common:keychain_password_mac and //chrome/browser can
+# depend on it.
+source_set("dev_keychain") {
+  sources = [
+    "dev_keychain.h",
+    "dev_keychain.mm",
+  ]
+
+  deps = [
+    ":buildflags",
+    "//base",
+  ]
+
+  frameworks = [ "Security.framework" ]
+}

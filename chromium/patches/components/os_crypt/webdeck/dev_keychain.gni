@@ -1,0 +1,10 @@
+# Copyright 2026 Arcwel. All rights reserved.
+
+declare_args() {
+  # Compile in the development keychain (dev_keychain.h): on a bundle with no
+  # Team Identifier the OSCrypt password is a stable 0600 file in the profile
+  # instead of a login-Keychain item, so an ad-hoc dev build never raises the
+  # "Chromium Safe Storage" prompt. OFF by default — a shippable build must
+  # never carry it. The dev and release args.gn on the build machine set it.
+  webdeck_dev_keychain = false
+}

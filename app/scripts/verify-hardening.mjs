@@ -495,7 +495,10 @@ const NOTEWORTHY_GN_ARGS = {
     'DCHECKs are fatal, so conditions a release build tolerates crash the ' +
     'browser (this is what killed it on chrome://webdeck once)',
   is_component_build: 'a developer build split across dylibs — not shippable',
-  dcheck_is_configurable: 'DCHECK fatality is feature-controlled at runtime'
+  dcheck_is_configurable: 'DCHECK fatality is feature-controlled at runtime',
+  webdeck_dev_keychain:
+    'the development keychain is compiled in: on an ad-hoc/unsigned bundle the ' +
+    'cookie/password key is a plaintext 0600 file in the profile — dev machines only'
 }
 
 /** Parse `name = value` lines from args.gn or from `gn args --list --short`. */
@@ -956,6 +959,32 @@ try {
           exitCode = 1
         }
       }
+    }
+  }
+
+  // ══ 3b. the code signature ════════════════════════════════════════════════
+  // A bundle with no Team Identifier (ad-hoc or unsigned) makes the fork use its
+  // development keychain: the OSCrypt password becomes a 0600 file in the
+  // profile ("WebDeck Dev Keychain") instead of a login-Keychain item — see
+  // components/os_crypt/webdeck/dev_keychain.h. Right for a dev build, wrong to
+  // ship. Measured from the signature, which is exactly what the browser reads.
+  if (releaseMode) {
+    const bundle = resolve(browser, '..', '..', '..')
+    try {
+      const sig = execFileSync('sh', ['-c', 'codesign -dv "$1" 2>&1', '_', bundle], {
+        encoding: 'utf8'
+      })
+      const team = /TeamIdentifier=(.+)/.exec(sig)?.[1]?.trim()
+      if (team && team !== 'not set') {
+        ok('signature: Team Identifier present, the real Keychain is in use', team)
+      } else {
+        warn(
+          'signature: no Team Identifier — the development keychain is active',
+          'cookie/password key is a plaintext 0600 file in the profile; sign with a Developer ID before shipping'
+        )
+      }
+    } catch (error) {
+      unverified('signature: Team Identifier', `codesign failed: ${error.message}`, false)
     }
   }
 

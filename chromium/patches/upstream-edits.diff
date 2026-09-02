@@ -31570,3 +31570,86 @@ index 322591a3aa40b..5bf6e61031fd0 100644
    "<(SHARED_INTERMEDIATE_DIR)/THIS_IS_A_PLACEHOLDER.grd": {
      "META": {"sizes": {"includes": [800]}},
      "includes": [12000],
+diff --git a/chrome/browser/BUILD.gn b/chrome/browser/BUILD.gn
+index eaa7929a31667..1a6f5c4934abb 100644
+--- a/chrome/browser/BUILD.gn
++++ b/chrome/browser/BUILD.gn
+@@ -1541,6 +1541,7 @@ source_set("core") {
+       "//components/handoff",
+       "//components/metal_util",
+       "//components/os_crypt/async/browser:keychain_key_provider",
++      "//components/os_crypt/webdeck:dev_keychain",
+       "//components/policy/core/common:common_constants",
+       "//components/remote_cocoa/app_shim",
+       "//components/remote_cocoa/app_shim:features",
+diff --git a/chrome/browser/chrome_browser_main.cc b/chrome/browser/chrome_browser_main.cc
+index 86f985f073e88..92ce8e6e5bcb3 100644
+--- a/chrome/browser/chrome_browser_main.cc
++++ b/chrome/browser/chrome_browser_main.cc
+@@ -4,6 +4,10 @@
+ 
+ #include "chrome/browser/chrome_browser_main.h"
+ 
++#if BUILDFLAG(IS_MAC)
++#include "components/os_crypt/webdeck/dev_keychain.h"
++#endif
++
+ #include <memory>
+ #include <string>
+ #include <tuple>
+@@ -1144,6 +1148,13 @@ int ChromeBrowserMainParts::OnLocalStateLoaded(
+   if (!base::PathService::Get(chrome::DIR_USER_DATA, &user_data_dir_)) {
+     return CHROME_RESULT_CODE_MISSING_DATA;
+   }
++#if BUILDFLAG(IS_MAC)
++  // WebDeck: the development keychain keeps its secret in the profile, and
++  // this is the first point the browser process knows where that is. OSCrypt
++  // asks for the password later (profile creation), so registering here is in
++  // time. See components/os_crypt/webdeck/dev_keychain.h.
++  os_crypt::webdeck::SetDevKeychainDir(user_data_dir_);
++#endif
+ 
+   auto* platform_management_service =
+       policy::ManagementServiceFactory::GetForPlatform();
+diff --git a/components/os_crypt/common/BUILD.gn b/components/os_crypt/common/BUILD.gn
+index 3128f3ac6df25..dba8d745f8f94 100644
+--- a/components/os_crypt/common/BUILD.gn
++++ b/components/os_crypt/common/BUILD.gn
+@@ -15,6 +15,7 @@ if (is_apple) {
+     deps = [
+       "//base",
+       "//build:branding_buildflags",
++      "//components/os_crypt/webdeck:dev_keychain",
+       "//crypto",
+     ]
+   }
+diff --git a/components/os_crypt/common/keychain_password_mac.mm b/components/os_crypt/common/keychain_password_mac.mm
+index f240dc22ee391..770c473ffd994 100644
+--- a/components/os_crypt/common/keychain_password_mac.mm
++++ b/components/os_crypt/common/keychain_password_mac.mm
+@@ -18,6 +18,7 @@
+ #include "base/strings/string_view_util.h"
+ #include "base/types/expected.h"
+ #include "build/branding_buildflags.h"
++#include "components/os_crypt/webdeck/dev_keychain.h"
+ #include "crypto/apple/keychain_v2.h"
+ #include "third_party/abseil-cpp/absl/cleanup/cleanup.h"
+ 
+@@ -126,6 +127,17 @@ KeychainPassword::KeychainPassword(KeychainV2& keychain)
+ KeychainPassword::~KeychainPassword() = default;
+ 
+ std::string KeychainPassword::GetPassword() const {
++  // WebDeck: a build with no Team Identifier cannot hold a Keychain grant
++  // across rebuilds, so it keeps a stable secret in the profile instead. See
++  // components/os_crypt/webdeck/dev_keychain.h. Empty means "not active" or
++  // "could not be created" — either way the real Keychain below is the answer.
++  if (os_crypt::webdeck::ShouldUseDevKeychain()) {
++    std::string dev_password = os_crypt::webdeck::DevKeychainPassword();
++    if (!dev_password.empty()) {
++      return dev_password;
++    }
++  }
++
+   auto password =
+       GetPasswordImpl(*keychain_, GetServiceName(), GetAccountName());
+ 
