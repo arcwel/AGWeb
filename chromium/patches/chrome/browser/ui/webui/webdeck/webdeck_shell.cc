@@ -24,6 +24,7 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/shell_integration.h"
 #include "chrome/browser/ui/browser_commands.h"
+#include "chrome/browser/ui/browser_window/public/browser_window_interface_iterator.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/tabs/tab_enums.h"
@@ -34,6 +35,8 @@
 #include "chrome/common/chrome_isolated_world_ids.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/webui_url_constants.h"
+#include "components/sessions/core/session_id.h"
+#include "ui/base/base_window.h"
 #include "components/content_settings/core/browser/cookie_settings.h"
 #include "components/content_settings/core/common/pref_names.h"
 #include "components/find_in_page/find_notification_details.h"
@@ -77,8 +80,22 @@ bool IsAllowedShellUrl(const GURL& url) {
   if (url.IsAboutBlank()) {
     return true;
   }
-  return url.SchemeIs(content::kChromeUIScheme) &&
-         url.host() == chrome::kChromeUIWebDeckHost;
+  if (!url.SchemeIs(content::kChromeUIScheme)) {
+    return false;
+  }
+  // chrome://webdeck itself, plus the pages a person reaches from a browser's
+  // own menus — profiles and sign-in live at chrome://settings/people, and
+  // Chromium owns extensions, history, downloads and bookmarks on this build.
+  // Still no chrome://flags, chrome://policy or other privileged surfaces.
+  static constexpr const char* kAllowedHosts[] = {
+      chrome::kChromeUIWebDeckHost, "settings",  "extensions", "history",
+      "downloads",                   "bookmarks", "newtab",     "version"};
+  for (const char* host : kAllowedHosts) {
+    if (url.host() == host) {
+      return true;
+    }
+  }
+  return false;
 }
 
 // Collapse the four-way DefaultWebClientState into the shell's 3-state code:
@@ -861,6 +878,67 @@ void WebDeckShell::OnFindTabHelperDestroyed(
   // The helper we observe is going away; drop the dangling registration.
   if (observed_find_helper_ == helper) {
     observed_find_helper_ = nullptr;
+  }
+}
+
+// The shell hides the staged tab while one of its own overlays is open: the
+// native tab is composited above the page, so a menu or the palette would
+// otherwise be painted over. Both stages go together — a split secondary
+// left visible would still cover the overlay.
+void WebDeckShell::SetStageVisible(bool visible) {
+  ContentsContainerView* container = GetContentsContainerView();
+  if (!container) {
+    return;
+  }
+  if (views::View* contents = container->contents_view()) {
+    contents->SetVisible(visible);
+  }
+  container->SetSecondaryStageVisible(visible);
+}
+
+// Another WebDeck window whose shell page carries a role in its fragment
+// (chrome://webdeck#deck, #float:<group>). Only chrome://webdeck may be a
+// shell page; anything else is refused with id 0. The URL is handed to the
+// next ContentsContainerView through the shell host rather than through
+// browser creation params, which have no slot for it.
+void WebDeckShell::OpenWindow(const std::string& url,
+                              OpenWindowCallback callback) {
+  const GURL target(url);
+  Profile* profile = GetProfile();
+  if (!profile || !target.SchemeIs(content::kChromeUIScheme) ||
+      target.host() != chrome::kChromeUIWebDeckHost) {
+    std::move(callback).Run(0);
+    return;
+  }
+  webdeck::SetNextShellUrl(target);
+  BrowserWindowInterface* window =
+      chrome::OpenEmptyWindow(profile, /*should_trigger_session_restore=*/false);
+  // Whether or not a window came up, the pending URL must not leak into the
+  // next unrelated window.
+  webdeck::TakeNextShellUrl();
+  std::move(callback).Run(window ? window->GetSessionID().id() : 0);
+}
+
+namespace {
+BrowserWindowInterface* FindBrowserById(int32_t window_id) {
+  for (BrowserWindowInterface* browser : GetAllBrowserWindowInterfaces()) {
+    if (browser->GetSessionID().id() == window_id) {
+      return browser;
+    }
+  }
+  return nullptr;
+}
+}  // namespace
+
+void WebDeckShell::FocusWindow(int32_t window_id) {
+  if (BrowserWindowInterface* browser = FindBrowserById(window_id)) {
+    browser->GetWindow()->Activate();
+  }
+}
+
+void WebDeckShell::CloseWindow(int32_t window_id) {
+  if (BrowserWindowInterface* browser = FindBrowserById(window_id)) {
+    browser->GetWindow()->Close();
   }
 }
 

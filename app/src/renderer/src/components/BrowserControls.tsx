@@ -81,10 +81,12 @@ export function BookmarkControls({
 
       {open && (
         <div
-          className={`absolute ${align === 'left' ? 'left-0' : 'right-0'} top-9 z-50 max-h-96 w-80 overflow-y-auto rounded-lg border border-slate-200 bg-white py-1 shadow-xl dark:border-slate-700 dark:bg-[#0e1420]`}
+          // Floats clear of the toolbar (top-11 leaves the bar visible behind it) and
+          // wears the same glass as every other popover, banner padded like theirs.
+          className={`glass absolute ${align === 'left' ? 'left-0' : 'right-0'} top-11 z-50 max-h-96 w-80 overflow-y-auto rounded-[14px] py-1.5`}
         >
-          <div className="flex items-center justify-between px-3 py-1">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+          <div className="flex items-center justify-between px-3.5 pb-2 pt-1.5">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--wd-dim)]">
               Bookmarks · this profile
             </span>
             <button

@@ -98,8 +98,52 @@ export function Composer(): React.JSX.Element {
   }
 
   const pick = async (mode: 'file' | 'dir' | 'image'): Promise<void> => {
+    if (!window.agweb.host.canPickPaths) return pickWithoutPaths(mode)
     const paths = await window.agweb.pickPaths(mode)
     if (paths.length > 0) addAttachments(paths, mode === 'dir' ? 'dir' : mode)
+  }
+
+  // On the fork a page cannot learn where a file lives, so the bytes are read
+  // here and copied into the workspace (.webdeck/attachments); the agent then
+  // sees an ordinary workspace path. Folders have no picker at all — the
+  // @mention list already knows every folder, so a folder comes from there.
+  const pickWithoutPaths = async (mode: 'file' | 'dir' | 'image'): Promise<void> => {
+    if (mode === 'dir') {
+      const prefix = text && !/\s$/.test(text) ? `${text} ` : text
+      setText(`${prefix}@`)
+      setMention({ query: '', at: prefix.length })
+      inputRef.current?.focus()
+      return
+    }
+    if (!workspace) {
+      setError('Open a project first — attachments are copied into it.')
+      return
+    }
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.multiple = true
+    if (mode === 'image') input.accept = 'image/*'
+    const chosen = await new Promise<File[]>((resolve) => {
+      input.onchange = () => resolve([...(input.files ?? [])])
+      input.oncancel = () => resolve([])
+      input.click()
+    })
+    const added: string[] = []
+    for (const file of chosen.slice(0, 12)) {
+      const bytes = new Uint8Array(await file.arrayBuffer())
+      let binary = ''
+      for (let i = 0; i < bytes.length; i += 0x8000) {
+        binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
+      }
+      const rel = `.webdeck/attachments/${file.name.replace(/[^\w.-]+/g, '_')}`
+      const result = await window.agweb.fs.writeBase64(rel, btoa(binary))
+      if (result?.error) {
+        setError(`Could not attach ${file.name}: ${result.error}`)
+        continue
+      }
+      added.push(rel)
+    }
+    if (added.length > 0) addAttachments(added, mode)
   }
 
   const mentionMatches = useMemo(() => {

@@ -61,8 +61,12 @@
   --wd-r-icon: 10px;
   --wd-r-inner: 8px;
 
-  /* Room for the native traffic lights at the left of the tab row. */
+  /* Room for the native traffic lights at the left of the tab row, and the
+     row's height — the browser's title bar is made exactly this tall so the
+     traffic lights sit centred on the tabs (kWebDeckTabRowHeight in
+     browser_native_widget_mac.mm must equal it). */
   --wd-titlebar-inset: 86px;
+  --wd-tabrow-h: 44px;
 }
 
 /* Light mode keeps the same shapes and accent, on paper instead of glass. */

@@ -24,7 +24,12 @@ export function FloatWindow({ groupId }: { groupId: string }): React.JSX.Element
 
   return (
     <div className="flex h-full flex-col border border-slate-300 bg-white text-slate-900 dark:border-slate-700 dark:bg-[#0e1420] dark:text-slate-100">
-      <div className="drag-region flex h-9 flex-none items-center gap-1 border-b border-slate-200 px-2.5 dark:border-slate-800">
+      <div
+        className="drag-region flex flex-none items-center gap-1 border-b border-slate-200 pr-2.5 dark:border-slate-800"
+        // The window's title bar is the shell tab-row height and the traffic
+        // lights sit at its left (see styles.css --wd-tabrow-h / --wd-titlebar-inset).
+        style={{ height: 'var(--wd-tabrow-h)', paddingLeft: 'var(--wd-titlebar-inset)' }}
+      >
         <GripIcon className="mr-1 shrink-0 text-slate-400 dark:text-slate-600" />
         {members.map((block) => (
           <button

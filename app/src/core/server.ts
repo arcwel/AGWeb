@@ -186,6 +186,23 @@ export async function startWebdeckCore(opts: CoreServerOptions = {}): Promise<Ws
   setPolicyBroadcaster((status) => push(IpcEvents.policyChanged, status))
   setPolicyDenyNotifier((info) => push(IpcEvents.policyDenied, info))
 
+  // Cross-window deck sync. The main window broadcasts its layout; deck and
+  // float windows apply it. The core is the only party every window can
+  // reach, so it relays: a broadcast fans out to every client (the sender
+  // applies its own state idempotently), a boot-time request asks the main
+  // window to broadcast, and a closing window says so.
+  core.register(IpcChannels.shellBroadcast, (state) => {
+    push(IpcEvents.shellSync, state)
+  })
+  core.register(IpcChannels.shellRequestSync, () => {
+    push(IpcEvents.requestSync, null)
+  })
+  core.register(IpcChannels.windowClosed, (role, groupId) => {
+    if (role === 'deck') push(IpcEvents.deckWindowClosed, null)
+    else if (role === 'float' && typeof groupId === 'string')
+      push(IpcEvents.floatWindowClosed, groupId)
+  })
+
   // The agent's editor tools: the request goes to the shell (which owns VS
   // Code's command service) as an event, and the answer comes back on its own
   // RPC — same shape as a policy prompt, same fail-closed rules.

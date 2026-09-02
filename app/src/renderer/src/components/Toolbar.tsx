@@ -559,8 +559,34 @@ function ProfileButton(): React.JSX.Element {
           <PersonIcon size={15} />
         )}
       </button>
-      {open && state && (
-        <div className="glass absolute right-0 top-9 z-50 w-72 overflow-hidden rounded-[14px] p-1">
+      {open && window.agweb.host.ownsBrowserFeatures && (
+        // Chromium owns profiles and Google sign-in on the fork: hand the person
+        // to the browser's own pages, opened as tabs in this window.
+        <div className="glass absolute right-0 top-11 z-50 w-72 overflow-hidden rounded-[14px] p-1">
+          <p className="px-3 pb-1 pt-1.5 text-[10px] font-bold uppercase tracking-wider text-[var(--wd-dim)]">
+            Google account
+          </p>
+          {[
+            ['Sign in to Google', 'https://accounts.google.com/'],
+            ['Profiles & account settings', 'chrome://settings/people'],
+            ['Browser settings', 'chrome://settings/'],
+            ['Extensions', 'chrome://extensions/']
+          ].map(([label, url]) => (
+            <button
+              key={url}
+              onClick={() => {
+                useShellStore.getState().newTab(url)
+                setOpen(false)
+              }}
+              className="block w-full rounded-lg px-3 py-1.5 text-left text-[12px] text-[var(--wd-text)] hover:bg-[var(--wd-hover)]"
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+      {open && !window.agweb.host.ownsBrowserFeatures && state && (
+        <div className="glass absolute right-0 top-11 z-50 w-72 overflow-hidden rounded-[14px] p-1">
           <p className="px-3 pb-1 pt-1.5 text-[10px] font-bold uppercase tracking-wider text-[var(--wd-dim)]">
             Google profiles
           </p>
@@ -751,23 +777,45 @@ function ExtensionsButton(): React.JSX.Element {
           >
             Browse the Chrome Web Store →
           </button>
-          <button
-            className={menuItem}
-            onClick={() => void window.agweb.extensions.load().then(afterLoad)}
-          >
-            Load unpacked extension…
-          </button>
-          <button
-            className={menuItem}
-            onClick={() => void window.agweb.extensions.loadPacked().then(afterLoad)}
-          >
-            Load a .crx or .zip…
-          </button>
-          {error && <p className="px-3 py-1 text-[10.5px] text-rose-500">{error}</p>}
-          <p className="px-3 py-1.5 text-[10px] leading-relaxed text-[var(--wd-dim)]">
-            The Web Store can’t install directly (Electron has no installer) — browse it, then load
-            an unpacked or packed extension. Extensions apply to the current profile only.
-          </p>
+          {window.agweb.host.ownsBrowserFeatures ? (
+            // Chromium installs, updates and removes extensions itself — the Web
+            // Store installs directly here, and chrome://extensions manages them.
+            <>
+              <button
+                className={menuItem}
+                onClick={() => {
+                  setOpen(false)
+                  useShellStore.getState().newTab('chrome://extensions/')
+                }}
+              >
+                Manage extensions →
+              </button>
+              <p className="px-3 py-1.5 text-[10px] leading-relaxed text-[var(--wd-dim)]">
+                Install from the Web Store directly; manage, update or remove them at
+                chrome://extensions. Extensions apply to the current profile only.
+              </p>
+            </>
+          ) : (
+            <>
+              <button
+                className={menuItem}
+                onClick={() => void window.agweb.extensions.load().then(afterLoad)}
+              >
+                Load unpacked extension…
+              </button>
+              <button
+                className={menuItem}
+                onClick={() => void window.agweb.extensions.loadPacked().then(afterLoad)}
+              >
+                Load a .crx or .zip…
+              </button>
+              {error && <p className="px-3 py-1 text-[10.5px] text-rose-500">{error}</p>}
+              <p className="px-3 py-1.5 text-[10px] leading-relaxed text-[var(--wd-dim)]">
+                The Web Store can’t install directly (Electron has no installer) — browse it, then
+                load an unpacked or packed extension. Extensions apply to the current profile only.
+              </p>
+            </>
+          )}
         </div>
       )}
     </div>

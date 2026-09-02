@@ -70,6 +70,15 @@ const HOST_OWNED: Record<string, string> = {
     'Chromium owns camera/mic/geolocation prompts (agent policy is policy:respond, which IS in the core)',
 
   // Chromium has its own profile and extension machinery.
+  // Real browser windows, opened by the Shell bridge (shell.ts SHELL_BROWSER)
+  // through mojom::Shell::OpenWindow — the deck and floating stacks each get a
+  // window whose shell page carries the role in its fragment.
+  'window:new': 'the Shell bridge opens a browser window (Shell.openWindow)',
+  'deck:open': 'the Shell bridge opens the deck window (Shell.openWindow #deck)',
+  'deck:close': 'the Shell bridge closes the deck window (Shell.closeWindow)',
+  'deck:focus': 'the Shell bridge focuses the deck window (Shell.focusWindow)',
+  'float:sync': 'the Shell bridge reconciles float windows (Shell.openWindow #float:id)',
+
   'profiles:set-active': 'Chromium owns profiles',
   'profiles:create': 'Chromium owns profiles',
   'profiles:remove': 'Chromium owns profiles',
@@ -80,8 +89,7 @@ const HOST_OWNED: Record<string, string> = {
 
   // Answered synchronously from a primed cache, never over the async socket.
   'app-settings:read-sync': 'served by primeSyncCache (sendSync has no await)',
-  'app-settings:clear-data': 'clears the host session store',
-  'shell:broadcast': 'cross-window sync; the fork has one window (host.canOpenWindows)'
+  'app-settings:clear-data': 'clears the host session store'
 }
 
 let handle: WsServerHandle

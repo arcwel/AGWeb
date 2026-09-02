@@ -623,6 +623,8 @@ export const IpcChannels = {
   profilesGoogleStatus: 'profiles:google-status',
   bookmarksImportFile: 'bookmarks:import-file',
   windowNew: 'window:new',
+  windowClosed: 'window:closed',
+  shellRequestSync: 'shell:request-sync',
   deckOpen: 'deck:open',
   deckClose: 'deck:close',
   deckFocus: 'deck:focus',
@@ -631,6 +633,7 @@ export const IpcChannels = {
   fsList: 'fs:list',
   fsRead: 'fs:read',
   fsWrite: 'fs:write',
+  fsWriteBase64: 'fs:write-base64',
   fsCreate: 'fs:create',
   fsRename: 'fs:rename',
   fsDelete: 'fs:delete',
@@ -986,6 +989,10 @@ export interface AgwebApi {
     focusDeck(): Promise<void>
     /** Reconcile float windows to exactly these floating group ids. */
     syncFloats(groupIds: string[]): Promise<void>
+    /** A deck or float window booted: ask the main window to broadcast its state. */
+    requestSync(): Promise<void>
+    /** A deck or float window is closing (its page is unloading). */
+    notifyClosed(role: 'deck' | 'float', groupId?: string): Promise<void>
     /** Mirror the deck layout slice to every other window. */
     broadcastState(state: import('./deck').DeckSyncState): Promise<void>
     onStateSync(listener: (state: import('./deck').DeckSyncState) => void): () => void
@@ -1000,6 +1007,8 @@ export interface AgwebApi {
   /** Workspace-scoped filesystem (paths relative to the open workspace). */
   fs: {
     list(rel: string): Promise<FsEntry[]>
+    /** Write bytes the page already holds (a picked attachment), base64 on the wire. */
+    writeBase64(rel: string, base64: string): Promise<{ error?: string }>
     read(
       rel: string
     ): Promise<{ content?: string; error?: string; truncated?: boolean; bytes?: number }>

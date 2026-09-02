@@ -1,6 +1,9 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from '@/App'
+import { DeckWindow } from '@/components/DeckWindow'
+import { FloatWindow } from '@/components/FloatWindow'
+import { useShellSync } from '@/windowSync'
 import { getWindowRole, useShellStore } from '@/store'
 import { loadInitialTheme } from '@/theme'
 import { installShortcutListener } from '@/shortcuts'
@@ -177,8 +180,10 @@ async function main(): Promise<void> {
     // true — downloads, zoom and find are still Chromium's, reached its own way.
     ownsBrowserChrome: false,
     ownsBrowserFeatures: true,
-    // No native pickers or extra OS windows yet.
-    canOpenWindows: false,
+    // Deck and float windows are real browser windows (Shell.openWindow). No
+    // native path picker: a page cannot learn where a file lives, so the
+    // agent's attachments are copied into the workspace instead (Composer).
+    canOpenWindows: true,
     canPickPaths: false,
     // Export works, done the browser's own way: a download for HTML, the print
     // preview for PDF. See webui/export.ts.
@@ -191,9 +196,28 @@ async function main(): Promise<void> {
   useShellStore.setState({ theme: loadInitialTheme() })
   if (role.kind === 'main') installShortcutListener()
 
+  if (role.kind !== 'main') {
+    // A deck or float window is a browser window whose staged tab must stay
+    // out of the way: the shell page IS the window. Hide the stage, ask the
+    // main window for the current layout, and say goodbye on the way out so
+    // the main window docks the deck / group back.
+    void window.agweb.browser.setVisible('', false)
+    void window.agweb.windows.requestSync()
+    window.addEventListener('pagehide', () => {
+      void window.agweb.windows.notifyClosed(role.kind === 'deck' ? 'deck' : 'float', role.groupId)
+    })
+  }
+
+  function Root(): React.JSX.Element {
+    useShellSync(role.kind)
+    if (role.kind === 'deck') return <DeckWindow />
+    if (role.kind === 'float') return <FloatWindow groupId={role.groupId ?? ''} />
+    return <App />
+  }
+
   ReactDOM.createRoot(document.getElementById('root')!).render(
     <React.StrictMode>
-      <App />
+      <Root />
     </React.StrictMode>
   )
 }

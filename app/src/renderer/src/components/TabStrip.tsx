@@ -192,8 +192,11 @@ export function TabStrip(): React.JSX.Element {
     <div
       data-testid="tab-strip"
       data-layout="horizontal"
-      className="drag-region flex min-w-0 items-center gap-1 overflow-x-auto overflow-y-hidden pt-2 pr-2 pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-      style={{ paddingLeft: 'var(--wd-titlebar-inset)' }}
+      className="drag-region flex min-w-0 items-center gap-1 overflow-x-auto overflow-y-hidden pr-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      // Fixed row height: the browser makes the window's title bar exactly this
+      // tall (browser_native_widget_mac.mm, kWebDeckTabRowHeight) so the native
+      // traffic lights are centred on the tabs. Change both or neither.
+      style={{ paddingLeft: 'var(--wd-titlebar-inset)', height: 'var(--wd-tabrow-h)' }}
       onDragOver={(event) => acceptDrag(event, 'end')}
       onDrop={(event) => finishDrop(event, null)}
       onDragLeave={() => setDropTarget(null)}

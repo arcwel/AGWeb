@@ -5,6 +5,7 @@
 
 #include "base/memory/raw_ptr.h"
 #include "content/public/browser/web_contents_user_data.h"
+#include "url/gurl.h"
 
 class BrowserWindowInterface;
 
@@ -22,6 +23,14 @@ namespace webdeck {
 // here when the shell view is created (ContentsContainerView) and read by
 // WebDeckShell (the mojom::Shell impl) to reach the window's TabStripModel and
 // its ContentsContainerView (for the stage rect).
+// The URL the NEXT WebDeck window's shell page loads, when a shell asks for
+// another window (mojom::Shell::OpenWindow). Browser creation params have no
+// slot for it, so it is parked here between OpenWindow and the new window's
+// ContentsContainerView constructor, which takes it. Empty means the default
+// chrome://webdeck (main role).
+void SetNextShellUrl(const GURL& url);
+GURL TakeNextShellUrl();
+
 class WebDeckShellHost : public content::WebContentsUserData<WebDeckShellHost> {
  public:
   ~WebDeckShellHost() override;

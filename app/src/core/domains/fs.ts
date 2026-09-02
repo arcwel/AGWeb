@@ -1,6 +1,6 @@
 import { promises as fsp, watch } from 'node:fs'
 import type { FSWatcher } from 'node:fs'
-import { isAbsolute, resolve, sep } from 'node:path'
+import { dirname, isAbsolute, resolve, sep } from 'node:path'
 import { IpcChannels, IpcEvents } from '@shared/ipc'
 import type { FsEntry } from '@shared/ipc'
 import { coreBroadcast } from '../notify'
@@ -135,7 +135,12 @@ export async function writeFile(
   }
 }
 
-/** Binary write for agent screenshots and other non-text artifacts. */
+/**
+ * Binary write for agent screenshots, Composer attachments and other non-text
+ * artifacts. Creates the parent folder: attachments land in
+ * `.webdeck/attachments/`, which a fresh project does not have, and the path
+ * is already confined to the workspace by resolveInWorkspace.
+ */
 export async function writeBinaryFile(
   rel: string,
   data: Buffer,
@@ -144,6 +149,7 @@ export async function writeBinaryFile(
   const full = resolveInWorkspace(rel, root)
   if (!full) return { error: 'no workspace' }
   try {
+    await fsp.mkdir(dirname(full), { recursive: true })
     await fsp.writeFile(full, data)
     return {}
   } catch (error) {
@@ -244,6 +250,13 @@ export function registerFsRpc(): void {
     const r = asString(rel)
     if (r === null || typeof content !== 'string') return { error: 'bad arguments' }
     return writeFile(r, content)
+  })
+  // Binary content the page has already read (an attachment picked with a
+  // file input), base64 on the wire; images and other non-text files.
+  core.register(IpcChannels.fsWriteBase64, (rel, base64) => {
+    const r = asString(rel)
+    if (r === null || typeof base64 !== 'string') return { error: 'bad arguments' }
+    return writeBinaryFile(r, Buffer.from(base64, 'base64'))
   })
   core.register(IpcChannels.fsCreate, (rel, kind) => {
     const r = asString(rel)

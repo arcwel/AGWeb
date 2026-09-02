@@ -23,6 +23,10 @@ import type { BrowserTabState, Rect } from '@shared/ipc'
 /** The subset of the generated Mojo remote this module uses. */
 interface ShellRemote {
   setStageBounds(stage: { x: number; y: number; width: number; height: number }): void
+  setStageVisible(visible: boolean): void
+  openWindow(url: string): Promise<{ windowId: number }>
+  focusWindow(windowId: number): void
+  closeWindow(windowId: number): void
   createTab(url: string): Promise<{ tabId: number }>
   selectTab(tabId: number): void
   closeTab(tabId: number): void
@@ -150,6 +154,14 @@ const pendingCreates: string[] = []
  * right tab.
  */
 let currentStageTabId = ''
+// Windows this shell opened for the Deck (#deck) and floating groups (#float:id),
+// by the browser's window id, so they can be focused and closed again.
+let deckWindowId = 0
+const floatWindowIds = new Map<string, number>()
+async function openShellWindow(hash: string): Promise<number> {
+  const { windowId } = await (await getShell()).openWindow(`chrome://webdeck/#${hash}`)
+  return windowId
+}
 
 /** Browser event channels the Mojo ShellClient delivers (not the core). */
 export const SHELL_BROWSER_EVENTS: ReadonlySet<string> = new Set([
@@ -387,9 +399,45 @@ export const SHELL_BROWSER: Record<string, (...args: unknown[]) => Promise<unkno
   [IpcChannels.browserStop]: async (shellId) => {
     ;(await getShell()).stop(handleFor(shellId))
   },
-  // Switching tabs: making one visible activates it in the TabStripModel.
+  // The stage's visibility follows the shell's overlays: hidden while a menu,
+  // the palette or Settings is open (the native tab would paint over them),
+  // shown again — and activated — when they close.
   [IpcChannels.browserSetVisible]: async (shellId, visible) => {
-    if (visible) (await getShell()).selectTab(handleFor(shellId))
+    const shell = await getShell()
+    if (visible) shell.selectTab(handleFor(shellId))
+    shell.setStageVisible(Boolean(visible))
+  },
+  // Windows: the Deck detached into its own window, floating stacks, a second
+  // full shell. Each is a real browser window whose shell page carries the role.
+  [IpcChannels.windowNew]: async () => (await openShellWindow('')) !== 0,
+  [IpcChannels.deckOpen]: async () => {
+    if (deckWindowId) (await getShell()).focusWindow(deckWindowId)
+    else deckWindowId = await openShellWindow('deck')
+  },
+  [IpcChannels.deckClose]: async () => {
+    if (!deckWindowId) return
+    const id = deckWindowId
+    deckWindowId = 0
+    ;(await getShell()).closeWindow(id)
+  },
+  [IpcChannels.deckFocus]: async () => {
+    if (deckWindowId) (await getShell()).focusWindow(deckWindowId)
+  },
+  [IpcChannels.floatSync]: async (groupIds) => {
+    const wanted = new Set(Array.isArray(groupIds) ? groupIds.map(String) : [])
+    const shell = await getShell()
+    for (const [groupId, id] of [...floatWindowIds]) {
+      if (!wanted.has(groupId)) {
+        floatWindowIds.delete(groupId)
+        shell.closeWindow(id)
+      }
+    }
+    for (const groupId of wanted) {
+      if (!floatWindowIds.has(groupId)) {
+        const id = await openShellWindow(`float:${groupId}`)
+        if (id) floatWindowIds.set(groupId, id)
+      }
+    }
   },
   // The signature call: the Stage's ResizeObserver streams the stage rect here.
   [IpcChannels.browserSetBounds]: async (shellId, rect) => {

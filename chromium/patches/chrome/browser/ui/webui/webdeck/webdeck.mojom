@@ -194,6 +194,18 @@ interface Shell {
 
   // Registers the observer channel for state pushed back to the shell.
   SetClient(pending_remote<ShellClient> client);
+
+  // Show or hide the staged tab (and the split secondary). The shell hides it
+  // while one of its own overlays — a menu, the palette, Settings — is open,
+  // because the native tab is composited above the page and would otherwise
+  // paint over them.
+  SetStageVisible(bool visible);
+
+  // Open another WebDeck window whose shell page loads `url` (chrome://webdeck
+  // with a #deck or #float:<group> role). Returns the window id (0 = refused).
+  OpenWindow(string url) => (int32 window_id);
+  FocusWindow(int32 window_id);
+  CloseWindow(int32 window_id);
 };
 
 // Browser -> renderer(shell): navigation/tab state, so the shell's tab strip and

@@ -105,13 +105,6 @@ export const SHELL_OWNED: Record<string, (...args: unknown[]) => unknown> = {
   [IpcChannels.bookmarksImportFile]: () => pickJsonFile(),
   [IpcChannels.syncChooseFile]: () => pickJsonFile(),
   [IpcChannels.profilesList]: () => ({ profiles: [], activeId: '' }),
-  // Window management: under the fork the browser owns windows, and the Deck is
-  // a surface inside one — detached/float windows are not ours to open.
-  [IpcChannels.windowNew]: () => false,
-  [IpcChannels.deckOpen]: () => undefined,
-  [IpcChannels.deckClose]: () => undefined,
-  [IpcChannels.deckFocus]: () => undefined,
-  [IpcChannels.floatSync]: () => undefined,
   // The page follows the browser's own theme; nativeTheme is not ours to set.
   [IpcChannels.themeSet]: () => undefined
 }

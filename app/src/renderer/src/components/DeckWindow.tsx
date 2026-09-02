@@ -17,7 +17,10 @@ export function DeckWindow(): React.JSX.Element {
 
   return (
     <div className="flex h-full flex-col bg-slate-100 text-slate-900 dark:bg-[#0b0f14] dark:text-slate-100">
-      <div className="drag-region flex h-10 flex-none items-center gap-2.5 border-b border-slate-200 bg-white px-3 dark:border-slate-800 dark:bg-[#0e1420]">
+      <div
+        className="drag-region flex flex-none items-center gap-2.5 border-b border-slate-200 bg-white pr-3 dark:border-slate-800 dark:bg-[#0e1420]"
+        style={{ height: 'var(--wd-tabrow-h)', paddingLeft: 'var(--wd-titlebar-inset)' }}
+      >
         <DeckIcon className="text-sky-500" />
         <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">
           WebDeck{workspace ? ` — ${workspace.name}` : ''}

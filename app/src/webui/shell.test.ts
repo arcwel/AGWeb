@@ -12,6 +12,15 @@ import { IpcChannels } from '@shared/ipc'
  */
 
 /** The channels the Shell actually drives, mapped onto the staged (active) tab. */
+/** Real browser windows the Shell bridge opens for the Deck and floating stacks. */
+const WINDOWS = [
+  IpcChannels.windowNew,
+  IpcChannels.deckOpen,
+  IpcChannels.deckClose,
+  IpcChannels.deckFocus,
+  IpcChannels.floatSync
+]
+
 const PRIMARY = [
   IpcChannels.browserCreate,
   IpcChannels.browserNavigate,
@@ -63,7 +72,9 @@ describe('SHELL_BROWSER known-channel allowlist', () => {
   })
 
   it('is exactly the known list — no extra keys crept in', () => {
-    expect(new Set(Object.keys(SHELL_BROWSER))).toEqual(new Set([...PRIMARY, ...SECONDARY]))
+    expect(new Set(Object.keys(SHELL_BROWSER))).toEqual(
+      new Set([...PRIMARY, ...SECONDARY, ...WINDOWS])
+    )
   })
 
   it('does NOT contain unknown or core-owned channels', () => {

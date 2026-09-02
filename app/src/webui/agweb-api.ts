@@ -157,6 +157,8 @@ export function createAgwebApi(ipcRenderer: IpcLike, host: HostCapabilities): Ag
       closeDeck: () => ipcRenderer.invoke(IpcChannels.deckClose),
       focusDeck: () => ipcRenderer.invoke(IpcChannels.deckFocus),
       syncFloats: (groupIds) => ipcRenderer.invoke(IpcChannels.floatSync, groupIds),
+      requestSync: () => ipcRenderer.invoke(IpcChannels.shellRequestSync),
+      notifyClosed: (role, groupId) => ipcRenderer.invoke(IpcChannels.windowClosed, role, groupId),
       broadcastState: (state) => ipcRenderer.invoke(IpcChannels.shellBroadcast, state),
       onStateSync: (listener) => {
         const handler = (_event: unknown, state: DeckSyncState): void => listener(state)
@@ -185,6 +187,7 @@ export function createAgwebApi(ipcRenderer: IpcLike, host: HostCapabilities): Ag
 
     fs: {
       list: (rel) => ipcRenderer.invoke(IpcChannels.fsList, rel),
+      writeBase64: (rel, base64) => ipcRenderer.invoke(IpcChannels.fsWriteBase64, rel, base64),
       read: (rel) => ipcRenderer.invoke(IpcChannels.fsRead, rel),
       write: (rel, content) => ipcRenderer.invoke(IpcChannels.fsWrite, rel, content),
       create: (rel, kind) => ipcRenderer.invoke(IpcChannels.fsCreate, rel, kind),

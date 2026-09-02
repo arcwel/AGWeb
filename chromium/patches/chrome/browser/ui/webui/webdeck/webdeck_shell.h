@@ -97,6 +97,10 @@ class WebDeckShell : public mojom::Shell,
   void GetDefaultBrowserState(GetDefaultBrowserStateCallback callback) override;
   void SetAsDefaultBrowser(SetAsDefaultBrowserCallback callback) override;
   void SetClient(mojo::PendingRemote<mojom::ShellClient> client) override;
+  void SetStageVisible(bool visible) override;
+  void OpenWindow(const std::string& url, OpenWindowCallback callback) override;
+  void FocusWindow(int32_t window_id) override;
+  void CloseWindow(int32_t window_id) override;
 
   // TabStripModelObserver: the active tab changed (or the set of tabs did), so
   // re-observe the active tab and push its state to the shell.
