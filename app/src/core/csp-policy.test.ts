@@ -42,11 +42,13 @@ describe('chrome://webdeck CSP (webdeck_ui.cc)', () => {
   const source = readFileSync(SOURCE, 'utf8')
   const csp = overrides(source)
 
-  it('overrides only the directives it needs, and never script-src', () => {
-    // script-src stays Chromium's WebUI default: 'self' + chrome://resources,
-    // no eval. Overriding it is how unsafe-eval would arrive.
-    expect(csp.some((d) => d.startsWith('ScriptSrc'))).toBe(false)
-    expect(source).not.toMatch(/unsafe-eval/)
+  it("script-src is the WebUI default plus 'wasm-unsafe-eval', and nothing else", () => {
+    // 'wasm-unsafe-eval' permits WebAssembly.instantiate (the TextMate
+    // tokenizer and the extension host are wasm) and nothing else; eval() and
+    // inline script stay refused. The exact string is pinned so that adding a
+    // source — 'unsafe-eval', a remote origin, a hash — is a reviewed change.
+    expect(csp).toContain("ScriptSrc: script-src chrome://resources 'self' 'wasm-unsafe-eval';")
+    expect(source).not.toMatch(/'unsafe-eval'/)
     expect(source).not.toMatch(/unsafe-inline/)
   })
 

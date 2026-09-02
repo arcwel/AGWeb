@@ -181,18 +181,22 @@ function checkShellBoundary() {
       exitCode = 1
     }
 
-    // Navigation is mapped onto the Shell's navigate() for the staged tab.
+    // Navigation is mapped onto the Shell's navigate() for a Shell tab handle —
+    // the active tab (ACTIVE) or, since the multi-tab shell, the handle the
+    // shell resolves for the tab id (handleFor(shellId)). Either way the URL
+    // reaches the browser's IsAllowedShellUrl gate and nothing else.
     const mapsNav =
-      /\[\s*IpcChannels\.browserNavigate\s*\]/.test(src) && /\.navigate\(\s*ACTIVE\b/.test(src)
+      /\[\s*IpcChannels\.browserNavigate\s*\]/.test(src) &&
+      /\.navigate\(\s*(ACTIVE\b|handleFor\()/.test(src)
     if (mapsNav) {
       ok(
         'shell bridge: navigation is routed onto the Shell tab',
-        'IpcChannels.browserNavigate maps to the Shell remote navigate() on the active tab'
+        'IpcChannels.browserNavigate maps to the Shell remote navigate() on a Shell tab handle'
       )
     } else {
       fail(
         'shell bridge: navigation is routed onto the Shell tab',
-        'shell.ts no longer maps IpcChannels.browserNavigate onto the Shell remote navigate(ACTIVE, …)'
+        'shell.ts no longer maps IpcChannels.browserNavigate onto the Shell remote navigate(ACTIVE | handleFor(…), …)'
       )
       exitCode = 1
     }

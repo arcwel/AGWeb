@@ -137,6 +137,15 @@ WebDeckUI::WebDeckUI(content::WebUI* web_ui) : WebUIController(web_ui) {
       network::mojom::CSPDirectiveName::FrameAncestors,
       "frame-ancestors 'none';");
 
+  // The editor's TextMate tokenizer is oniguruma compiled to WebAssembly, and
+  // the extension host runs extension code the same way. 'wasm-unsafe-eval'
+  // permits WebAssembly.instantiate and nothing else — eval() and inline
+  // script stay refused (verify-hardening measures both at runtime). The
+  // sources are otherwise the WebUI default: this origin and chrome://resources.
+  source->OverrideContentSecurityPolicy(
+      network::mojom::CSPDirectiveName::ScriptSrc,
+      "script-src chrome://resources 'self' 'wasm-unsafe-eval';");
+
   // Monaco (the editor) embeds its icon font as a data: URI.
   source->OverrideContentSecurityPolicy(
       network::mojom::CSPDirectiveName::FontSrc,
