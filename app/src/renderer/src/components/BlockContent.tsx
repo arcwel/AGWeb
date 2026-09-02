@@ -14,6 +14,8 @@ import { GitGraphBlock } from '@/components/GitGraphBlock'
 import { RestClientBlock } from '@/components/RestClientBlock'
 import { DbClientBlock } from '@/components/DbClientBlock'
 import { JupyterBlock } from '@/components/JupyterBlock'
+import { ExtensionsBlock } from '@/components/ExtensionsBlock'
+import { ExtensionViewBlock } from '@/components/ExtensionViewBlock'
 
 /** Content for each block type. */
 export function BlockContent({ block }: { block: BlockInstance }): React.JSX.Element {
@@ -50,5 +52,9 @@ export function BlockContent({ block }: { block: BlockInstance }): React.JSX.Ele
       return <DbClientBlock />
     case 'jupyter':
       return <JupyterBlock />
+    case 'extensions':
+      return <ExtensionsBlock />
+    case 'extview':
+      return <ExtensionViewBlock containerId={block.payload?.containerId ?? ''} />
   }
 }

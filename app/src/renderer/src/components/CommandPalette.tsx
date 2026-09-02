@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useShellStore } from '@/store'
 import { buildCommands, fuzzyMatch, type AppCommand } from '@/commands'
+import { EDITOR_SECTION, listEditorCommands } from '@/editor-commands'
 
 /**
  * The ⌘K command palette.
@@ -18,12 +19,18 @@ interface CommandPaletteProps {
   onClose: () => void
   /** Raise the tab switcher (the "Switch Tab…" command routes here). */
   onOpenTabSwitcher: () => void
+  /**
+   * Text the field opens with. ⌘⇧P passes ">" — VS Code's own convention —
+   * which scopes the list to editor & extension commands (12.8).
+   */
+  initialQuery?: string
 }
 
 export function CommandPalette({
   open,
   onClose,
-  onOpenTabSwitcher
+  onOpenTabSwitcher,
+  initialQuery = ''
 }: CommandPaletteProps): React.JSX.Element | null {
   const setOverlayOpen = useShellStore((s) => s.setOverlayOpen)
   const [query, setQuery] = useState('')
@@ -37,19 +44,34 @@ export function CommandPalette({
 
   // Rebuild each open so store-reading commands (close tab, presets) act on
   // live state, and so the tab-switcher opener is current.
+  // WebDeck's own commands first, then VS Code's built-in editor commands and
+  // everything installed extensions contribute — one list, one palette.
   const commands = useMemo(
-    () => (open ? buildCommands({ openTabSwitcher: onOpenTabSwitcher }) : []),
+    () =>
+      open
+        ? [...buildCommands({ openTabSwitcher: onOpenTabSwitcher }), ...listEditorCommands()]
+        : [],
     [open, onOpenTabSwitcher]
   )
 
   const results = useMemo<AppCommand[]>(() => {
-    const scored = commands
-      .map((command) => ({
+    // A leading ">" scopes to editor & extension commands (VS Code muscle memory).
+    const editorOnly = query.startsWith('>')
+    const needle = editorOnly ? query.slice(1).trim() : query
+    const pool = editorOnly ? commands.filter((c) => c.section === EDITOR_SECTION) : commands
+    const scored = pool
+      .map((command, order) => ({
         command,
-        score: fuzzyMatch(query, `${command.title} ${command.keywords ?? ''}`)
+        order,
+        score: fuzzyMatch(needle, `${command.title} ${command.keywords ?? ''}`)
       }))
-      .filter((entry): entry is { command: AppCommand; score: number } => entry.score !== null)
-    scored.sort((a, b) => b.score - a.score)
+      .filter(
+        (entry): entry is { command: AppCommand; order: number; score: number } =>
+          entry.score !== null
+      )
+    // On a tie WebDeck's own commands rank above editor/extension ones — that
+    // is the order they were concatenated in, so a stable sort keeps it.
+    scored.sort((a, b) => b.score - a.score || a.order - b.order)
     return scored.map((entry) => entry.command)
   }, [commands, query])
 
@@ -64,10 +86,10 @@ export function CommandPalette({
   useEffect(() => {
     if (!open) return
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setQuery('')
+    setQuery(initialQuery)
     setSelected(0)
     inputRef.current?.focus()
-  }, [open])
+  }, [open, initialQuery])
 
   // Capture the previously-focused element on open and restore it on close, so
   // dismissing the palette returns keyboard focus where it was.
@@ -166,7 +188,7 @@ export function CommandPalette({
             aria-autocomplete="list"
             aria-label="Search commands"
             type="text"
-            placeholder="Type a command…"
+            placeholder="Type a command… (> for editor & extension commands)"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             onKeyDown={onKeyDown}
@@ -204,6 +226,11 @@ export function CommandPalette({
                 <span className="min-w-0 flex-1 truncate text-[13px] text-[var(--wd-text)]">
                   {command.title}
                 </span>
+                {command.badge && (
+                  <span className="shrink-0 rounded-md border border-[var(--wd-hairline)] px-1.5 py-0.5 text-[10px] text-[var(--wd-muted)]">
+                    {command.badge}
+                  </span>
+                )}
                 <span className="shrink-0 text-[10px] uppercase tracking-wide text-[var(--wd-dim)]">
                   {command.section}
                 </span>

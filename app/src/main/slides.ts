@@ -1,10 +1,11 @@
 import { createServer } from 'node:http'
 import { mintServerToken, takeToken } from './local-server-auth'
 import type { Server } from 'node:http'
-import { createReadStream, readFileSync, realpathSync, statSync } from 'node:fs'
+import { createReadStream, existsSync, readFileSync, realpathSync, statSync } from 'node:fs'
 import { basename, dirname, extname, join, normalize, sep } from 'node:path'
 import { IpcChannels } from '@shared/ipc'
 import { core } from '../core/rpc'
+import { coreEnv } from '../core/env'
 import { asString } from '../core/coerce'
 import { getCurrentWorkspace } from './workspace'
 
@@ -53,7 +54,13 @@ const CONTENT_TYPES: Record<string, string> = {
   '.mjs': 'text/javascript',
   '.css': 'text/css',
   '.md': 'text/plain; charset=utf-8',
-  '.woff2': 'font/woff2'
+  '.woff2': 'font/woff2',
+  '.json': 'application/json',
+  '.wasm': 'application/wasm',
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+  '.ttf': 'font/ttf',
+  '.map': 'application/json'
 }
 
 export function isSlidesPath(rel: string): boolean {
@@ -186,10 +193,78 @@ function bundleHtml(rel: string, markdown: string): string {
 <!-- Exported from Arcwel WebDeck — source: ${basename(rel)} -->`
 }
 
+/**
+ * Where the built WebUI bundle's static files are, for the extension host.
+ * The packaged core carries a copy in its runtime dir (build-core.mjs and
+ * install-core.mjs put it there); a dev checkout has the vite output.
+ */
+function webuiAssetsDir(): string | null {
+  const appDir = coreEnv().appDir
+  const candidates = [
+    appDir ? join(appDir, 'webui-assets') : '',
+    join(process.cwd(), 'out', 'webui', 'assets')
+  ]
+  return candidates.find((dir) => dir && existsSync(dir)) ?? null
+}
+
+/**
+ * Token-less static serving of the WebUI bundle's own files (task 12.8).
+ *
+ * chrome://webdeck embeds VS Code's web-worker extension host in an iframe on
+ * THIS origin, so third-party extension code runs cross-origin from the page
+ * that holds the core token. The iframe's blob worker loads the extension-host
+ * bundle, and the iframe's own CSP allows only 'self' for that — so the bundle
+ * and its chunks have to be served from here as well.
+ *
+ * No capability token: the token rides in the URL path, and an origin cannot
+ * carry one, so the ext-host assets cannot sit behind it. That is acceptable
+ * only because these are the app's own public frontend files — never
+ * workspace data — and every other route stays token-gated. Host is still
+ * checked (DNS rebinding), the path is contained to the assets dir, and it is
+ * read-only.
+ */
+function serveWebuiAsset(url: string, res: import('node:http').ServerResponse): void {
+  const dir = webuiAssetsDir()
+  const rel = decodeURIComponent(
+    url
+      .replace(/^\/assets\//, '')
+      .split('?')[0]
+      .split('#')[0]
+  )
+  const file = dir ? join(dir, normalize(rel)) : null
+  if (
+    !dir ||
+    !file ||
+    !file.startsWith(dir + sep) ||
+    !existsSync(file) ||
+    !statSync(file).isFile()
+  ) {
+    res.writeHead(404)
+    res.end('Not found')
+    return
+  }
+  res.writeHead(200, {
+    'content-type': CONTENT_TYPES[extname(file)] ?? 'application/octet-stream',
+    'cache-control': 'no-store'
+  })
+  createReadStream(file).pipe(res)
+}
+
+/** The extension host's origin: this server's, without the capability token. */
+export async function ensureLoopbackOrigin(): Promise<string | null> {
+  if (!webuiAssetsDir()) return null
+  const base = await ensureServer()
+  return new URL(base).origin
+}
+
 function handle(url: string, res: import('node:http').ServerResponse, hostHeader?: string): void {
   if (!hostAllowed(hostHeader)) {
     res.writeHead(403)
     res.end('Forbidden')
+    return
+  }
+  if (url.startsWith('/assets/')) {
+    serveWebuiAsset(url, res)
     return
   }
   // A capability in the URL, for the same reason the preview server has one:

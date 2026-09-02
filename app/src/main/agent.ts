@@ -27,6 +27,7 @@ import { searchWorkspace } from './search'
 import { isTerminalRunning, runInTerminal, stopTerminal, terminalOutput } from './terminal'
 import { JsonStore } from './json-store'
 import { checkAction } from './policy'
+import { requestEditorCommand } from './editor-bridge'
 import type {
   AskContext,
   AskResult,
@@ -795,6 +796,30 @@ const EXEC_TOOLS: Anthropic.Tool[] = [
       properties: { tab_id: { type: 'string' } }
     },
     strict: true
+  },
+  {
+    name: 'editor_list_commands',
+    description:
+      "List the editor commands available right now — VS Code's built-ins and everything the user's installed extensions contribute (formatters, linters, git tools, test runners…). Returns ids, titles and the extension each comes from. Filter with a substring query. Call this before editor_command when unsure of an id.",
+    input_schema: {
+      type: 'object',
+      additionalProperties: false,
+      required: [],
+      properties: { query: { type: 'string' } }
+    },
+    strict: true
+  },
+  {
+    name: 'editor_command',
+    description:
+      "Run an editor command by its VS Code id (e.g. editor.action.formatDocument, workbench.action.files.saveAll, or an extension's own command). Acts on the editor the user sees. args is a JSON array of arguments, usually []. Returns the command's result as JSON.",
+    input_schema: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['command'],
+      properties: { command: { type: 'string' }, args: { type: 'string' } }
+    },
+    strict: true
   }
 ]
 
@@ -1158,6 +1183,33 @@ async function executeTool(
       const report = agentBrowser().visionReport(String(input.tab_id ?? ''))
       log(session, { kind: 'browser', text: report })
       return report
+    }
+    case 'editor_list_commands': {
+      const res = await requestEditorCommand({ op: 'list', query: String(input.query ?? '') })
+      if (!res.ok) return `error: ${res.error ?? 'editor unavailable'}`
+      return JSON.stringify(res.value ?? [])
+    }
+    case 'editor_command': {
+      const command = String(input.command ?? '').trim()
+      if (!command) return 'error: command id is required'
+      // An extension command can do anything its extension can — write files,
+      // call out, run tasks — so it passes the same gate as a shell command.
+      const denied = await gate(session, 'command', `editor_command: ${command}`)
+      if (denied) return denied
+      let args: unknown[] = []
+      if (typeof input.args === 'string' && input.args.trim()) {
+        try {
+          const parsed: unknown = JSON.parse(input.args)
+          if (!Array.isArray(parsed)) return 'error: args must be a JSON array'
+          args = parsed
+        } catch {
+          return 'error: args is not valid JSON'
+        }
+      }
+      const res = await requestEditorCommand({ op: 'run', command, args })
+      log(session, { kind: 'command', text: `Editor command ${command}` })
+      if (!res.ok) return `error: ${res.error ?? 'command failed'}`
+      return res.value === null || res.value === undefined ? 'ok' : JSON.stringify(res.value)
     }
     default:
       return `error: unknown tool ${name}`

@@ -50,6 +50,12 @@
       "homepage": ""
     },
     {
+      "name": "extract-zip",
+      "version": "2.0.1",
+      "license": "BSD-2-Clause",
+      "homepage": ""
+    },
+    {
       "name": "fast-xml-parser",
       "version": "5.11.1",
       "license": "MIT",

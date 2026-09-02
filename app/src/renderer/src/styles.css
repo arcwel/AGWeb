@@ -189,6 +189,10 @@ body,
   --deck-col-w: 436px;
   --deck-left-w: 0px;
   --deck-dock-h: 248px;
+  /* The smallest a group may be. The zone views read these to decide how many
+     groups fit (deck-capacity.ts); past that, a block joins a stack as a tab. */
+  --deck-group-min-h: 260px;
+  --deck-group-min-w: 330px;
   position: relative;
   flex: 1;
   overflow: hidden;
@@ -325,7 +329,7 @@ body,
   display: flex;
   flex-direction: column;
   gap: 6px;
-  overflow-y: auto;
+  overflow: hidden;
   transform: translateX(calc(-100% - 12px));
   transition: transform 0.55s cubic-bezier(0.32, 0.72, 0, 1) 0.07s;
 }
@@ -333,7 +337,7 @@ body,
   transform: translateX(0);
 }
 .deck-left > .deck-group {
-  min-height: 260px;
+  min-height: var(--deck-group-min-h);
 }
 /* Closed: a thin strip that still accepts a drop, so the zone is discoverable
    without permanently costing 220px of stage. */
@@ -351,16 +355,19 @@ body,
   display: flex;
   flex-direction: column;
   gap: 6px;
-  overflow-y: auto;
+  overflow: hidden;
   transform: translateX(calc(100% + 12px));
   transition: transform 0.55s cubic-bezier(0.32, 0.72, 0, 1) 0.07s;
 }
 
-/* Stacks share the column evenly until that would leave one too short to use;
-   past that they stop shrinking and the column scrolls, which is what keeps a
-   transcript or a file tree readable once four blocks are open at once. */
+/* Stacks share the column evenly down to the minimum group size. A column
+   never scrolls and never clips: the zone view measures how many groups fit
+   (see deck-capacity.ts) and past that a block joins a stack as a tab. */
 .deck-col > .deck-group {
-  min-height: 260px;
+  min-height: var(--deck-group-min-h);
+}
+.deck-dock > .deck-group {
+  min-width: var(--deck-group-min-w);
 }
 .workspace.revealed .deck-col {
   transform: translateX(0);

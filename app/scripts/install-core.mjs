@@ -92,6 +92,34 @@ chmodSync(destBinary, 0o755)
 // followed into duplicated trees.
 cpSync(coreRuntime, destRuntime, { recursive: true, verbatimSymlinks: true })
 
+// WebUI static assets for the extension host (12.8), copied here as well as by
+// build-core.mjs: build:core can run before build:webui in the pipeline, and
+// this step runs last, so it is the one that guarantees the packaged core can
+// serve the extension-host iframe + worker bundle on its loopback origin.
+const webuiAssets = join(root, 'out', 'webui', 'assets')
+const extHostIframe = join(
+  root,
+  'node_modules',
+  '@codingame',
+  'monaco-vscode-extensions-service-override',
+  'vscode',
+  'src',
+  'vs',
+  'workbench',
+  'services',
+  'extensions',
+  'worker',
+  'webWorkerExtensionHostIframe.html'
+)
+if (existsSync(webuiAssets)) {
+  const destAssets = join(destRuntime, 'webui-assets')
+  rmSync(destAssets, { recursive: true, force: true })
+  cpSync(webuiAssets, destAssets, { recursive: true })
+  if (existsSync(extHostIframe)) {
+    cpSync(extHostIframe, join(destAssets, 'webWorkerExtensionHostIframe.html'))
+  }
+}
+
 const sizeMb = (statSync(destBinary).size / (1024 * 1024)).toFixed(1)
 const result = {
   status: 'installed',

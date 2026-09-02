@@ -15,6 +15,7 @@ import { useThemeEffect } from '@/theme'
 import { useShortcut } from '@/shortcuts'
 import { useAppCommands } from '@/commands'
 import { useWindowReconciler } from '@/windowSync'
+import { installEditorAgentBridge } from '@/editor-agent-bridge'
 
 export default function App(): React.JSX.Element {
   const deckRevealed = useShellStore((s) => s.deckRevealed)
@@ -35,10 +36,16 @@ export default function App(): React.JSX.Element {
   // The ⌘K command palette and ⌘⇧A tab switcher are renderer overlays, so
   // their open state lives here beside the other shell-level surfaces.
   const [paletteOpen, setPaletteOpen] = useState(false)
+  // What the palette opens with: '' for ⌘K, '>' for ⌘⇧P (editor & extensions).
+  const [paletteQuery, setPaletteQuery] = useState('')
   const [tabSwitcherOpen, setTabSwitcherOpen] = useState(false)
 
   useThemeEffect()
   useWindowReconciler()
+
+  // Answer the agent's editor_command / editor_list_commands requests from
+  // VS Code's command registry (task 12.8) for as long as the shell is up.
+  useEffect(() => installEditorAgentBridge(), [])
 
   // Load the active profile's bookmarks at boot (they are stored per profile).
   useEffect(() => {
@@ -145,7 +152,20 @@ export default function App(): React.JSX.Element {
   useShortcut(
     'mod+k',
     'Open the command palette',
-    useCallback(() => setPaletteOpen(true), [])
+    useCallback(() => {
+      setPaletteQuery('')
+      setPaletteOpen(true)
+    }, [])
+  )
+  // ⌘⇧P is VS Code muscle memory: the same palette, opened scoped to editor &
+  // extension commands via the ">" prefix (12.8) — one palette, not two.
+  useShortcut(
+    'mod+shift+p',
+    'Editor & extension commands',
+    useCallback(() => {
+      setPaletteQuery('>')
+      setPaletteOpen(true)
+    }, [])
   )
   useShortcut(
     'mod+shift+a',
@@ -188,6 +208,7 @@ export default function App(): React.JSX.Element {
       <SnapshotPanel />
       <CommandPalette
         open={paletteOpen}
+        initialQuery={paletteQuery}
         onClose={() => setPaletteOpen(false)}
         onOpenTabSwitcher={() => {
           setPaletteOpen(false)

@@ -204,6 +204,40 @@ mkdirSync(join(runtimeDir, 'node_modules'), { recursive: true })
 // createRequire needs a file path to anchor on; it is never read.
 writeFileSync(join(runtimeDir, 'noop.cjs'), '// anchor for module resolution\n')
 
+// The WebUI bundle's static files, for the extension host (task 12.8). The
+// core's loopback server serves them token-less on a second origin so VS
+// Code's web-worker extension host runs cross-origin from chrome://webdeck
+// (see slides.ts). The ext-host iframe page is vendored straight from
+// monaco-vscode-api, since vite does not emit it. Tolerant of a missing vite
+// output: build:webui may not have run yet, in which case install-core.mjs
+// copies it into the bundle later and a dev core simply keeps the worker host
+// off (declarative extensions still load).
+const webuiAssets = join(root, 'out', 'webui', 'assets')
+const extHostIframe = join(
+  root,
+  'node_modules',
+  '@codingame',
+  'monaco-vscode-extensions-service-override',
+  'vscode',
+  'src',
+  'vs',
+  'workbench',
+  'services',
+  'extensions',
+  'worker',
+  'webWorkerExtensionHostIframe.html'
+)
+if (existsSync(webuiAssets)) {
+  cpSync(webuiAssets, join(runtimeDir, 'webui-assets'), { recursive: true })
+  if (existsSync(extHostIframe)) {
+    cpSync(extHostIframe, join(runtimeDir, 'webui-assets', 'webWorkerExtensionHostIframe.html'))
+  }
+} else if (!asJson) {
+  console.warn(
+    'build-core: no out/webui/assets yet (run build:webui) — extension host assets skipped'
+  )
+}
+
 for (const pkg of RUNTIME_PACKAGES) {
   const from = join(root, 'node_modules', pkg.name)
   if (!existsSync(from)) {

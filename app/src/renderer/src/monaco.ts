@@ -33,7 +33,16 @@ import getLanguagesServiceOverride from '@codingame/monaco-vscode-languages-serv
 import getTextmateServiceOverride from '@codingame/monaco-vscode-textmate-service-override'
 import getFilesServiceOverride from '@codingame/monaco-vscode-files-service-override'
 import getExtensionsServiceOverride from '@codingame/monaco-vscode-extensions-service-override'
+import getViewsServiceOverride, {
+  type OpenEditor
+} from '@codingame/monaco-vscode-views-service-override'
 import { updateUserKeybindings } from '@codingame/monaco-vscode-keybindings-service-override'
+import {
+  extensionHostFileUrl,
+  extensionHostOrigin,
+  extensionHostWorkerOptions,
+  loadInstalledExtensions
+} from '@/editor-extensions'
 
 /**
  * The editor foundation (task 12.1).
@@ -60,6 +69,16 @@ self.MonacoEnvironment = {
     // logs a channel error on every editor.
     if (label === 'TextMateWorker') return new TextMateWorker()
     return new EditorWorker()
+  },
+  // The extension host's iframe page and worker come from the core's loopback
+  // origin, not this one (task 12.8). This is the seam the web-worker service
+  // checks first; undefined means "use the bundled URL", which is right for
+  // every other label.
+  getWorkerUrl(_workerId: string, label: string): string | undefined {
+    return extensionHostFileUrl(label)
+  },
+  getWorkerOptions(_workerId: string, label: string): WorkerOptions | undefined {
+    return extensionHostWorkerOptions(label)
   }
 }
 
@@ -67,16 +86,50 @@ self.MonacoEnvironment = {
  * Services must be initialized exactly once, and before the first editor is
  * created. Every consumer awaits this instead of racing it.
  */
-export const monacoReady: Promise<void> = initializeVscodeServices({
-  ...getExtensionsServiceOverride(),
-  ...getFilesServiceOverride(),
-  ...getConfigurationServiceOverride(),
-  ...getKeybindingsServiceOverride(),
-  ...getThemeServiceOverride(),
-  ...getQuickAccessServiceOverride(),
-  ...getLanguagesServiceOverride(),
-  ...getTextmateServiceOverride()
-})
+/**
+ * What VS Code's view layer does when something asks it to "open an editor" —
+ * an extension revealing a file from a tree view, a go-to-definition into
+ * another file. WebDeck has no VS Code editor part; files open in the Editor
+ * block, so route there. The store is imported lazily to keep this module
+ * free of a static cycle.
+ */
+const openEditorFallback: OpenEditor = async (modelRef, options) => {
+  const uri = modelRef.object.textEditorModel.uri
+  // A text-editor open carries a selection (ITextEditorOptions); the base
+  // IEditorOptions does not declare it, so read it defensively.
+  const line = (options as { selection?: { startLineNumber?: number } } | undefined)?.selection
+    ?.startLineNumber
+  const { useShellStore } = await import('@/store')
+  useShellStore.getState().openFile(uri.fsPath, line)
+  modelRef.dispose()
+  return undefined
+}
+
+export const monacoReady: Promise<void> = extensionHostOrigin()
+  .then((extHostOrigin) =>
+    initializeVscodeServices({
+      // Third-party extension code runs in VS Code's web-worker host, inside an
+      // iframe on the loopback origin — never in chrome://webdeck, the page that
+      // holds the core token (task 12.8, SECURITY.md). If that origin cannot be
+      // provided the worker host stays OFF and only declarative extensions
+      // (themes, grammars, snippets, keymaps) load.
+      ...getExtensionsServiceOverride({ enableWorkerExtensionHost: extHostOrigin !== null }),
+      ...getFilesServiceOverride(),
+      ...getConfigurationServiceOverride(),
+      ...getKeybindingsServiceOverride(),
+      ...getThemeServiceOverride(),
+      ...getQuickAccessServiceOverride(),
+      ...getLanguagesServiceOverride(),
+      ...getTextmateServiceOverride(),
+      // VS Code's view layer, so extension view containers can be rendered
+      // inside Deck blocks (12.8, editor-views.ts). The webview alternate
+      // domain is deliberately NOT set: the override's domain rewrite only
+      // swaps the hostname, which cannot express chrome:// → http://loopback;
+      // webview panels get the same registerAssets-style redirect as the
+      // extension host when they land (step 6).
+      ...getViewsServiceOverride(openEditorFallback)
+    })
+  )
   .then(() =>
     Promise.all([
       themeReady(),
@@ -108,6 +161,11 @@ export const monacoReady: Promise<void> = initializeVscodeServices({
       })
     }
   })
+  // Installed editor extensions (12.8) — after settings, so a theme one of
+  // them contributes can be the theme the user's settings select.
+  .then(async () => {
+    await loadInstalledExtensions()
+  })
 
 /**
  * The user settings document (task 12.1).
@@ -135,7 +193,13 @@ const settings: Record<string, unknown> = {
   'editor.multiCursorModifier': 'alt',
   'editor.columnSelection': false,
   'files.autoSave': 'off',
-  'workbench.colorTheme': 'Default Light Modern'
+  'workbench.colorTheme': 'Default Light Modern',
+  // The theme used for each shell scheme — VS Code's own keys. The light/dark
+  // toggle switches between THESE rather than resetting to the defaults, so a
+  // theme installed from Open VSX (12.8) stays chosen across toggles and
+  // relaunches. Settings › Colors › Editor theme edits them.
+  'workbench.preferredDarkColorTheme': 'Default Dark Modern',
+  'workbench.preferredLightColorTheme': 'Default Light Modern'
 }
 
 /**
@@ -198,8 +262,14 @@ export function onSettingsChanged(listener: () => void): () => void {
  * unstyled. `workbench.colorTheme` is what the theme service reads.
  */
 export async function setEditorTheme(theme: 'light' | 'dark'): Promise<void> {
+  // The user's preferred theme for this scheme (see the defaults above) — never
+  // a hard-coded default, which silently discarded an installed theme.
+  const key =
+    theme === 'dark' ? 'workbench.preferredDarkColorTheme' : 'workbench.preferredLightColorTheme'
+  const fallback = theme === 'dark' ? 'Default Dark Modern' : 'Default Light Modern'
+  const preferred = settings[key]
   await updateSettings({
-    'workbench.colorTheme': theme === 'dark' ? 'Default Dark Modern' : 'Default Light Modern'
+    'workbench.colorTheme': typeof preferred === 'string' && preferred ? preferred : fallback
   })
 }
 

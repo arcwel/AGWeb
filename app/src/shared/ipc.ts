@@ -239,6 +239,63 @@ export interface PermissionRequestInfo {
  */
 export type PermissionMode = 'secure' | 'review' | 'agent' | 'autonomous' | 'custom'
 
+/** An Open VSX search hit (task 12.8). */
+export interface VsxExtension {
+  /** "publisher.name" — the id the install call takes. */
+  id: string
+  namespace: string
+  name: string
+  version: string
+  displayName: string
+  description: string
+  downloadCount: number
+  verified: boolean
+  icon?: string
+}
+
+/** An installed editor extension, as the core keeps it on disk. */
+/**
+ * The agent driving the editor (task 12.8): a request the main/core side pushes
+ * to the shell, which owns VS Code's services, and the shell's answer.
+ * `list` enumerates the commands that apply right now; `run` executes one.
+ */
+export interface EditorCommandRequest {
+  id: string
+  op: 'list' | 'run'
+  /** `run`: the VS Code command id, e.g. `editor.action.formatDocument`. */
+  command?: string
+  args?: unknown[]
+  /** `list`: substring filter on id/title. */
+  query?: string
+}
+
+export interface EditorCommandInfo {
+  id: string
+  title: string
+  /** The extension it comes from, when it is not built in. */
+  source?: string
+  shortcut?: string
+}
+
+export interface EditorCommandResponse {
+  ok: boolean
+  value?: unknown
+  error?: string
+}
+
+export interface VsxInstalled {
+  id: string
+  /** Install directory name under editor-extensions/, used by vsx:read. */
+  dir: string
+  version: string
+  displayName: string
+  description: string
+  /** The extension's package.json — VS Code's manifest, registered as-is. */
+  manifest: Record<string, unknown>
+  /** Every file in the extension, relative to its root. */
+  files: string[]
+}
+
 export type PolicyActionKind = 'file_write' | 'command' | 'browser_navigate'
 export type PolicyDecision = 'allow' | 'confirm' | 'deny'
 
@@ -651,6 +708,14 @@ export const IpcChannels = {
   extLoadPath: 'ext:load-path',
   extList: 'ext:list',
   extRemove: 'ext:remove',
+  // VS Code editor extensions from Open VSX (12.8) — distinct from ext:* above,
+  // which is the browser's MV3 extensions.
+  vsxSearch: 'vsx:search',
+  vsxInstall: 'vsx:install',
+  vsxUninstall: 'vsx:uninstall',
+  vsxList: 'vsx:list',
+  vsxRead: 'vsx:read',
+  vsxHostOrigin: 'vsx:host-origin',
   proxyStatus: 'proxy:status',
   proxySetEnabled: 'proxy:set-enabled',
   downloadsList: 'downloads:list',
@@ -668,6 +733,7 @@ export const IpcChannels = {
   policyClearSite: 'policy:clear-site',
   policySetSensitive: 'policy:set-sensitive',
   policyRespond: 'policy:respond',
+  editorCommandRespond: 'editor:command-respond',
   syncStatus: 'sync:status',
   syncChooseFile: 'sync:choose-file',
   syncSetEnabled: 'sync:set-enabled',
@@ -710,6 +776,7 @@ export const IpcEvents = {
   permissionRequest: 'event:permission-request',
   devServerUpdate: 'event:devserver-update',
   policyPrompt: 'event:policy-prompt',
+  editorCommandRequest: 'event:editor-command-request',
   policyChanged: 'event:policy-changed',
   policyDenied: 'event:policy-denied',
   openDoc: 'event:open-doc',
@@ -819,6 +886,23 @@ export interface AgwebApi {
     clear(provider: AiProvider): Promise<boolean>
     /** Choose where keys come from: WebDeck's store, or a password-manager command. */
     setSource(config: Partial<SecretSourceConfig>): Promise<SecretSourceConfig>
+  }
+  /** VS Code editor extensions from Open VSX (task 12.8). */
+  editor: {
+    /** Answer an agent's editor command request (the shell runs it, main/core waits). */
+    respondCommand(id: string, response: EditorCommandResponse): Promise<void>
+    onCommandRequest(listener: (request: EditorCommandRequest) => void): () => void
+  }
+  vsx: {
+    search(query: string): Promise<VsxExtension[]>
+    /** Policy-gated (a `command`-class action). Resolves to the installed record. */
+    install(id: string): Promise<VsxInstalled>
+    uninstall(id: string): Promise<boolean>
+    list(): Promise<VsxInstalled[]>
+    /** One extension file as base64, path-contained to that extension. */
+    read(dir: string, rel: string): Promise<{ base64: string } | null>
+    /** The loopback origin the extension host is served from, or null if unavailable. */
+    hostOrigin(): Promise<string | null>
   }
   /** Browser profiles, for keeping separate signed-in accounts. */
   profiles: {

@@ -49,6 +49,7 @@ import {
   activeProfile
 } from './profiles'
 import { registerSecretsRpc } from './secrets'
+import { registerVsxRpc } from './vsx'
 import { core } from '../core/rpc'
 import { setCoreEnv } from '../core/env'
 import { setCoreBroadcaster } from '../core/notify'
@@ -528,6 +529,7 @@ function registerIpcHandlers(): void {
   // (P1 decoupling); the electron transport binds it below. Migrating a domain
   // is: register it with the core, delete its ipcMain.handle calls here.
   registerSecretsRpc()
+  registerVsxRpc()
   registerAppSettingsRpc()
   registerGitRpc()
   registerTasksRpc()

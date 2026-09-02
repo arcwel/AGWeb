@@ -11,6 +11,13 @@ import { nodeCoreEnv } from './node-env'
 import { IpcChannels, IpcEvents } from '@shared/ipc'
 import type { AppInfo } from '@shared/ipc'
 import { registerSecretsRpc } from '../main/secrets'
+import { registerVsxRpc } from '../main/vsx'
+import {
+  abortPendingEditorCommands,
+  respondEditorCommand,
+  setEditorCommandSink
+} from '../main/editor-bridge'
+import type { EditorCommandResponse } from '../shared/ipc'
 import { registerAppSettingsRpc } from '../main/app-settings'
 import {
   abortPendingPrompts,
@@ -96,6 +103,7 @@ export async function startWebdeckCore(opts: CoreServerOptions = {}): Promise<Ws
   setCoreEnv(nodeCoreEnv({ userDataDir: opts.userDataDir, appDir: opts.appDir }))
 
   registerSecretsRpc()
+  registerVsxRpc()
   registerAppSettingsRpc()
   registerPolicyRpc()
   registerGitRpc()
@@ -133,7 +141,10 @@ export async function startWebdeckCore(opts: CoreServerOptions = {}): Promise<Ws
     // When the last client goes away there is nobody left to answer a pending
     // confirmation, so fail those closed instead of leaving an agent hanging.
     onClientsChanged: (open) => {
-      if (open === 0) abortPendingPrompts()
+      if (open === 0) {
+        abortPendingPrompts()
+        abortPendingEditorCommands()
+      }
     }
   })
 
@@ -174,6 +185,14 @@ export async function startWebdeckCore(opts: CoreServerOptions = {}): Promise<Ws
   setPolicyPromptSink((prompt) => push(IpcEvents.policyPrompt, prompt) > 0)
   setPolicyBroadcaster((status) => push(IpcEvents.policyChanged, status))
   setPolicyDenyNotifier((info) => push(IpcEvents.policyDenied, info))
+
+  // The agent's editor tools: the request goes to the shell (which owns VS
+  // Code's command service) as an event, and the answer comes back on its own
+  // RPC — same shape as a policy prompt, same fail-closed rules.
+  setEditorCommandSink((request) => push(IpcEvents.editorCommandRequest, request) > 0)
+  core.register(IpcChannels.editorCommandRespond, (id, response) => {
+    respondEditorCommand(String(id), (response ?? {}) as EditorCommandResponse)
+  })
 
   // The agent's browser. Without this the browser tools throw "no browser
   // attached" — which is what the fork did until now, so the agent could plan

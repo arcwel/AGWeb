@@ -8,6 +8,7 @@ import { BrowserSettings } from '@/components/BrowserSettings'
 import { AiSettings } from '@/components/AiSettings'
 import { SyncSettings } from '@/components/SyncSettings'
 import { AboutSettings } from '@/components/AboutSettings'
+import { KeybindingConflicts } from '@/components/KeybindingConflicts'
 
 /**
  * Settings and keybindings (task 12.6).
@@ -219,6 +220,7 @@ export function SettingsBlock(): React.JSX.Element {
         {scope === 'sync' && <SyncSettings />}
         {scope === 'colors' && <ColorSettings />}
         {scope === 'about' && <AboutSettings />}
+        {scope === 'keybindings' && <KeybindingConflicts />}
         {/* The editor container is always in the DOM — only hidden behind a
             panel — so Monaco can be created once at mount. Rendering it
             conditionally meant that opening on a panel scope (the default) left

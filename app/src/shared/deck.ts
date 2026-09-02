@@ -17,6 +17,11 @@ export type BlockType =
   | 'rest'
   | 'db'
   | 'jupyter'
+  | 'extensions'
+  // A view container an installed VS Code extension contributes, rendered by
+  // VS Code's own pane machinery inside a block (12.8). Which one is in the
+  // block's payload; one block per container, its views as stacked panes.
+  | 'extview'
 
 /** Zones a group can dock into inside a window. */
 export type DockZone = 'left' | 'right' | 'bottom'
@@ -30,6 +35,8 @@ export interface BlockInstance {
   id: string
   type: BlockType
   title: string
+  /** Type-specific data. `extview`: which extension view container to render. */
+  payload?: { containerId: string; extensionId?: string }
 }
 
 /** A tabbed stack of blocks. One block is the active tab. */

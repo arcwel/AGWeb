@@ -10,6 +10,7 @@ import {
   useOmniboxSuggestions
 } from '@/components/Omnibox'
 import { DeckIcon, PopOutIcon, ReaderIcon } from '@/components/icons'
+import { useExtensionViewContainers } from '@/editor-views'
 import { AiAnswer } from '@/components/AiAnswer'
 import { BookmarkControls, FindBar, ZoomControls } from '@/components/BrowserControls'
 import {
@@ -74,6 +75,8 @@ export function Toolbar(): React.JSX.Element {
   const [urlInput, setUrlInput] = useState('')
   const [editing, setEditing] = useState(false)
   const [blocksOpen, setBlocksOpen] = useState(false)
+  // View containers installed extensions contribute — each is an Add-block entry (12.8).
+  const extensionViews = useExtensionViewContainers()
   const splitTabId = useShellStore((s) => s.splitTabId)
   const toggleSplit = useShellStore((s) => s.toggleSplit)
   const proxyEnabled = useShellStore((s) => s.embedProxyEnabled)
@@ -423,18 +426,44 @@ export function Toolbar(): React.JSX.Element {
             {blocksOpen && (
               <div className="glass absolute right-0 top-9 z-50 w-56 overflow-hidden rounded-[14px] py-1">
                 <div className="wd-cap px-3 py-1.5">Add block</div>
-                {(Object.keys(BLOCK_LABELS) as BlockType[]).map((type) => (
-                  <button
-                    key={type}
-                    onClick={() => {
-                      addBlock(type)
-                      setBlocksOpen(false)
-                    }}
-                    className="block w-full px-3.5 py-1.5 text-left text-xs font-medium text-[var(--wd-muted)] hover:bg-[var(--wd-hover)] hover:text-[var(--wd-text)]"
-                  >
-                    {BLOCK_LABELS[type]}
-                  </button>
-                ))}
+                {(Object.keys(BLOCK_LABELS) as BlockType[])
+                  // extview blocks are added per container, below — never bare.
+                  .filter((type) => type !== 'extview')
+                  .map((type) => (
+                    <button
+                      key={type}
+                      onClick={() => {
+                        addBlock(type)
+                        setBlocksOpen(false)
+                      }}
+                      className="block w-full px-3.5 py-1.5 text-left text-xs font-medium text-[var(--wd-muted)] hover:bg-[var(--wd-hover)] hover:text-[var(--wd-text)]"
+                    >
+                      {BLOCK_LABELS[type]}
+                    </button>
+                  ))}
+                {extensionViews.length > 0 && (
+                  <>
+                    <div className="wd-cap mt-1 border-t border-[var(--wd-hairline)] px-3 py-1.5">
+                      Extension views
+                    </div>
+                    {extensionViews.map((view) => (
+                      <button
+                        key={view.id}
+                        onClick={() => {
+                          addBlock(
+                            'extview',
+                            { containerId: view.id, extensionId: view.extensionId },
+                            view.title
+                          )
+                          setBlocksOpen(false)
+                        }}
+                        className="block w-full px-3.5 py-1.5 text-left text-xs font-medium text-[var(--wd-muted)] hover:bg-[var(--wd-hover)] hover:text-[var(--wd-text)]"
+                      >
+                        {view.title}
+                      </button>
+                    ))}
+                  </>
+                )}
                 <div className="wd-cap mt-1 border-t border-[var(--wd-hairline)] px-3 py-1.5">
                   Layout
                 </div>

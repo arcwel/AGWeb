@@ -13,6 +13,7 @@ import {
   type Rgba
 } from '@/appearance'
 import { useShellStore } from '@/store'
+import { EditorThemeSettings } from '@/components/EditorThemeSettings'
 
 /**
  * Color customisation.
@@ -59,6 +60,8 @@ export function ColorSettings(): React.JSX.Element {
           Reset all
         </button>
       </div>
+
+      <EditorThemeSettings theme={theme} />
 
       {/* Preview paints from the live CSS custom properties, so it reflects
           edits automatically — no key needed. */}

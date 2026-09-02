@@ -262,6 +262,16 @@ export function BlockTypeIcon({
           <path d="M11 9l3 3-3 3" />
         </svg>
       )
+    case 'extensions':
+    case 'extview':
+      return (
+        <svg {...common}>
+          <rect x="3" y="3" width="8" height="8" rx="1.5" />
+          <rect x="13" y="3" width="8" height="8" rx="1.5" />
+          <rect x="3" y="13" width="8" height="8" rx="1.5" />
+          <path d="M17 13v8M13 17h8" />
+        </svg>
+      )
   }
 }
 

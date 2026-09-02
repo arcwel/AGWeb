@@ -149,7 +149,15 @@ function toggleDeck(): void {
 
 /** A section groups related commands in the palette. */
 export type CommandSection =
-  'Tabs' | 'Navigation' | 'Dev Deck' | 'Snapshots' | 'View' | 'Application'
+  | 'Tabs'
+  | 'Navigation'
+  | 'Dev Deck'
+  | 'Snapshots'
+  | 'View'
+  | 'Application'
+  // VS Code's built-in editor commands + everything installed extensions
+  // contribute (12.8) — see editor-commands.ts.
+  | 'Editor & Extensions'
 
 /** One entry in the command palette. `run` performs the action; the palette
  *  closes itself around it. */
@@ -161,6 +169,8 @@ export interface AppCommand {
   keywords?: string
   /** A pre-formatted, platform-correct hint like "⌘K" (display only). */
   shortcut?: string
+  /** Where an editor/extension command comes from — the extension's name. */
+  badge?: string
   run: () => void | Promise<void>
 }
 

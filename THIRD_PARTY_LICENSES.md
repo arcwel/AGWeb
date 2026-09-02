@@ -28,6 +28,7 @@ Embedded in webdeck-core. Includes components under their own licenses (V8, libu
 | @xterm/addon-fit | 0.11.0 | MIT |
 | @xterm/addon-search | 0.16.0 | MIT |
 | @xterm/xterm | 6.0.0 | MIT |
+| extract-zip | 2.0.1 | BSD-2-Clause |
 | [fast-xml-parser](https://github.com/NaturalIntelligence/fast-xml-parser) | 5.11.1 | MIT |
 | js-yaml | 5.4.1 | MIT |
 | [katex](https://katex.org) | 0.18.4 | MIT |

@@ -9,6 +9,7 @@ import {
   type DropTarget
 } from '@/store'
 import { BlockTypeIcon, CloseIcon, GripIcon, MinusIcon, PopOutIcon } from '@/components/icons'
+import { capacityFor } from '@/deck-capacity'
 import { BlockContent } from '@/components/BlockContent'
 
 /**
@@ -199,6 +200,30 @@ function ZoneView({
   // still decides where the block actually lands.
   const [nearby, setNearby] = useState(false)
   const zoneRef = useRef<HTMLDivElement>(null)
+
+  // Measure how many groups fit at the minimum group size and tell the store,
+  // so a block beyond that becomes a tab instead of a clipped third stack, and
+  // a resize folds stacks together rather than hiding one behind another.
+  useEffect(() => {
+    const el = zoneRef.current
+    if (!el || zone === 'floating') return
+    const measure = (): void => {
+      const style = getComputedStyle(el)
+      const px = (v: string): number => parseFloat(v) || 0
+      const gap = px(style.gap)
+      const along = zone === 'bottom' ? el.clientWidth : el.clientHeight
+      const min = px(
+        style.getPropertyValue(zone === 'bottom' ? '--deck-group-min-w' : '--deck-group-min-h')
+      )
+      // A zone mid-animation or hidden reports nothing useful; keep the last value.
+      if (along < min) return
+      useShellStore.getState().setZoneCapacity(zone, capacityFor(along, min, gap))
+    }
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [zone])
   const captureHandlers = {
     onDragOverCapture: (e: DragEvent): void => {
       if (e.dataTransfer.types.includes(DRAG_MIME)) setNearby(true)

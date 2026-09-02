@@ -9,7 +9,7 @@ Extended for the Chromium fork under task 13.8e.
 > servers require a loopback `Host`. Fixed findings are marked in that doc.
 > (`browser_click` and `browser_type` are still ungated — see below.)
 
-> **Two shells, one core.** WebDeck ships as an Electron app *and* runs as
+> **Two shells, one core.** WebDeck ships as an Electron app _and_ runs as
 > `chrome://webdeck` inside a forked Chromium. The application logic is the
 > same either way — it lives in `webdeck-core` — but the boundaries around it
 > are not. Sections below are marked **(Electron shell)** where they describe
@@ -44,8 +44,8 @@ switch can turn any of this off with no visible symptom. On the current macOS
 arm64 build it reports **14 passes, 0 failures, 3 warnings**: every renderer
 holds a macOS seatbelt handle, `chrome://process-internals` reports Site Per
 Process, a cross-site iframe really does land in its own renderer, and on the
-page itself `eval` and an injected inline `<script>` are both *refused at
-runtime* — measured inside a same-origin worker, because a DevTools evaluation
+page itself `eval` and an injected inline `<script>` are both _refused at
+runtime_ — measured inside a same-origin worker, because a DevTools evaluation
 is exempt from the page's CSP and would have passed either way. It also raises
 three warnings: the unsandboxed core (next section), `is_component_build` and
 `dcheck_always_on` (both in **Known gaps**).
@@ -62,7 +62,7 @@ sandboxed child and still be the core. `verify-hardening` names it explicitly
 rather than letting a page of ticks imply the whole tree is contained —
 "outside the sandbox, with full user privileges: … `webdeck-core.cjs`".
 
-The page is *allowed* to reach it. `connect-src` on `chrome://webdeck` includes
+The page is _allowed_ to reach it. `connect-src` on `chrome://webdeck` includes
 `ws://127.0.0.1:*` and `ws://localhost:*` precisely so that socket can be
 opened. So the honest statement of the residual is:
 
@@ -70,7 +70,7 @@ opened. So the honest statement of the residual is:
 the user's filesystem, a terminal, the provider key, and the policy that gates
 the agent. There is no second boundary behind that page.**
 
-Everything that keeps the page from being compromised is a *preventive*
+Everything that keeps the page from being compromised is a _preventive_
 control, not a containment one: the bundle is entirely first-party, no remote
 origin appears in `connect-src`, `eval` and injected inline script are refused,
 `frame-ancestors 'none'`, and Trusted Types is required on script sinks. Those
@@ -115,17 +115,17 @@ exits 2 on anything else — the docs claimed "loopback only" before anything
 made it true.
 
 **What this defends against:** any other local process dialling the port
-(loopback is not a boundary — *any* process on the machine can reach it, not
+(loopback is not a boundary — _any_ process on the machine can reach it, not
 only this user's), and any web page the user happens to open attempting a
 WebSocket to
 `ws://127.0.0.1:<port>`. WebSocket is not subject to the same-origin policy, so
-the port *is* reachable from a random page; the `Origin` check is what makes
+the port _is_ reachable from a random page; the `Origin` check is what makes
 that reach useless.
 
 **What this does not defend against:** anything that can already read the
 user's own files. The token sits in a `0600` file this user can read, as does
 the AES key file behind the standalone keystore. A process running as the user
-is *inside* the boundary, full stop. The token raises the bar from "any local
+is _inside_ the boundary, full stop. The token raises the bar from "any local
 process" to "any local process that can read this user's files" — that is the
 entire claim, and it is worth having, but it is not a claim about malware
 running as the user.
@@ -140,7 +140,7 @@ on whether the page is trusted:
   act as the user.
 - **`session`** — the user's own browser, their cookies and logins, in tabs
   they watch. This is the mode that matters for real work; it also means the
-  agent acts *as* the user, indistinguishable from the user to the site and in
+  agent acts _as_ the user, indistinguishable from the user to the site and in
   the site's logs.
 
 **Today the fork still runs `isolated` only, and the reason is worth being
@@ -154,8 +154,8 @@ publishes. Read that comment as intent, not as behaviour.
 The path the fork actually takes for session mode is different, and better: the
 in-process Mojo interface in `webdeck.mojom` / `webdeck_agent_tabs.cc`. That
 choice is a security decision worth recording. The other way to get CDP against
-the user's real session is `--remote-debugging-port`, which is *unauthenticated
-total control* of that browser for any local process — upstream Chromium
+the user's real session is `--remote-debugging-port`, which is _unauthenticated
+total control_ of that browser for any local process — upstream Chromium
 blocked it on the default profile for exactly that reason. `AgentTabs` listens
 on no socket; it is reachable only from the WebUI page, over a handle the
 browser hands it. The chain is
@@ -182,7 +182,7 @@ the user, and this section needs rewriting rather than extending.
 ### What stops an injected page, and what does not
 
 The policy gate (`src/main/policy.ts`) is the backstop, and its precedence
-order *is* the security property: an explicit per-site **deny** first (nothing,
+order _is_ the security property: an explicit per-site **deny** first (nothing,
 including full autonomy, overrides it), then a per-site **allow** (which also
 lifts the sensitive-site check — that check exists to catch sites the user has
 not considered, not to argue with ones they have), then the sensitive-site
@@ -201,7 +201,7 @@ creation, moves, deletes, screenshot paths), `command`, `browser_navigate`
 gated as a `command`, because injected script runs with the page origin's full
 powers and is therefore an egress channel.
 
-**Not gated: `browser_click` and `browser_type`.** A click gets a *post hoc*
+**Not gated: `browser_click` and `browser_type`.** A click gets a _post hoc_
 navigation re-check and nothing else; typing gets nothing at all. So a click
 that submits a form or fires an XHR without navigating — "Confirm", "Send",
 "Delete" — passes no gate in any mode, and neither does filling the form that
@@ -279,7 +279,7 @@ on every device they own".
 
 **Under the fork, two of those three sentences do not carry over.** There is no
 preload and no Electron IPC, so `window.agweb` is rebuilt on the WebSocket
-client instead — and the page has a *second* surface the Electron renderer did
+client instead — and the page has a _second_ surface the Electron renderer did
 not: the `AgentTabs` Mojo handle. There is also no `persist:agweb-browser`
 partition; web content is ordinary Chromium tabs in the user's profile, with
 site isolation doing the work the partition used to describe. Workspace scoping
@@ -327,40 +327,55 @@ iframes. Containment:
   browser partition (standard extension power). Loading an extension is
   treated as trusting its author, same as Chrome's unpacked-extension mode.
 
-### VS Code extensions (task 12.8) — not shipped, and why
+### VS Code extensions (task 12.8) — shipped, and the isolation model
 
-VS Code extensions from Open VSX were scoped in task 12.8. The client pieces
-exist and are MIT (`@codingame/monaco-vscode-extensions-service-override`
-supports a web-worker extension host), but **the isolation the design depends
-on does not hold in this app as built**, so nothing was shipped.
+VS Code extensions from Open VSX ship as of 12.8. The earlier deferral stood
+on one requirement: third-party extension code must run on a **second,
+unprivileged origin** — never in the page that holds the core token. Under
+`file://` there was no second origin at all; under the fork, `chrome://webdeck`
+is a real origin but a _more_ privileged one. The fork now provides the second
+origin, so the prerequisite is met rather than loosened:
 
-VS Code runs web extensions in a worker inside an iframe on a *different
-origin* from the workbench. That origin separation is the sandbox. AGWeb's
-renderer is served from `file://`, where:
+- **The extension host is cross-origin from the WebUI.** VS Code's web-worker
+  extension host runs in an iframe on the core's loopback HTTP origin
+  (`http://127.0.0.1:<port>`). `chrome://webdeck`'s `frame-src` already allows
+  it (it is the slide/preview origin); the page re-points monaco-vscode-api's
+  two host assets — the iframe page and the worker bundle — at that origin via
+  `registerAssets` (`editor-extensions.ts`). Chromium site-isolates the origin
+  into its own renderer (verified by `verify:hardening`'s cross-site OOPIF
+  test), it carries no Mojo bindings and no core token, and the iframe's own
+  CSP (`script-src 'self' … data: blob:`) is what allows the worker. Extension
+  code therefore cannot reach `window.agweb`, the Shell, or the core socket
+  except through VS Code's own extension API surface.
+- **Declarative extensions never execute.** Themes, grammars, snippets,
+  keymaps and icon themes are `contributes` data read by the workbench's own
+  services; they need no host and get none. Files reach the workbench as
+  `data:` URIs — `connect-src` forbids fetching the loopback origin from the
+  WebUI, and that stays true; bytes arrive over the core's WebSocket instead.
+- **Installation is a policy action.** `vsx:install` runs through
+  `checkAction('command', …)`: Secure mode confirms, a deny rule blocks, and it
+  is audited like any command. An extension is third-party code and is treated
+  as such.
+- **Supply is pinned to the registry.** Downloads are accepted only from
+  `https://open-vsx.org/`, are size-capped, and are unpacked with extract-zip,
+  which rejects zip-slip entries. The core stores bytes; it never executes
+  anything from an extension.
+- **`vsx:read` is path-contained.** It resolves only inside that extension's
+  own directory (`containedPath`, covered by `vsx.test.ts`) and caps file size,
+  so it cannot become a file-read primitive for the renderer.
+- **The loopback server's `/assets/*` is the one token-less route.** The
+  capability token lives in the URL path and an origin cannot carry one, so
+  the host assets cannot sit behind it. That is acceptable only because they
+  are the app's own public frontend files — never workspace data — every other
+  route stays token-gated, Host is still checked (DNS rebinding), and the path
+  is contained to the assets directory. Do not add anything else to that route.
 
-- `mainWindow.origin` is `file://`, so there is no second origin to isolate
-  onto — an extension would run with the shell renderer's own privileges,
-  which is precisely what the sandbox exists to prevent; and
-- our `frame-src` refuses the host iframe outright. Enabling the worker host
-  produces `Refused to frame 'file:///…/webWorkerExtensionHostIframe-*.html'`.
-
-Loosening `frame-src` would silence the error while leaving the real problem —
-extension code running un-isolated in the renderer that holds the `window.agweb`
-bridge. That is a worse position than not supporting extensions.
-
-**Prerequisite for revisiting:** serve the renderer from a local HTTP origin
-(custom protocol or a bound localhost server) so a distinct extension-host
-origin exists, then gate installation through the Phase 9 policy engine as a
-`command`-class action. That is an architectural change to how the app is
-served and is tracked against task 12.8 rather than smuggled in.
-
-**The fork changes the premise but not the answer.** `chrome://webdeck` *is* a
-real origin, so the "there is no origin to isolate onto" half of the argument
-no longer applies. The other half gets worse: a WebUI page is more privileged
-than a `file://` page, not less — it is the page holding the core token — so
-running third-party extension code in it would be a bigger mistake there than
-here. The prerequisite is now specifically a *second, unprivileged* origin for
-the extension host, not merely an origin.
+Residual risk: a code extension has whatever the VS Code extension API grants
+a web extension (editor contents, workspace files through the file service).
+That is the same trust boundary VS Code for the Web has; WebDeck adds the
+policy gate at install time and the origin separation at run time, and does
+not weaken either. Browser (MV3) extensions are a separate mechanism (Phase
+2.4) and are unaffected.
 
 ## Workspace roots (task 3B.4)
 
@@ -413,7 +428,7 @@ engine (`src/main/policy.ts`) is the central gate:
   everything); external hosts need the mode's allowlist or a user confirmation.
   Under Electron, agent-driven tabs are real shell tabs the user watches live —
   **that is not true on the fork**, where the agent runs an isolated headless
-  browser the user cannot see (see *The agent acting as the user*). Approval
+  browser the user cannot see (see _The agent acting as the user_). Approval
   binds to the URL the tab _actually loads_: a `will-redirect`/`will-navigate`
   guard re-runs the policy on every redirect and in-page navigation and cancels
   the ones it would not have approved, so a 302 cannot walk the tab
@@ -425,7 +440,7 @@ engine (`src/main/policy.ts`) is the central gate:
   navigation guard re-checks where the tab lands afterwards. But the click
   itself passes no gate, and `browser_type` passes none either: a click that
   submits or fires an XHR without navigating is ungated in every mode. See
-  *What stops an injected page, and what does not*.
+  _What stops an injected page, and what does not_.
 - **Agent file tools are pinned to the session's workspace.** Every read/write/
   list/search resolves against the workspace the session started in, not the
   live one, so opening another project mid-run cannot retarget an agent's writes.
@@ -434,7 +449,7 @@ engine (`src/main/policy.ts`) is the central gate:
   backstop: even a hijacked session cannot write outside the workspace, and
   cannot run commands or leave the allowlist unconfirmed in the default mode.
   That is the whole of the defence — there is no injection screening. See
-  *Prompt injection, specifically*.
+  _Prompt injection, specifically_.
 - **Plan approval** remains a hard gate: no filesystem or terminal execution
   before a human approves the plan.
 
@@ -471,7 +486,7 @@ the per-action evidence trail.
 Two honest limits. It is plain JSONL with **no tamper-evidence**, appended by
 the same process that would be under an attacker's control — so it is evidence
 for a user reviewing what happened, not a control that stops anything. And
-under `autonomous` it is the *only* record of a file write or a shell command,
+under `autonomous` it is the _only_ record of a file write or a shell command,
 because nothing else in that mode produces one.
 
 ## WebDeck Sync (settings sync)
@@ -496,8 +511,8 @@ settings, permission policy, AI model, and theme. Trust and hardening:
   mean "act as the user, without ever asking, on every device they own".
   Escalating to full autonomy has to be a local choice made in front of the
   person who owns the session.
-- **Residual risk (documented):** the file is still trusted for its *content* —
-  anyone with write access to the chosen folder can set any other *valid*
+- **Residual risk (documented):** the file is still trusted for its _content_ —
+  anyone with write access to the chosen folder can set any other _valid_
   policy, including a more permissive one such as `agent` with a wide host
   allowlist, which applies on the next pull (with the toast above, but no
   confirmation). Keep the sync file in a private, non-shared location. A
@@ -522,7 +537,7 @@ leaving the user to infer it:
 1. **Store in WebDeck** (default) — encrypted at rest: `safeStorage` (OS
    credential store) under Electron, the AES-GCM keystore below in the
    standalone core.
-2. **Use my password manager** *(recommended)* — WebDeck stores **nothing** and
+2. **Use my password manager** _(recommended)_ — WebDeck stores **nothing** and
    runs a per-provider command you configure (`op read op://…`, `pass show …`,
    `security find-generic-password -w -s …`, `vault read …`), using what it
    prints. This is the stronger option for the same reason git has
@@ -567,7 +582,7 @@ This is no longer the hypothetical branch: on the fork it is **the** path a
 provider key takes. Its key file and the core's `0600` handoff token are both
 protected by the same thing — POSIX file permissions on this user's own files —
 so an attacker who can read one can read the other. That is a single limit, not
-two layers, and it is the same one stated under *The core socket* above.
+two layers, and it is the same one stated under _The core socket_ above.
 
 ## Known gaps
 
@@ -583,7 +598,7 @@ than none, so anything below is something we do **not** have today.
   statement: the entire core is unsandboxed.
 - **The audit log has no tamper-evidence.**
 - **No injection screening on agent actions**, no alignment check, no
-  provenance marking on page-derived text. Task 13.8c covers *adversarial tests*
+  provenance marking on page-derived text. Task 13.8c covers _adversarial tests_
   against the policy gate, which is a different thing — screening itself is not
   on the plan and nothing is implemented.
 - **`browser_click` and `browser_type` pass no policy gate.** Tracked nowhere.

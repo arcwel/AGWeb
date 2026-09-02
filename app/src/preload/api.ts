@@ -6,6 +6,7 @@ import type {
   BrowserTabState,
   DevServerStatus,
   DownloadInfo,
+  EditorCommandRequest,
   JupyterOutput,
   PermissionRequestInfo,
   PolicyPromptInfo,
@@ -122,6 +123,23 @@ export function createAgwebApi(ipcRenderer: IpcLike, host: HostCapabilities): Ag
       set: (provider, key) => ipcRenderer.invoke(IpcChannels.secretsSet, provider, key),
       clear: (provider) => ipcRenderer.invoke(IpcChannels.secretsClear, provider),
       setSource: (config) => ipcRenderer.invoke(IpcChannels.secretsSetSource, config)
+    },
+    editor: {
+      respondCommand: (id, response) =>
+        ipcRenderer.invoke(IpcChannels.editorCommandRespond, id, response),
+      onCommandRequest: (listener) => {
+        const handler = (_event: unknown, request: EditorCommandRequest): void => listener(request)
+        ipcRenderer.on(IpcEvents.editorCommandRequest, handler)
+        return () => ipcRenderer.removeListener(IpcEvents.editorCommandRequest, handler)
+      }
+    },
+    vsx: {
+      search: (query) => ipcRenderer.invoke(IpcChannels.vsxSearch, query),
+      install: (id) => ipcRenderer.invoke(IpcChannels.vsxInstall, id),
+      uninstall: (id) => ipcRenderer.invoke(IpcChannels.vsxUninstall, id),
+      list: () => ipcRenderer.invoke(IpcChannels.vsxList),
+      read: (dir, rel) => ipcRenderer.invoke(IpcChannels.vsxRead, dir, rel),
+      hostOrigin: () => ipcRenderer.invoke(IpcChannels.vsxHostOrigin)
     },
     profiles: {
       list: () => ipcRenderer.invoke(IpcChannels.profilesList),

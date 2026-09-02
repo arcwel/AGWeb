@@ -11,8 +11,10 @@ import type {
   DeckSizes,
   DeckSyncState,
   DeckZone,
+  DockZone,
   RailEntry
 } from '@shared/deck'
+import { UNMEASURED_CAPACITY, foldZone, insertGroup, placeBlock, placeGroup } from '@/deck-capacity'
 
 export type { BlockGroup, BlockInstance, BlockType, DeckMode, DeckPreset, DeckZone, RailEntry }
 
@@ -85,7 +87,10 @@ export const BLOCK_LABELS: Record<BlockType, string> = {
   gitgraph: 'Git Graph',
   rest: 'REST Client',
   db: 'Database',
-  jupyter: 'Notebook'
+  jupyter: 'Notebook',
+  extensions: 'Extensions',
+  // Fallback only — an extview block is titled after its view container.
+  extview: 'Extension view'
 }
 
 /** Which shell window this renderer is: the browser, the detached deck, or a float. */
@@ -101,14 +106,26 @@ let blockCounts: Partial<Record<BlockType, number>> = {}
 let nextBlockId = 1
 let nextGroupId = 1
 
-function makeBlock(type: BlockType): BlockInstance {
+function makeBlock(
+  type: BlockType,
+  payload?: BlockInstance['payload'],
+  title?: string
+): BlockInstance {
   const n = (blockCounts[type] = (blockCounts[type] ?? 0) + 1)
   const numbered = type === 'terminal' || n > 1
   return {
     id: `block-${nextBlockId++}`,
     type,
-    title: numbered ? `${BLOCK_LABELS[type]} ${n}` : BLOCK_LABELS[type]
+    // An extension view is titled after its container, never numbered — the
+    // same container in two blocks is not a thing (a view lives in one place).
+    title: title ?? (numbered ? `${BLOCK_LABELS[type]} ${n}` : BLOCK_LABELS[type]),
+    ...(payload ? { payload } : {})
   }
+}
+
+/** Capacity for a zone; floating groups are never folded. */
+function capacityOf(state: { zoneCapacity: Record<DockZone, number> }, zone: DeckZone): number {
+  return zone === 'floating' ? UNMEASURED_CAPACITY : state.zoneCapacity[zone]
 }
 
 function makeGroup(zone: DeckZone, members: BlockInstance[]): BlockGroup {
@@ -647,6 +664,13 @@ interface ShellState {
   setDeckSizes(sizes: Partial<DeckSizes>): void
   /** Pin bottom-dock block widths (merged, so one drag can set both sides). */
   setDockWidths(widths: Record<string, number>): void
+  /**
+   * How many groups each dock zone can show at the minimum group size —
+   * measured by the zone views. Blocks never overlap: past capacity a new
+   * block becomes a tab, and shrinking capacity folds groups together.
+   */
+  zoneCapacity: Record<DockZone, number>
+  setZoneCapacity(zone: DockZone, capacity: number): void
   sendToRail(blockId: string): void
   restoreFromRail(blockId: string): void
   applyPreset(preset: DeckPreset): void
@@ -740,7 +764,8 @@ interface ShellState {
   pushToast(message: string, tone?: ToastTone): void
   dismissToast(id: string): void
   /** Add a fresh block of `type` to the deck as its own group. */
-  addBlock(type: BlockType): void
+  /** Add a block. `extview` blocks carry the container in `payload` and use `title`. */
+  addBlock(type: BlockType, payload?: BlockInstance['payload'], title?: string): void
   /** An agent started a command in its own pty — surface it as a Terminal
    *  block whose id IS the pty session id, so the user watches it live. */
   adoptTerminal(sessionId: string, title: string): void
@@ -1180,6 +1205,20 @@ export const useShellStore = create<ShellState>((set) => ({
   setDeckSizes: (sizes) =>
     set((state) => ({ deckSizes: clampDeckSizes({ ...state.deckSizes, ...sizes }) })),
 
+  zoneCapacity: {
+    left: UNMEASURED_CAPACITY,
+    right: UNMEASURED_CAPACITY,
+    bottom: UNMEASURED_CAPACITY
+  },
+  setZoneCapacity: (zone, capacity) =>
+    set((state) => {
+      if (state.zoneCapacity[zone] === capacity) return {}
+      return {
+        zoneCapacity: { ...state.zoneCapacity, [zone]: capacity },
+        groups: foldZone(state.groups, zone, capacity)
+      }
+    }),
+
   setDockWidths: (widths) =>
     set((state) => ({
       deckSizes: clampDeckSizes({
@@ -1252,14 +1291,22 @@ export const useShellStore = create<ShellState>((set) => ({
         const index = groups.findIndex((g) => g.id === target.groupId)
         const zone = groups[index]?.zone ?? source.zone
         const fresh = { ...makeGroup(zone, []), blockIds: [blockId], activeBlockId: blockId }
-        if (index < 0) groups = [...groups, fresh]
-        else groups = [...groups.slice(0, index), fresh, ...groups.slice(index)]
-      } else {
-        if (source.blockIds.length === 1 && source.zone === target.zone) return {}
+        groups = insertGroup(
+          groups,
+          fresh,
+          index < 0 ? groups.length : index,
+          capacityOf(state, zone)
+        )
+      } else if (target.zone === 'floating') {
         groups = [
           ...groups,
-          { ...makeGroup(target.zone, []), blockIds: [blockId], activeBlockId: blockId }
+          { ...makeGroup('floating', []), blockIds: [blockId], activeBlockId: blockId }
         ]
+      } else {
+        if (source.blockIds.length === 1 && source.zone === target.zone) return {}
+        groups = placeBlock(groups, target.zone, blockId, state.zoneCapacity[target.zone], () =>
+          makeGroup(target.zone, [])
+        )
       }
       return { groups }
     }),
@@ -1289,14 +1336,19 @@ export const useShellStore = create<ShellState>((set) => ({
         const index = rest.findIndex((g) => g.id === target.groupId)
         if (index < 0) return {}
         const moved = { ...source, zone: rest[index].zone }
-        return { groups: [...rest.slice(0, index), moved, ...rest.slice(index)] }
+        return { groups: insertGroup(rest, moved, index, capacityOf(state, moved.zone)) }
       }
       if (source.zone === target.zone && target.zone !== 'floating') {
         const rest = state.groups.filter((g) => g.id !== groupId)
         return { groups: [...rest, source] }
       }
+      if (target.zone === 'floating') {
+        return {
+          groups: [...state.groups.filter((g) => g.id !== groupId), { ...source, zone: 'floating' }]
+        }
+      }
       return {
-        groups: [...state.groups.filter((g) => g.id !== groupId), { ...source, zone: target.zone }]
+        groups: placeGroup(state.groups, source, target.zone, state.zoneCapacity[target.zone])
       }
     }),
 
@@ -1324,9 +1376,8 @@ export const useShellStore = create<ShellState>((set) => ({
         blockIds: [blockId],
         activeBlockId: blockId
       }
-      const groups = [...state.groups]
-      const at = Math.max(0, Math.min(entry.index ?? groups.length, groups.length))
-      groups.splice(at, 0, restored)
+      const at = entry.index ?? state.groups.length
+      const groups = insertGroup(state.groups, restored, at, capacityOf(state, restored.zone))
       return { rail: state.rail.filter((r) => r.blockId !== blockId), groups }
     }),
 
@@ -1365,7 +1416,9 @@ export const useShellStore = create<ShellState>((set) => ({
               ? { ...g, blockIds: [...g.blockIds, block.id], activeBlockId: block.id }
               : g
           )
-        : [...state.groups, makeGroup('bottom', [block])]
+        : placeBlock(state.groups, 'bottom', block.id, state.zoneCapacity.bottom, () =>
+            makeGroup('bottom', [])
+          )
       return {
         blocks: { ...state.blocks, [block.id]: block },
         groups,
@@ -1373,16 +1426,32 @@ export const useShellStore = create<ShellState>((set) => ({
       }
     }),
 
-  addBlock: (type) =>
+  addBlock: (type, payload, title) =>
     set((state) => {
-      const block = makeBlock(type)
-      const zone: DeckZone = type === 'terminal' || type === 'logs' ? 'bottom' : 'right'
+      // One block per extension view container: re-adding one just focuses it.
+      if (type === 'extview' && payload) {
+        const existing = Object.values(state.blocks).find(
+          (b) => b.type === 'extview' && b.payload?.containerId === payload.containerId
+        )
+        if (existing) {
+          const group = state.groups.find((g) => g.blockIds.includes(existing.id))
+          return {
+            groups: group
+              ? state.groups.map((g) =>
+                  g.id === group.id ? { ...g, activeBlockId: existing.id } : g
+                )
+              : state.groups,
+            deckRevealed: state.deckMode === 'attached' ? true : state.deckRevealed
+          }
+        }
+      }
+      const block = makeBlock(type, payload, title)
+      const zone: DockZone = type === 'terminal' || type === 'logs' ? 'bottom' : 'right'
       return {
         blocks: { ...state.blocks, [block.id]: block },
-        groups: [
-          ...state.groups,
-          { ...makeGroup(zone, []), blockIds: [block.id], activeBlockId: block.id }
-        ],
+        groups: placeBlock(state.groups, zone, block.id, state.zoneCapacity[zone], () =>
+          makeGroup(zone, [])
+        ),
         deckRevealed: state.deckMode === 'attached' ? true : state.deckRevealed
       }
     }),

@@ -28,6 +28,7 @@
     "verify:hardening": "node scripts/verify-hardening.mjs",
     "upstream:check": "node scripts/upstream-check.mjs",
     "update:check": "node scripts/update-check.mjs",
+    "perf": "node scripts/perf.mjs",
     "verify:patches": "node scripts/verify-patches.mjs",
     "verify:fork:all": "npm run verify:patches && npm run verify:fork && npm run verify:hardening"
   },
@@ -57,6 +58,7 @@
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/addon-search": "^0.16.0",
     "@xterm/xterm": "^6.0.0",
+    "extract-zip": "^2.0.1",
     "fast-xml-parser": "^5.11.1",
     "js-yaml": "^5.4.1",
     "katex": "^0.18.4",
