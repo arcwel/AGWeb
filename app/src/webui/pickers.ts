@@ -1,3 +1,5 @@
+/// <reference lib="dom" />
+/// <reference lib="dom.iterable" />
 /**
  * The dialogs Electron gave us, done with what a browser actually has.
  *

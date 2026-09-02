@@ -34,7 +34,7 @@ function arg(name: string): string | undefined {
 }
 
 /** The handoff file, defaulted into the data directory when none was named. */
-function handoffFile(userDataDir: string): string {
+function handoffFile(userDataDir?: string): string {
   const named = arg('port-file')
   if (named) return named
   const dir = resolveUserDataDir(userDataDir)

@@ -5,7 +5,6 @@ import { hostAllowed, mintServerToken, takeToken } from './local-server-auth'
 import type { Server } from 'node:http'
 import { createReadStream, existsSync, readFileSync, realpathSync, statSync } from 'node:fs'
 import { extname, join, normalize, sep } from 'node:path'
-import type { BrowserWindow } from 'electron'
 import { IpcEvents } from '@shared/ipc'
 import type { DevServerStatus } from '@shared/ipc'
 import { getCurrentWorkspace } from './workspace'
@@ -38,10 +37,6 @@ let status: DevServerStatus = {
   url: null,
   logTail: []
 }
-
-/** Kept for the shell's startup sequence; status now fans out through the
- *  injected core broadcaster, so no window reference is needed. */
-export function initDevServers(_window: BrowserWindow): void {}
 
 function push(update: Partial<DevServerStatus>): void {
   status = { ...status, ...update, script: detectScript() }

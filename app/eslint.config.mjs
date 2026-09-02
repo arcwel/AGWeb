@@ -29,7 +29,7 @@ export default tseslint.config(
     }
   },
   {
-    files: ['scripts/**/*.mjs', 'electron.vite.config.ts'],
+    files: ['scripts/**/*.mjs'],
     languageOptions: {
       globals: {
         process: 'readonly',

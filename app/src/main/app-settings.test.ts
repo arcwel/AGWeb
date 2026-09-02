@@ -1,11 +1,5 @@
-import { describe, it, expect, vi } from 'vitest'
-
-// app-settings imports 'electron' at module load; stub the one call it makes.
-vi.mock('electron', () => ({
-  app: { getPath: () => '/tmp', disableHardwareAcceleration: () => {} }
-}))
-
-const { sanitizePatch } = await import('./app-settings')
+import { describe, it, expect } from 'vitest'
+import { sanitizePatch } from './app-settings'
 
 describe('sanitizePatch', () => {
   it('keeps known, correctly-typed fields', () => {

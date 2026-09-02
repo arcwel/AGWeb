@@ -2,23 +2,17 @@
   "name": "webdeck",
   "version": "0.1.0",
   "description": "Arcwel WebDeck — an agent-first browser with a summonable IDE",
-  "main": "out/main/index.js",
   "private": true,
   "license": "MIT",
   "scripts": {
-    "dev": "electron-vite dev",
-    "build": "electron-vite build",
-    "gen:licenses": "node scripts/gen-licenses.mjs",
+    "build": "npm run build:webui",
     "build:webui": "node scripts/gen-licenses.mjs && vite build --config vite.webui.config.ts",
     "pack:webui": "npm run build:webui && node scripts/pack-webui.mjs",
+    "gen:licenses": "node scripts/gen-licenses.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
-    "start": "electron-vite preview",
     "lint": "eslint . && prettier --check .",
     "format": "prettier --write .",
-    "rebuild:native": "electron-rebuild -f -w node-pty",
     "postinstall": "node scripts/postinstall.mjs",
-    "dist:mac": "electron-vite build && electron-builder --mac --dir",
-    "dist:mac:dmg": "electron-vite build && electron-builder --mac",
     "test": "vitest run",
     "test:watch": "vitest",
     "build:core": "node scripts/build-core.mjs",
@@ -86,7 +80,6 @@
     "zustand": "^5.0.5"
   },
   "devDependencies": {
-    "@electron/rebuild": "^4.2.0",
     "@eslint/js": "^10.0.1",
     "@tailwindcss/vite": "^4.1.10",
     "@types/js-yaml": "^4.0.9",
@@ -96,9 +89,7 @@
     "@types/react-dom": "^19.1.0",
     "@types/ws": "^8.18.1",
     "@vitejs/plugin-react": "^4.5.0",
-    "electron": "^37.2.0",
-    "electron-builder": "^25.1.8",
-    "electron-vite": "^4.0.0",
+    "esbuild": "^0.28.2",
     "eslint": "^10.9.1",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-react-hooks": "^7.1.1",
@@ -113,31 +104,5 @@
     "ws": "^8.21.3"
   },
   "productName": "Arcwel WebDeck",
-  "author": "Arcwel",
-  "build": {
-    "appId": "tech.aguidry.arcwel.webdeck",
-    "productName": "Arcwel WebDeck",
-    "asar": false,
-    "directories": {
-      "output": "dist",
-      "buildResources": "build"
-    },
-    "files": [
-      "out/**/*",
-      "resources/**/*",
-      "package.json"
-    ],
-    "mac": {
-      "target": [
-        {
-          "target": "dir",
-          "arch": "arm64"
-        }
-      ],
-      "category": "public.app-category.developer-tools",
-      "icon": "build/icon.png",
-      "identity": null
-    },
-    "npmRebuild": false
-  }
+  "author": "Arcwel"
 }

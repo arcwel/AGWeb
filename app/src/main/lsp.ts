@@ -118,7 +118,7 @@ function resolveServer(module: string): string | null {
 /**
  * Resolve a native-binary server's executable on disk, or null if it was not
  * vendored for this platform. Mirrors debug.ts's `adapterPath`: packaged
- * (`process.resourcesPath`), core runtime (`coreEnv().appDir`), and dev
+ * core runtime (`coreEnv().appDir`) and dev
  * (`process.cwd()`), tried in that order.
  */
 function resolveNativeCommand(cmd: NativeCommand): string | null {
@@ -132,11 +132,7 @@ function resolveNativeCommand(cmd: NativeCommand): string | null {
   } catch {
     // Intentionally empty: the empty appResources is filtered out below.
   }
-  const candidates = [
-    process.resourcesPath ? join(process.resourcesPath, rel) : '',
-    appResources,
-    join(process.cwd(), 'resources', rel)
-  ]
+  const candidates = [appResources, join(process.cwd(), 'resources', rel)]
   return candidates.find((path) => path && existsSync(path)) ?? null
 }
 

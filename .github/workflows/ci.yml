@@ -38,40 +38,17 @@ jobs:
           cache: npm
           cache-dependency-path: app/package-lock.json
       - run: npm ci
-      - name: Rebuild node-pty for Electron
-        id: native
-        # If headers can't be fetched, the app falls back to its system-node pty
-        # host. That fallback is legitimate, but it means the smoke test below
-        # exercised a DIFFERENT code path than a release build does — so say so
-        # loudly instead of swallowing it into an echo nobody reads.
-        run: |
-          if npm run rebuild:native; then
-            echo "path=electron-abi" >> "$GITHUB_OUTPUT"
-          else
-            echo "path=pty-host-fallback" >> "$GITHUB_OUTPUT"
-            echo "::warning title=node-pty was not rebuilt::electron-rebuild failed; the smoke test ran against the system-node pty host, not the in-process Electron ABI. Terminal regressions specific to the Electron ABI cannot be caught by this run."
-          fi
       - run: npm run lint
       - run: npm run typecheck
       - run: npm test
-      - run: npm run build
-      - name: webdeck-core standalone binary (no Electron)
-        # Builds the fork's service bundle, boots it as a plain Node process, and
-        # drives real domain calls over the WebSocket — guards the migration.
-        # Invoked through the npm script so package.json stays the one place the
-        # gate is named; `npm run verify:core` locally and here are the same run.
+      - name: WebUI bundle (chrome://webdeck)
+        run: npm run build
+      - name: webdeck-core standalone binary
+        # Builds the service the fork spawns, boots it as a plain Node process,
+        # and drives real domain calls over the WebSocket. Invoked through the
+        # npm script so package.json stays the one place the gate is named;
+        # `npm run verify:core` locally and here are the same run.
         run: npm run verify:core
-      - name: Smoke test (Electron under Xvfb)
-        run: xvfb-run -a node scripts/smoke.mjs smoke.png
-      - name: Upload smoke screenshot
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: agweb-smoke
-          path: app/smoke.png
-          # warn, not ignore: a smoke run that reported success without ever
-          # producing a screenshot is a result worth seeing in the log.
-          if-no-files-found: warn
       - name: What this run did NOT verify
         if: always()
         # The anti-vacuous-green step. This job is the whole hosted gate, and
@@ -81,9 +58,7 @@ jobs:
           {
             echo "### Hosted CI — coverage and limits"
             echo
-            echo "Ran here: lint · typecheck · unit tests · build · verify:core · Electron smoke (Xvfb)"
-            echo
-            echo "node-pty path exercised by the smoke test: \`${{ steps.native.outputs.path }}\`"
+            echo "Ran here: lint · typecheck · unit tests · WebUI build · verify:core"
             echo
             echo "**NOT run here — no hosted runner has the fork or its checkout:**"
             echo

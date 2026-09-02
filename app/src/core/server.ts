@@ -26,9 +26,9 @@ import {
   registerPolicyRpc,
   setPolicyBroadcaster,
   setPolicyDenyNotifier,
-  setPolicyPromptSink,
-  type PolicyActionKind
+  setPolicyPromptSink
 } from '../main/policy'
+import type { PolicyActionKind } from '../shared/ipc'
 import { registerGitRpc } from '../main/git'
 import { registerRestRpc } from '../main/rest'
 import { registerDbRpc } from '../main/db'
@@ -211,12 +211,12 @@ export async function startWebdeckCore(opts: CoreServerOptions = {}): Promise<Ws
         ? pageAgentBrowser({
             channel: handle,
             decide: (kind, detail) => decide(kind as PolicyActionKind, detail),
-            audit
+            audit: (entry) => audit(entry as Parameters<typeof audit>[0])
           })
         : chromiumAgentBrowser({
             browserPath: opts.agentBrowserPath,
             decide: (kind, detail) => decide(kind as PolicyActionKind, detail),
-            audit
+            audit: (entry) => audit(entry as Parameters<typeof audit>[0])
           })
     setAgentBrowserPort(agentBrowser)
     // Chromium's helper processes do not exit with the core, so closing the

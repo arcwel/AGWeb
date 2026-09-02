@@ -47,10 +47,9 @@ let adapter: ChildProcess | null = null
 let adapterPort = 0
 const connections = new Map<string, Connection>()
 
-/** Where the vendored adapter lives, packaged or in development. */
+/** Where the vendored adapter lives: the core runtime dir, or the dev checkout. */
 function adapterPath(): string | null {
   const candidates = [
-    join(process.resourcesPath ?? '', 'js-debug', 'src', 'dapDebugServer.js'),
     join(coreEnv().appDir, 'resources', 'js-debug', 'src', 'dapDebugServer.js'),
     join(process.cwd(), 'resources', 'js-debug', 'src', 'dapDebugServer.js')
   ]

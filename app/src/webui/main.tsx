@@ -7,7 +7,7 @@ import { installShortcutListener } from '@/shortcuts'
 import { coreAuthSubprotocol } from '../core/transports/auth'
 import { CoreClient } from '../core/transports/ws-client'
 import { serveAgentTabs } from './agent-tabs'
-import { createAgwebApi } from '../preload/api'
+import { createAgwebApi } from './agweb-api'
 import { createWebUiIpc, primeSyncCache } from './ipc-adapter'
 import '@/styles.css'
 

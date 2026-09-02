@@ -1,3 +1,4 @@
+/// <reference lib="dom" />
 /**
  * Document Studio exports, done the way a browser does them.
  *

@@ -16,6 +16,6 @@
       "@/*": ["./src/renderer/src/*"]
     }
   },
-  "include": ["src/renderer/**/*", "src/shared/**/*", "src/preload/index.d.ts", "src/webui/**/*"],
+  "include": ["src/renderer/**/*", "src/shared/**/*", "src/webui/agweb.d.ts", "src/webui/**/*"],
   "exclude": ["src/webui/generated/**/*"]
 }

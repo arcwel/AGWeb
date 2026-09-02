@@ -1,5 +1,5 @@
 import { CoreClient } from '../core/transports/ws-client'
-import type { IpcLike } from '../preload/api'
+import type { IpcLike } from './agweb-api'
 import { exportCapture, exportHtml, exportPdf } from './export'
 import { confirmDialog, pickJsonFile, pickPaths, unavailableHere } from './pickers'
 import { SHELL_BROWSER, SHELL_BROWSER_EVENTS, onShellBrowserEvent } from './shell'

@@ -2,7 +2,6 @@ import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest'
 import { mkdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import type { BrowserWindow } from 'electron'
 import type { PolicyDeniedInfo, PolicyPromptInfo, PolicyStatus } from '@shared/ipc'
 import { setCoreEnv } from '../core/env'
 import {
@@ -32,11 +31,16 @@ const dir = join(tmpdir(), `wd-policy-test-${process.pid}`)
 
 // A stand-in for the shell window checkAction sends confirm prompts to. The
 // callback captures the prompt so a test can answer it via respondToPolicyPrompt.
-function fakeWindow(onPrompt?: (p: PolicyPromptInfo) => void, destroyed = false): BrowserWindow {
+function fakeWindow(
+  onPrompt?: (p: PolicyPromptInfo) => void,
+  destroyed = false
+): Parameters<typeof initPolicy>[0] {
   return {
     isDestroyed: () => destroyed,
-    webContents: { send: (_channel: string, prompt: PolicyPromptInfo) => onPrompt?.(prompt) }
-  } as unknown as BrowserWindow
+    webContents: {
+      send: (_channel: string, prompt: unknown) => onPrompt?.(prompt as PolicyPromptInfo)
+    }
+  }
 }
 
 const flush = (): Promise<void> => Promise.resolve()

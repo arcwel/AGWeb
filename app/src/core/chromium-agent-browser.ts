@@ -242,7 +242,7 @@ export function chromiumAgentBrowser(options: ChromiumAgentBrowserOptions = {}):
    * pages navigate themselves, and silently following an unapproved destination
    * is the bug the guard exists to prevent.
    */
-  function installNavigationGuard(tabId: string, tab: AgentTab): void {
+  function installNavigationGuard(_tabId: string, tab: AgentTab): void {
     tab.session.on((event) => {
       if (event.method !== 'Page.frameRequestedNavigation') return
       const url = (event.params as { url?: string })?.url

@@ -28,7 +28,7 @@ That ordering matters for the work people actually do now. You're reading docs, 
 
 ### A real browser, not a preview pane
 
-Chromium via Electron's `WebContentsView`, with the chrome a browser is supposed to have. Tabs sit inline with the window's traffic lights, show real site **favicons**, and shrink to fit; the address bar is centred with the bookmark star leading it and zoom on the right. There's a **native application menu** (File / Edit / View / History / Window / Help) wired to real shortcuts, a **right-click context menu** on every page (open/copy link and image, cut/copy/paste, search the selection, inspect), and the everyday essentials: back/forward/reload, **find in page**, **zoom** (⌘0 restores 100%), **print**, **new window**, **reopen closed tab**, per-tab **devtools**, downloads with progress, and site permission prompts.
+WebDeck is a Chromium fork: the browser is the real thing, with the chrome a browser is supposed to have. Tabs sit inline with the window's traffic lights, show real site **favicons**, and shrink to fit; the address bar is centred with the bookmark star leading it and zoom on the right. There's a **native application menu** (File / Edit / View / History / Window / Help) wired to real shortcuts, a **right-click context menu** on every page (open/copy link and image, cut/copy/paste, search the selection, inspect), and the everyday essentials: back/forward/reload, **find in page**, **zoom** (⌘0 restores 100%), **print**, **new window**, **reopen closed tab**, per-tab **devtools**, downloads with progress, and site permission prompts.
 
 **Split view** splits the *page* — two live tabs share the stage with a draggable divider — separate from the Dev Deck. A **favourites bar** is summoned rather than permanent, and can be locked open.
 
@@ -108,7 +108,7 @@ The smoke test drives the real application end to end — browser, deck, editor,
 | [`SECURITY.md`](SECURITY.md) | Trust boundaries, the agent's limits, residual risks |
 | [`RESOURCES.md`](RESOURCES.md) | Every library and technique, with licences |
 | [`docs/`](docs/README.md) | User guides — getting started, permission modes, agent workflows, Document Studio |
-| `app/` | The application — Electron, React, TypeScript, Tailwind |
+| `app/` | The application — the chrome://webdeck WebUI (React, TypeScript, Tailwind) and the webdeck-core service (Node) |
 
 ## Status
 
