@@ -148,37 +148,85 @@ npm --prefix app run package:fork -- --build-dir "$(dirname "$APP")" --out dist
 
 With no credentials this **ad-hoc signs** the bundle — the browser, the core,
 and every native file in the core's runtime — and produces a DMG under `dist/`.
-An ad-hoc build installs, but Gatekeeper warns on first open (see §6). That is
+An ad-hoc build installs, but Gatekeeper warns on first open (see §7). That is
 the right artifact for internal testing.
 
 ### [YOU] Real signing and notarization
 
 For a build that opens with no warning, the app must be signed with an Apple
-**Developer ID Application** certificate and notarized. A self-signed identity
-will not work — the app signs with `library` validation, which requires a real
-Team ID. You need:
+**Developer ID Application** certificate and notarized by Apple. `package-fork`
+does the whole thing; what it cannot do is obtain the credentials, because each
+step needs a password.
 
-- Apple Developer Program membership → your Team ID
-- a **Developer ID Application** certificate in your login keychain
-- an App Store Connect API key for `notarytool`
-
-The Chromium tree implements this end to end; point it at your identity:
+Check where you stand:
 
 ```bash
-# [YOU] — replace IDENTITY with your Developer ID Application common name.
-cd /Volumes/BG_Dev/webdeck-chromium/chromium/src
-python3 chrome/installer/mac/sign_chrome.py \
-  --input out/webdeck-release \
-  --output out/webdeck-release/signed \
-  --identity "IDENTITY" \
-  --notarize
-
-# [YOU] — staple the notarization ticket so it verifies offline.
-xcrun stapler staple "out/webdeck-release/signed/Arcwel WebDeck.app"
+cd app && npm run release:preflight
 ```
 
-Then re-run `install-core` and `package:fork` against the signed app, or DMG the
-signed bundle directly with `hdiutil`.
+It reports three things and prints the exact fix for each:
+
+1. **Apple Developer Program membership** — 99 USD/year,
+   <https://developer.apple.com/programs>. This is the part with a waiting
+   period; start here.
+2. **A Developer ID Application certificate** in the login keychain. Xcode →
+   Settings → Accounts → Manage Certificates → **+** → *Developer ID
+   Application*. It must be created on this machine, or imported together with
+   its private key. An *Apple Development* or self-signed certificate signs
+   happily and is refused by the notary service.
+3. **A notarytool credential profile**, stored once in the keychain:
+
+   ```bash
+   # [YOU] — asks for an app-specific password, made at
+   # https://account.apple.com → Sign-In and Security → App-Specific Passwords.
+   # The Team ID is on https://developer.apple.com/account under Membership.
+   xcrun notarytool store-credentials webdeck-notary \
+     --apple-id you@example.com --team-id TEAMID
+   ```
+
+   Nothing in this repository reads that password. `package-fork` passes the
+   profile *name* to `notarytool`, and the keychain hands over the secret.
+
+With all three in place, one command produces the installer:
+
+```bash
+cd app
+npm run release:dmg -- \
+  --build-dir /Volumes/BG_Dev/webdeck-chromium/chromium/src/out/webdeck-release \
+  --out /Volumes/BG_Dev/webdeck-rc1
+```
+
+That is `package-fork --identity auto --notary-profile webdeck-notary`, which:
+
+- signs every Mach-O in the bundle inside-out with the hardened runtime and a
+  secure timestamp — the browser, the helpers, the framework, `webdeck-core`
+  and each native file in its runtime;
+- submits the **app** to the notary service, waits, and staples the ticket;
+- builds the DMG around the stapled app, signs the DMG, submits **it**, and
+  staples that too;
+- mounts the result and asserts `spctl` says *accepted, source=Notarized
+  Developer ID*, and that `stapler validate` passes on the app inside the
+  volume.
+
+Stapling both is deliberate. Notarize only the disk image and the copy the user
+drags to Applications carries no ticket, so Gatekeeper has to ask Apple over the
+network on first launch — which fails for a tester who is offline or behind a
+network that blocks it.
+
+If notarization is rejected, the failure line carries the submission id:
+
+```bash
+xcrun notarytool log <submission-id> --keychain-profile webdeck-notary
+```
+
+### The development keychain must be off
+
+`webdeck_dev_keychain = true` keeps the cookie/password key in a plaintext
+0600 file in the profile instead of the login keychain (§8). That is a
+convenience for unsigned local builds and must never leave the machine, so
+`package-fork` refuses to call such a build distributable — it lists it as a
+blocker unless you pass `--allow-dev-keychain`. Release builds set the arg to
+`false`.
 
 ## 6. Give it to a tester
 
@@ -197,7 +245,7 @@ Gatekeeper system-wide:
 3. Confirm once more. macOS remembers the choice for this app.
 
 Tell testers this is expected for an internal build and will go away once the
-app is notarized (§4 [YOU]).
+app is notarized (§5 [YOU]).
 
 ## 8. The keychain prompt ("wants to use the Arcwel WebDeck Safe Storage key")
 
@@ -212,7 +260,7 @@ which works **only if two things hold**:
   from the DMG or Downloads is _App-Translocated_ — macOS runs it from a random
   read-only path that changes each launch, so the binding never matches and the
   prompt returns every time. **Dragging the app to /Applications in Finder clears
-  translocation** (this is why §5 says drag to Applications, not run-in-place).
+  translocation** (this is why §6 says drag to Applications, not run-in-place).
 - **The binary does not change.** Every rebuild produces a new code hash, so a
   keychain item created by a previous build no longer matches. During
   development this is why the prompt reappears after each build.
@@ -233,7 +281,7 @@ and prompts once more (Always Allow) — then it is quiet.
 **Do not "fix" this with `--use-mock-keychain`.** That switch routes OSCrypt to
 an in-memory fake keychain whose key is regenerated every launch, which makes
 every previously stored cookie and password undecryptable on the next start —
-it silently logs the user out of everything on each run. Notarization (§4 [YOU])
+it silently logs the user out of everything on each run. Notarization (§5 [YOU])
 is the change that removes the prompt for a shipped build, because a Team ID
 gives the keychain a stable identity to bind to.
 

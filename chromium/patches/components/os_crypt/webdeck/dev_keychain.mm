@@ -24,11 +24,19 @@ namespace os_crypt::webdeck {
 
 namespace {
 
-constexpr char kEnvForceRealKeychain[] = "WEBDECK_REAL_KEYCHAIN";
 constexpr base::FilePath::CharType kSecretFileName[] =
     FILE_PATH_LITERAL("WebDeck Dev Keychain");
 // 128 bits, the same entropy the real Keychain item carries.
 constexpr size_t kSecretBytes = 128 / 8;
+
+// Everything from here to the matching #endif exists only to decide whether to
+// take over from the Keychain, which a shipping build never does. Guarding it
+// keeps -Wunused-const-variable/-Wunused-function (fatal under -Werror) quiet
+// in the default configuration, and keeps the signature check out of a binary
+// that would never call it.
+#if BUILDFLAG(WEBDECK_DEV_KEYCHAIN)
+
+constexpr char kEnvForceRealKeychain[] = "WEBDECK_REAL_KEYCHAIN";
 
 // A bundle signed with an Apple-issued identity (Developer ID, App Store)
 // carries a Team Identifier; an ad-hoc signature or no signature carries none.
@@ -54,6 +62,8 @@ bool MainBundleHasTeamIdentifier() {
       info.get(), kSecCodeInfoTeamIdentifier);
   return team && CFStringGetLength(team) > 0;
 }
+
+#endif  // BUILDFLAG(WEBDECK_DEV_KEYCHAIN)
 
 bool ComputeShouldUseDevKeychain() {
 #if !BUILDFLAG(WEBDECK_DEV_KEYCHAIN)

@@ -2,12 +2,23 @@
 // Turns a built Chromium fork into a .dmg a tester can mount, and says out loud
 // what is wrong with the one it just made.
 //
-// The point is NOT to sign for distribution — this script never touches a
-// keychain and never sees an Apple credential. It ad-hoc signs (`codesign -s -`)
-// so the *mechanics* are exercised end to end: inside-out signing order, the
-// sealed resource set, the entitlements file, hdiutil, the mount. Everything a
-// real release needs beyond that is printed as a command for a human with a
-// Developer ID to run. See chromium/RELEASING.md.
+// Two modes, same pipeline:
+//
+//   default        ad-hoc (`codesign -s -`). No keychain, no Apple credential.
+//                  The mechanics run end to end — inside-out signing order, the
+//                  sealed resource set, the entitlements, hdiutil, the mount —
+//                  but Gatekeeper rejects the result, so it is for machines you
+//                  control.
+//   --identity     a real Developer ID Application certificate, with the
+//                  hardened runtime and a secure timestamp. Add
+//                  --notary-profile and the app and the dmg are submitted to
+//                  Apple, stapled, and checked with spctl. That produces the
+//                  ordinary install: mount, drag to Applications, double-click,
+//                  no warning.
+//
+// The credential itself is never seen here: --notary-profile names a keychain
+// item the user created with `notarytool store-credentials`. See
+// chromium/RELEASING.md.
 //
 // It refuses builds that cannot honestly be packaged. The one that matters is
 // `is_component_build = true`: that build's Framework binary is a 16 KB stub
@@ -66,9 +77,23 @@ if (flag('help') || flag('h')) {
   --keep-stage              keep the staging tree next to the dmg
   --json                    machine-readable result
 
-Signing is ALWAYS ad-hoc. There is no --identity: real signing and notarization
-need an Apple Developer credential and are documented, not automated. See
-chromium/RELEASING.md.
+Distribution:
+  --identity <name|auto>    sign with a real certificate instead of ad-hoc.
+                            "auto" picks the one Developer ID Application
+                            identity in the keychain. Turns on the hardened
+                            runtime and a secure timestamp, both of which
+                            Apple requires before it will notarize.
+  --notary-profile <name>   submit the app and the dmg to Apple's notary
+                            service and staple the tickets, using credentials
+                            you stored once with:
+                              xcrun notarytool store-credentials <name> \
+                                --apple-id <you@example.com> --team-id <TEAM>
+                            Requires --identity. This script never sees the
+                            password; the keychain hands it to notarytool.
+  --allow-dev-keychain      package a build compiled with
+                            webdeck_dev_keychain = true anyway (it stores the
+                            cookie/password key as a plaintext file, so it is
+                            never distributable).
 
 Exit: 0 packaged · 1 build unfit or packaging failed · 2 could not run`)
   process.exit(0)
@@ -78,6 +103,12 @@ const buildDir = resolve(arg('build-dir', DEFAULT_BUILD_DIR))
 const outDir = resolve(arg('out', `${buildDir}-package`))
 const dmgFormat = arg('format', 'UDZO')
 const asJson = flag('json')
+const identityArg = arg('identity', '-')
+const notaryProfile = arg('notary-profile', null)
+// Notarizing needs a certificate: Apple has nothing to check an ad-hoc
+// signature against, and the submission would be rejected after the upload.
+if (notaryProfile && identityArg === '-')
+  cannotRun('--notary-profile needs --identity — Apple will not notarize ad-hoc signed code')
 
 // ── the result ledger ───────────────────────────────────────────────────────
 // ok    measured, the property holds
@@ -155,6 +186,18 @@ function readArgsGn(path) {
   return out
 }
 const gnArgs = readArgsGn(join(buildDir, 'args.gn'))
+
+// The development keychain replaces the login-Keychain item that encrypts
+// cookies and saved passwords with a 0600 file in the profile directory. That
+// is a deliberate convenience for unsigned dev builds (no "Safe Storage"
+// prompt); shipping it would hand every tester's cookie key to anything that
+// can read their home directory.
+if (gnArgs.webdeck_dev_keychain === 'true' && !flag('allow-dev-keychain')) {
+  blocker(
+    'development keychain compiled in',
+    'args.gn has webdeck_dev_keychain = true, so the cookie/password key is a plaintext file in the profile instead of a Keychain item. Rebuild with webdeck_dev_keychain = false, or pass --allow-dev-keychain to package a build that must not leave machines you control.'
+  )
+}
 
 // The outer app is the only top-level .app that is not a Helper.
 const apps = readdirSync(buildDir).filter((n) => n.endsWith('.app') && !n.includes('Helper'))
@@ -345,36 +388,25 @@ const failed = checks.filter((c) => c.status === 'fail')
 const SYMBOL = { ok: '✓', warn: '!', fail: '✗' }
 
 function realSigningInstructions() {
+  if (notaryProfile) return ''
   return [
-    'What this run did NOT do, and what a real one needs:',
+    'To make an installer that opens with no warning:',
     '',
-    `  1. Build the packaging driver:  autoninja -C ${buildDir} chrome/installer/mac`,
-    '  2. An Apple Developer Program membership for Arcwel, and a',
-    '     "Developer ID Application" certificate in the login keychain. A',
-    '     self-signed identity does not work: Chrome signs with the `library`',
-    '     option, so the app will only load code bearing its own Team ID.',
-    '  3. Notary credentials — an App Store Connect API key (.p8 + key id +',
-    '     issuer uuid) is the right shape; an Apple ID app-specific password',
-    '     also works.',
-    '  4. Then, with the certificate present:',
+    '  npm run release:preflight    # which Apple credentials are missing, and how',
+    '                               # to get each one',
+    `  npm run release:dmg -- --build-dir "${buildDir}" --out "${outDir}"`,
     '',
-    `       "${buildDir}/${product} Packaging/sign_chrome.py" \\`,
-    `           --input  "${buildDir}" \\`,
-    `           --output "${outDir}/signed" \\`,
-    "           --identity 'Developer ID Application: Arcwel (TEAMID)' \\",
-    '           --notarize \\',
-    '           --notary-arg --key    --notary-arg /path/to/AuthKey.p8 \\',
-    '           --notary-arg --key-id --notary-arg KEYID \\',
-    '           --notary-arg --issuer --notary-arg ISSUER-UUID',
+    '  That is this script with --identity auto --notary-profile webdeck-notary:',
+    '  it signs with the hardened runtime and a secure timestamp, notarizes and',
+    '  staples the app, wraps it in a dmg, signs and notarizes that too, and',
+    '  proves the result with spctl and stapler validate.',
     '',
-    '  That walks the bundle inside-out, applies chrome/app/app-entitlements.plist,',
-    '  signs with --options restrict,library,runtime,kill --timestamp, builds the',
-    '  dmg with chrome/installer/mac/pkg-dmg, submits to Apple, and staples.',
-    '',
-    '  This script signs ad-hoc with --options kill only. Measured on macOS 26.5.1:',
-    '  ad-hoc + `runtime` fails to launch ("mapping process and mapped file',
-    '  (non-platform) have different Team IDs") and ad-hoc + `restrict` fails with',
-    '  "security policy does not allow @ path expansion". Both need a real identity.',
+    '  It needs a "Developer ID Application" certificate. Nothing else works:',
+    '  Apple notarizes no other kind, and a certificate with no Team ID cannot',
+    '  even launch under the hardened runtime. Measured on macOS 26.5.1 —',
+    '  ad-hoc or self-signed + `runtime` dies with "mapping process and mapped',
+    '  file (non-platform) have different Team IDs", and + `restrict` dies with',
+    '  "security policy does not allow @ path expansion".',
     '',
     '  Full runbook: chromium/RELEASING.md'
   ].join('\n')
@@ -583,10 +615,70 @@ try {
       'chrome/app/app-entitlements.plist not found — signing without entitlements'
     )
 
-  /** codesign, ad-hoc, in batches. `options` is a codesign --options string. */
+  // Which certificate seals this build. Resolved to a SHA-1 hash rather than a
+  // name so a keychain holding two certificates with the same common name can
+  // never sign with the wrong one.
+  let signIdentity = '-'
+  let identityName = 'ad-hoc'
+  if (identityArg !== '-') {
+    const found = run('/usr/bin/security', ['find-identity', '-v', '-p', 'codesigning']).out
+    const rows = [...found.matchAll(/^\s*\d+\)\s+([0-9A-F]{40})\s+"(.+)"\s*$/gm)].map((m) => ({
+      hash: m[1],
+      name: m[2]
+    }))
+    const devIds = rows.filter((r) => r.name.startsWith('Developer ID Application:'))
+    const matches =
+      identityArg === 'auto'
+        ? devIds
+        : rows.filter(
+            (r) => r.hash === identityArg || r.name === identityArg || r.name.includes(identityArg)
+          )
+    if (matches.length === 0) {
+      cannotRun(
+        identityArg === 'auto'
+          ? `no "Developer ID Application" certificate in the keychain. ${rows.length === 0 ? 'It holds no code-signing identity at all.' : `It holds: ${rows.map((r) => r.name).join(', ')}.`} Enrol in the Apple Developer Program, then create the certificate in Xcode (Settings → Accounts → Manage Certificates → + → Developer ID Application).`
+          : `no code-signing identity matching "${identityArg}". Available: ${rows.map((r) => r.name).join(', ') || 'none'}.`
+      )
+    }
+    if (matches.length > 1) {
+      cannotRun(
+        `"${identityArg}" matches ${matches.length} identities (${matches.map((r) => r.name).join(', ')}) — name one exactly, or pass its SHA-1.`
+      )
+    }
+    signIdentity = matches[0].hash
+    identityName = matches[0].name
+    // A self-signed or Apple Development certificate signs fine and notarizes
+    // never. Saying so here costs a second; finding out costs an upload.
+    if (!identityName.startsWith('Developer ID Application:')) {
+      // Not a warning to be read later: the hardened runtime is applied only to
+      // Developer ID because a certificate with no Team ID produces a bundle
+      // that will not launch at all, and notarization would reject it anyway.
+      if (notaryProfile) {
+        cannotRun(
+          `${identityName} is not a "Developer ID Application" certificate, and Apple notarizes no other kind. Run \`npm run release:preflight\` for how to get one.`
+        )
+      }
+      warn(
+        'certificate type',
+        `${identityName} is not a "Developer ID Application" certificate. It signs, but it carries no Team ID, so this build is signed WITHOUT the hardened runtime — it is no more distributable than an ad-hoc one.`
+      )
+    }
+  }
+  const realIdentity = signIdentity !== '-'
+  // The hardened runtime is a precondition for notarization, and a secure
+  // timestamp is what keeps the signature valid after the certificate expires.
+  // Both are applied only for a Developer ID certificate: under `runtime`, dyld
+  // validates that the bundle's own libraries share the main executable's Team
+  // ID, and a certificate without one leaves nothing to match — the app dies on
+  // launch with "mapping process and mapped file (non-platform) have different
+  // Team IDs". Measured, not assumed.
+  const hardened = realIdentity && identityName.startsWith('Developer ID Application:')
+
+  /** codesign, in batches. `options` is a codesign --options string. */
   function sign(paths, { options, entitlements } = {}) {
-    const base = ['--force', '--sign', '-']
-    if (options) base.push('--options', options)
+    const base = ['--force', '--sign', signIdentity]
+    if (hardened) base.push('--timestamp', '--options', options ? `runtime,${options}` : 'runtime')
+    else if (options) base.push('--options', options)
     if (entitlements && entitlementsDir)
       base.push('--entitlements', join(entitlementsDir, entitlements))
     for (let i = 0; i < paths.length; i += 40) {
@@ -690,7 +782,7 @@ try {
   const dvText = (dv.err || dv.out).split('\n')
   const pick = (k) => dvText.find((l) => l.startsWith(k))?.trim() ?? ''
   ok(
-    'ad-hoc signed',
+    realIdentity ? `signed · ${identityName}` : 'ad-hoc signed',
     `${pick('Identifier=')} · ${pick('CodeDirectory')?.match(/flags=\S+/)?.[0] ?? ''} · ${pick('Sealed Resources')}`
   )
 
@@ -704,9 +796,90 @@ try {
   }
   ok('signature verifies', 'codesign --verify --deep --strict')
 
+  // ── 4b. notarize the app ──────────────────────────────────────────────────
+
+  // The app is notarized and stapled BEFORE it is copied into the disk image,
+  // so the copy a tester drags to Applications carries its own ticket. Notarize
+  // only the dmg and that copy has none: Gatekeeper then has to ask Apple over
+  // the network on first launch, and a tester who is offline — or behind a
+  // network that blocks it — gets the warning this whole exercise removes.
+  /** notarytool, with a timeout long enough for Apple's queue. */
+  function notarize(what, path) {
+    const submit = run(
+      '/usr/bin/xcrun',
+      [
+        'notarytool',
+        'submit',
+        path,
+        '--keychain-profile',
+        notaryProfile,
+        '--wait',
+        '--timeout',
+        '30m'
+      ],
+      { timeout: 35 * 60 * 1000 }
+    )
+    const text = `${submit.out}\n${submit.err}`
+    const id = /id: ([0-9a-f-]{36})/.exec(text)?.[1]
+    if (submit.code !== 0 || !/status: Accepted/.test(text)) {
+      const why = /status: (\w+)/.exec(text)?.[1] ?? 'no status returned'
+      fail(
+        `notarized: ${what}`,
+        `${why}. ${id ? `Read Apple's reasons with: xcrun notarytool log ${id} --keychain-profile ${notaryProfile}` : text.trim().split('\n').slice(-2).join(' / ')}`
+      )
+      return false
+    }
+    // Stapling attaches the ticket to the artifact itself, which is what makes
+    // the first launch work with no network.
+    const staple = run('/usr/bin/xcrun', ['stapler', 'staple', path], { timeout: 5 * 60 * 1000 })
+    if (staple.code !== 0) {
+      fail(`stapled: ${what}`, (staple.err || staple.out).trim().split('\n').slice(-1)[0])
+      return false
+    }
+    ok(`notarized and stapled: ${what}`, `submission ${id ?? '?'}`)
+    return true
+  }
+
+  if (notaryProfile) {
+    if (run('/usr/bin/which', ['xcrun']).code !== 0) {
+      fail('notarization', 'xcrun not found — install Xcode or the command line tools')
+    } else {
+      // notarytool takes an archive, not a bundle. ditto keeps the symlinks and
+      // the extended attributes the signature lives in; `zip` does not.
+      const zipPath = join(outDir, `${product}-notarize.zip`)
+      must(
+        '/usr/bin/ditto',
+        ['-c', '-k', '--keepParent', stagedApp, zipPath],
+        'ditto (archive for notarization)'
+      )
+      notarize('the app', zipPath)
+      rmSync(zipPath, { force: true })
+    }
+  }
+
   // ── 5. the disk image ─────────────────────────────────────────────────────
 
   if (flag('skip-dmg')) {
+    // Without the dmg there is no mount-and-launch check, and signing is
+    // exactly where a bundle stops launching. --version links the framework and
+    // every dylib the browser needs at startup, which is what a bad signature
+    // breaks.
+    const staticLaunch = run(join(stagedApp, 'Contents', 'MacOS', mainExeName), ['--version'], {
+      timeout: 120000
+    })
+    if (staticLaunch.code !== 0 || !staticLaunch.out.includes(version ?? '')) {
+      fail(
+        'the signed app runs',
+        (staticLaunch.err || '')
+          .split('\n')
+          .filter((l) => !l.startsWith('objc['))
+          .slice(0, 1)
+          .join(' ')
+          .slice(0, 200) || `exit ${staticLaunch.code}`
+      )
+    } else {
+      ok('the signed app runs', staticLaunch.out.trim())
+    }
     ok('disk image', 'skipped (--skip-dmg)')
     report(
       {
@@ -719,8 +892,8 @@ try {
         ],
         summary:
           blockers.length > 0
-            ? 'Staged and ad-hoc signed. NOT distributable — see the blockers above.'
-            : 'Staged and ad-hoc signed.'
+            ? `Staged and signed (${identityName}). NOT distributable — see the blockers above.`
+            : `Staged and signed (${identityName}).`
       },
       0
     )
@@ -752,6 +925,19 @@ try {
   )
   dmgSize = `${(statSync(dmgPath).size / 1024 / 1024).toFixed(0)} MB`
   ok('disk image', `${basename(dmgPath)} (${dmgSize}, ${dmgFormat})`)
+
+  // The disk image is code to Gatekeeper too: signing it is what stops the
+  // download itself being flagged, and notarizing it is what lets the user
+  // mount it without the "downloaded from the internet" interrogation.
+  if (realIdentity) {
+    must(
+      '/usr/bin/codesign',
+      ['--force', '--sign', signIdentity, ...(hardened ? ['--timestamp'] : []), dmgPath],
+      'codesign (disk image)'
+    )
+    ok('disk image signed', identityName)
+    if (notaryProfile) notarize('the disk image', dmgPath)
+  }
 
   // ── 6. prove it ───────────────────────────────────────────────────────────
 
@@ -796,12 +982,31 @@ try {
       )
     }
 
-    // What Gatekeeper will say. Ad-hoc is not a distribution signature.
+    // What Gatekeeper will actually say when a tester double-clicks. This is
+    // the check the whole distribution path exists to pass, so with a real
+    // identity it is a verdict, not a note.
     const spctl = run('/usr/sbin/spctl', ['-a', '-vvv', '-t', 'exec', mountedApp])
-    warn(
-      'Gatekeeper',
-      `spctl: ${(spctl.err || spctl.out).trim().split('\n').join(' ').slice(0, 120)} — expected: ad-hoc is not notarized`
-    )
+    const verdict = (spctl.err || spctl.out).trim().split('\n').join(' ').slice(0, 160)
+    if (notaryProfile) {
+      if (/accepted/.test(verdict) && /Notarized Developer ID/.test(verdict)) {
+        ok('Gatekeeper accepts it', 'source=Notarized Developer ID — opens with no warning')
+      } else {
+        fail('Gatekeeper accepts it', `spctl: ${verdict}`)
+      }
+      // The stapled ticket is what makes that true offline as well.
+      const stapled = run('/usr/bin/xcrun', ['stapler', 'validate', mountedApp])
+      if (stapled.code === 0) ok('ticket travels with the app', 'stapler validate passed')
+      else
+        fail(
+          'ticket travels with the app',
+          'the app on the volume has no stapled ticket — a tester with no network will still be asked'
+        )
+    } else {
+      warn(
+        'Gatekeeper',
+        `spctl: ${verdict} — expected: ${realIdentity ? 'signed but not notarized' : 'ad-hoc is not notarized'}. macOS 15 and later removed the Control-click bypass, so a tester must approve this in System Settings → Privacy & Security. Pass --identity and --notary-profile for an install with no warning.`
+      )
+    }
   }
 } catch (err) {
   fail('packaging', err.message)
@@ -823,7 +1028,9 @@ report(
         ? 'The dmg was written but a check failed — read the ✗ lines.'
         : blockers.length > 0
           ? `Packaged. This dmg is for testing on machines you control, NOT for distribution — ${blockers.length} blocker${blockers.length === 1 ? '' : 's'} above.`
-          : 'Packaged and verified.'
+          : notaryProfile
+            ? 'Packaged, notarized and stapled. This installs like any other Mac app.'
+            : 'Packaged and verified. Not notarized: testers will meet Gatekeeper.'
   },
   late.length > 0 ? 1 : 0
 )

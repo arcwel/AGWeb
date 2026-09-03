@@ -1,7 +1,7 @@
 {
   "name": "webdeck",
   "version": "0.1.0",
-  "description": "Arcwel WebDeck — an agent-first browser with a summonable IDE",
+  "description": "Arcwel WebDeck \u2014 an agent-first browser with a summonable IDE",
   "private": true,
   "license": "MIT",
   "scripts": {
@@ -25,6 +25,9 @@
     "perf": "node scripts/perf.mjs",
     "verify:patches": "node scripts/verify-patches.mjs",
     "verify:fork:all": "npm run verify:patches && npm run verify:fork && npm run verify:hardening",
+    "package:dmg": "node scripts/package-fork.mjs",
+    "release:dmg": "node scripts/package-fork.mjs --identity auto --notary-profile webdeck-notary",
+    "release:preflight": "node scripts/release-preflight.mjs",
     "gen:mojo": "node scripts/gen-mojo-bindings.mjs",
     "pack:webui:release": "node scripts/gen-mojo-bindings.mjs --build-dir out/webdeck-release && npm run build:webui && node scripts/pack-webui.mjs --build-dir out/webdeck-release"
   },

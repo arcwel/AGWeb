@@ -45,6 +45,21 @@ All notable changes to Arcwel WebDeck are recorded here. This project adheres to
 
 ### Added
 
+- **A normal Mac install.** `package-fork` gained `--identity` and
+  `--notary-profile`: it signs every Mach-O in the bundle inside-out with the
+  hardened runtime and a secure timestamp, notarizes and staples the app,
+  builds the disk image around the stapled app, then signs, notarizes and
+  staples the image, and finally asserts that Gatekeeper says *accepted,
+  source=Notarized Developer ID* and that the ticket survives on the app inside
+  the volume. `npm run release:dmg` is the whole release; `npm run
+  release:preflight` reports which of the three Apple credentials is missing
+  and the exact command that obtains it. The credential itself is never read by
+  anything here — `notarytool` gets a keychain profile name.
+- **The development keychain can no longer ship.** Packaging a build with
+  `webdeck_dev_keychain = true` is a blocker unless `--allow-dev-keychain` is
+  passed, because that build keeps the cookie and password key in a plaintext
+  file. Release builds set it to `false`, and the flag's helpers now compile
+  out cleanly when it is off (they tripped `-Wunused-function` under `-Werror`).
 - **Permissions live in the composer.** The permission mode is a pill beside
   the model pill ("Full autonomy · 2 guards") opening one popover with the
   modes, the guards, custom rules and the per-site decisions; the Agents

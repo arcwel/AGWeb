@@ -106,23 +106,52 @@ Settings open as their own surface: Application, AI keys (held in the OS keychai
 
 **Requirements:** macOS 13 or later on Apple Silicon.
 
-1. Download `Arcwel-WebDeck-<version>-arm64.dmg` from the [releases](https://github.com/arcwel/WebDeck/releases), or build it (below).
-2. Open the DMG and drag **Arcwel WebDeck** to Applications.
-3. First launch of a build that is not notarized: right-click the app, choose **Open**, and confirm. After that it opens normally.
+1. Download `Arcwel-WebDeck-<version>-arm64.dmg` from the [releases](https://github.com/arcwel/WebDeck/releases).
+2. Open it and drag **Arcwel WebDeck** to Applications.
+3. Open it from Applications or Launchpad.
+
+That is the whole install for a signed release. The build is notarized by Apple
+and the ticket is stapled to both the app and the disk image, so it opens the
+first time, with no warning and with no network.
 
 The agent needs a provider key. **Settings → AI** stores it in the macOS Keychain, or points WebDeck at your password manager (`op read`, `pass show`, `security find-generic-password`, `vault read`). `ANTHROPIC_API_KEY` in the environment also works.
 
 Then read [Getting Started](docs/getting-started.md): the first five minutes, the blocks, and the shortcuts.
 
+### Opening a pre-release build
+
+A build that has not been through Apple's notary service — anything from
+`npm run package:dmg`, and every release candidate before the first signed one
+— is refused on first launch. **On macOS 15 and later, Control-clicking the app
+no longer offers a way past this.** The one supported route:
+
+1. Double-click the app once. macOS refuses it; dismiss the dialog.
+2. Open **System Settings → Privacy & Security**, scroll to Security, and click
+   **Open Anyway** beside the message naming Arcwel WebDeck.
+3. Confirm. It opens normally from then on.
+
+Or install it from the mounted disk image in one command, which copies the app
+and clears the quarantine flag the download added:
+
+```bash
+cp -R "/Volumes/Arcwel WebDeck/Arcwel WebDeck.app" /Applications/ && xattr -dr com.apple.quarantine "/Applications/Arcwel WebDeck.app"
+```
+
+If Finder shows a crossed-out icon on the app, that is a stale Launch Services
+record rather than a broken build:
+
+```bash
+/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "/Applications/Arcwel WebDeck.app" && killall Finder
+```
+
 ### Testing a pre-release build
 
-This is a release candidate shared for feedback. What to know before you start:
+What to know before you start:
 
-- **It is ad-hoc signed, not notarized.** macOS will refuse the first launch; right-click the app, choose **Open**, and confirm once. If Finder shows a crossed-out icon, that is a stale Launch Services entry: drag the app out of Applications and back, or run `/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "/Applications/Arcwel WebDeck.app"` and relaunch Finder.
-- **The development keychain is on.** Because the bundle is unsigned, the key that encrypts cookies and saved passwords is a 0600 file in the profile folder rather than a login-Keychain item. Fine for testing; do not treat this build as your daily browser for banking.
 - **The profile lives in `~/Library/Application Support/Chromium`** and is separate from Chrome's. Nothing in your Chrome profile is read or changed.
-- **The agent needs a provider key** (Settings → AI). Start in **Review-driven** or **Agent-driven** mode; leave the three money and identity guards on, and turn on **Email & messaging** and **Posting publicly** if the agent will be anywhere near your mail or social accounts.
+- **Start the agent in Review-driven or Agent-driven mode.** Leave the three money and identity guards on, and turn on **Email & messaging** and **Posting publicly** if the agent will be anywhere near your mail or social accounts.
 - **Cast is off** by default, so no "find devices on the local network" prompt.
+- **macOS asks once for Keychain access** ("Arcwel WebDeck Safe Storage"), the same prompt Chrome raises. Click **Always Allow** and it does not come back. It asks because the build is not yet notarized; dragging the app to Applications, rather than running it from the disk image, is what keeps the answer sticking.
 
 Things worth trying: browse for a while and see whether anything feels less than Chrome; press <kbd>⌘D</kbd> over a page and give the agent a task that touches the page you are looking at; resize the window down to about 760 × 640 and open every menu; open a project and use the editor, terminal and source control together; detach the Deck into its own window.
 
@@ -169,7 +198,19 @@ npm run verify:hardening -- --browser <binary> --release   # sandbox, site isola
 node scripts/verify-deliverable.mjs --app <.app>     # runs on a machine that never saw the build tree
 ```
 
-Developer builds are ad-hoc signed. With the `webdeck_dev_keychain` gn arg on, such a build keeps its cookie encryption key in the profile instead of raising the macOS Keychain prompt on every rebuild; a Developer ID build never takes that path. See [`chromium/RELEASING.md`](chromium/RELEASING.md).
+### Making the installer
+
+```bash
+cd app
+npm run release:preflight          # which Apple credentials are missing, and how to get each
+npm run release:dmg -- --build-dir <out dir> --out <dir>
+```
+
+`release:dmg` signs the bundle inside-out with the hardened runtime, notarizes and staples the app, wraps it in a disk image, signs and notarizes that too, then proves the result with `spctl` and `stapler validate`. It needs a Developer ID Application certificate and a `notarytool` keychain profile; the preflight prints the exact command for whichever is missing, and the password never passes through this repository.
+
+Without those credentials, `npm run package:dmg` produces the same disk image ad-hoc signed. It installs and runs, but testers meet Gatekeeper once — see [Opening a pre-release build](#opening-a-pre-release-build).
+
+Developer builds may set the `webdeck_dev_keychain` gn arg, which keeps the cookie encryption key in the profile rather than raising the macOS Keychain prompt on every rebuild. Packaging treats such a build as not distributable. See [`chromium/RELEASING.md`](chromium/RELEASING.md).
 
 ## How it fits together
 

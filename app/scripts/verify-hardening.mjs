@@ -856,6 +856,8 @@ try {
   // resolved by the build graph, so reading args.gn alone would report
   // "dcheck_always_on: not set" for a build where it is very much on. Ask gn
   // for the resolved values, and say so plainly when we could not.
+  // Read once here, used again by the signature check below.
+  let gnEffective = null
   let outDir = arg('args-gn') ? dirname(resolve(arg('args-gn'))) : null
   if (!outDir) {
     let dir = dirname(resolve(browser))
@@ -899,6 +901,7 @@ try {
     }
 
     const effective = resolved ?? explicit
+    gnEffective = effective
     const source = resolved ? 'resolved by gn' : 'args.gn overrides only'
     const unsafe = Object.entries(UNSAFE_GN_ARGS).filter(([k]) => effective[k] === 'true')
     if (unsafe.length === 0) {
@@ -963,11 +966,14 @@ try {
   }
 
   // ══ 3b. the code signature ════════════════════════════════════════════════
-  // A bundle with no Team Identifier (ad-hoc or unsigned) makes the fork use its
-  // development keychain: the OSCrypt password becomes a 0600 file in the
-  // profile ("WebDeck Dev Keychain") instead of a login-Keychain item — see
-  // components/os_crypt/webdeck/dev_keychain.h. Right for a dev build, wrong to
-  // ship. Measured from the signature, which is exactly what the browser reads.
+  // A Team Identifier is what a Developer ID signature carries and an ad-hoc or
+  // unsigned bundle does not. Two things follow from its absence: Gatekeeper
+  // refuses the app on a machine that did not build it, and — only in a build
+  // compiled with webdeck_dev_keychain — the OSCrypt password becomes a 0600
+  // file in the profile ("WebDeck Dev Keychain") instead of a login-Keychain
+  // item (components/os_crypt/webdeck/dev_keychain.h). The two are reported
+  // separately, because saying "the development keychain is active" about a
+  // build that compiled it out is simply false.
   if (releaseMode) {
     const bundle = resolve(browser, '..', '..', '..')
     try {
@@ -975,12 +981,20 @@ try {
         encoding: 'utf8'
       })
       const team = /TeamIdentifier=(.+)/.exec(sig)?.[1]?.trim()
+      // gnArgs is read earlier for the release-config check; when it could not
+      // be read at all, the honest answer is that the keychain path is unknown.
+      const devKeychain = gnEffective?.webdeck_dev_keychain
       if (team && team !== 'not set') {
         ok('signature: Team Identifier present, the real Keychain is in use', team)
+      } else if (devKeychain === 'true') {
+        warn(
+          'signature: no Team Identifier, and the development keychain is compiled in',
+          'the cookie/password key is a plaintext 0600 file in the profile, and Gatekeeper will refuse this bundle. Rebuild with webdeck_dev_keychain = false and sign with a Developer ID before shipping.'
+        )
       } else {
         warn(
-          'signature: no Team Identifier — the development keychain is active',
-          'cookie/password key is a plaintext 0600 file in the profile; sign with a Developer ID before shipping'
+          'signature: no Team Identifier',
+          `Gatekeeper will refuse this bundle on any machine that did not build it${devKeychain === 'false' ? '. The development keychain is compiled out, so the real Keychain is used' : ''}. Sign with a Developer ID and notarize: npm run release:preflight.`
         )
       }
     } catch (error) {
