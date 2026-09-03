@@ -14,6 +14,19 @@ index 65b9ce9bc44ce..6fa8db8dfafba 100644
  // NOTE: The last valid command value is 57343 (0xDFFF)
  // See http://msdn.microsoft.com/en-us/library/t2zechd4(VS.71).aspx
  
+diff --git a/chrome/app/chromium_strings.grd b/chrome/app/chromium_strings.grd
+index a741f89bf54c6..745720b3ed49e 100644
+--- a/chrome/app/chromium_strings.grd
++++ b/chrome/app/chromium_strings.grd
+@@ -2004,7 +2004,7 @@ Chromium is unable to recover your settings.
+ 
+       <if expr="is_macosx">
+         <message name="IDS_RUNTIME_PERMISSION_OS_REASON_TEXT" desc="Text provided to the macOS permission dialog, explaining why Chrome needs to access a protected resource (e.g., camera, microphone).">
+-          Once Chromium has access, websites will be able to ask you for access.
++          Once Arcwel WebDeck has access, websites will be able to ask you for access.
+         </message>
+         <message name="IDS_LOCAL_NETWORK_ACCESS_PERMISSION_DESC" desc="Text shown in the macOS permission dialog, describing why Chrome needs the permission to access local network.">
+           This will allow you to select from available devices and display content on them.
 diff --git a/chrome/app/theme/chromium/mac/Assets.car b/chrome/app/theme/chromium/mac/Assets.car
 index cc692a8a680ac943fcae904ca161930ee2722284..25b966bd9e2b3f2888da75471275be84368b3878 100644
 GIT binary patch
@@ -56854,6 +56867,22 @@ index b0923f5e9cd91..b89b6a047e18b 100644
    cross_device::RegisterProfilePrefs(registry);
    enterprise::RegisterIdentifiersProfilePrefs(registry);
    enterprise_connectors::RegisterProfilePrefs(registry);
+diff --git a/chrome/browser/profiles/profile_impl.cc b/chrome/browser/profiles/profile_impl.cc
+index 3af3b276af0e0..38fd56386fcf5 100644
+--- a/chrome/browser/profiles/profile_impl.cc
++++ b/chrome/browser/profiles/profile_impl.cc
+@@ -444,7 +444,10 @@ void ProfileImpl::RegisterProfilePrefs(
+ #endif
+ 
+   registry->RegisterBooleanPref(prefs::kForceEphemeralProfiles, false);
+-  registry->RegisterBooleanPref(prefs::kEnableMediaRouter, true);
++  // WebDeck: Cast / media routing is off by default. Its mDNS discovery
++  // (_googlecast._tcp) starts at launch and raises macOS's "find devices on
++  // local networks" permission prompt before the user has done anything.
++  registry->RegisterBooleanPref(prefs::kEnableMediaRouter, false);
+ #if !BUILDFLAG(IS_ANDROID)
+   registry->RegisterBooleanPref(prefs::kShowCastIconInToolbar, false);
+ #endif  // !BUILDFLAG(IS_ANDROID)
 diff --git a/chrome/browser/resources/BUILD.gn b/chrome/browser/resources/BUILD.gn
 index e66dc00a9a34f..07f1b4c2d2432 100644
 --- a/chrome/browser/resources/BUILD.gn

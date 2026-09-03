@@ -60,6 +60,12 @@ export default function App(): React.JSX.Element {
     []
   )
 
+  // The saved tab strip comes back once, at boot — it is the browser's, not a
+  // project's, so a later project switch leaves the tabs alone.
+  useEffect(() => {
+    useShellStore.getState().restoreTabSession()
+  }, [])
+
   // Load the active profile's bookmarks at boot (they are stored per profile).
   useEffect(() => {
     void window.agweb.profiles.list().then((state) => {

@@ -400,7 +400,14 @@ interface TabSessionSnapshot {
   groups?: TabGroup[]
 }
 
-const tabsKey = (workspacePath: string | null): string => `agweb.tabs:${workspacePath ?? 'default'}`
+/**
+ * The tab session is the BROWSER's, not the project's. It used to be keyed by
+ * workspace path, so opening a project swapped the whole tab strip for that
+ * project's saved tabs — pages you had closed came back and the ones you were
+ * reading vanished. One session per profile now; the workspace argument is
+ * kept so the callers stay unchanged and named snapshots keep their shape.
+ */
+const tabsKey = (_workspacePath: string | null): string => 'agweb.tabs:default'
 
 /** Pack the live tab strip into its persisted shape. Shared by the per-workspace
  *  autosave and named snapshots so both capture tabs, order, groups and the
@@ -611,6 +618,13 @@ interface ShellState {
   setAgentSessions(sessions: AgentSessionInfo[]): void
 
   setWorkspace(workspace: WorkspaceInfo | null): void
+  /**
+   * Restore the profile's saved tab strip, once, at boot (honours the
+   * "Restore tabs on launch" setting). Tabs belong to the browser, not to a
+   * project, so this is the ONLY place a saved strip replaces the live one —
+   * a project switch never does (see tabsKey).
+   */
+  restoreTabSession(): void
   setTheme(theme: Theme): void
 
   newTab(initialUrl?: string): string
@@ -1051,21 +1065,26 @@ export const useShellStore = create<ShellState>((set) => ({
   setWorkspace: (workspace) =>
     set((state) => {
       if (workspace?.path === state.workspace?.path) return { workspace }
+      // Only the Deck layout is per project. The tab strip is the browser's
+      // and stays exactly as it is across a project switch — no saved strip is
+      // swapped in, no live page is torn down (see tabsKey).
       const layout = loadLayout(workspace?.path ?? null)
-      const session = loadTabSession(workspace?.path ?? null)
-      if (session) {
-        // Leaving a workspace: flush its final tab set, then drop its views —
-        // the restored strip owns the stage from here.
-        saveTabSession(state)
-        for (const tab of state.tabs) {
-          if (tab.kind === 'web' && tab.hasContent) void window.agweb.browser.destroy(tab.id)
-        }
-      }
       return {
         workspace,
-        ...(layout ?? {}),
-        ...(session ? { ...session, browserStates: {} } : {})
+        ...(layout ?? {})
       }
+    }),
+
+  restoreTabSession: () =>
+    set((state) => {
+      const session = loadTabSession(null)
+      if (!session) return {}
+      // Boot: the strip is the initial blank tab; nothing has content yet, but
+      // guard anyway so a late call never leaks a native view.
+      for (const tab of state.tabs) {
+        if (tab.kind === 'web' && tab.hasContent) void window.agweb.browser.destroy(tab.id)
+      }
+      return { ...session, browserStates: {} }
     }),
 
   setTheme: (theme) => set({ theme }),

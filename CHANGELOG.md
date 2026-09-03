@@ -31,6 +31,18 @@ All notable changes to Arcwel WebDeck are recorded here. This project adheres to
   destroys every content tab) empties the tab instead of letting Chromium
   close the window.
 
+### Changed
+
+- **Tabs belong to the browser, not the project.** The tab strip used to be
+  saved and restored per workspace, so opening a project swapped in that
+  project's old tabs and tore down the pages you were reading. One tab session
+  per profile now, restored once at launch; a project switch only restores
+  the Deck layout.
+- **Cast / media routing is off by default.** Its mDNS discovery started at
+  launch and raised macOS's "find devices on local networks" prompt before
+  the user had done anything. The macOS permission text now names Arcwel
+  WebDeck.
+
 ### Added
 
 - **A browsing-first new-tab page**: the address field is focused, top sites
