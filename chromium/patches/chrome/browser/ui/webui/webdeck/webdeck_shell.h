@@ -14,6 +14,7 @@
 #include "mojo/public/cpp/bindings/pending_remote.h"
 #include "mojo/public/cpp/bindings/receiver.h"
 #include "mojo/public/cpp/bindings/remote.h"
+#include "ui/shell_dialogs/select_file_dialog.h"
 
 class BrowserWindowInterface;
 class ContentsContainerView;
@@ -44,7 +45,8 @@ namespace webdeck {
 class WebDeckShell : public mojom::Shell,
                      public TabStripModelObserver,
                      public content::WebContentsObserver,
-                     public find_in_page::FindResultObserver {
+                     public find_in_page::FindResultObserver,
+                     public ui::SelectFileDialog::Listener {
  public:
   WebDeckShell(content::WebContents* shell_contents,
                mojo::PendingReceiver<mojom::Shell> receiver);
@@ -101,6 +103,13 @@ class WebDeckShell : public mojom::Shell,
   void OpenWindow(const std::string& url, OpenWindowCallback callback) override;
   void FocusWindow(int32_t window_id) override;
   void CloseWindow(int32_t window_id) override;
+  void PickPaths(int32_t mode, PickPathsCallback callback) override;
+
+  // ui::SelectFileDialog::Listener: the PickPaths panel answered.
+  void FileSelected(const ui::SelectedFileInfo& file, int index) override;
+  void MultiFilesSelected(
+      const std::vector<ui::SelectedFileInfo>& files) override;
+  void FileSelectionCanceled() override;
 
   // TabStripModelObserver: the active tab changed (or the set of tabs did), so
   // re-observe the active tab and push its state to the shell.
@@ -159,6 +168,10 @@ class WebDeckShell : public mojom::Shell,
   // down (OnTabStripModelChanged kRemoved) even if the renderer never calls
   // SetSplit(false).
   int32_t secondary_tab_id_ = 0;
+  // The open PickPaths panel and the reply it owes. One at a time: a second
+  // PickPaths while this is set answers empty at once.
+  scoped_refptr<ui::SelectFileDialog> select_file_dialog_;
+  PickPathsCallback pick_paths_callback_;
 };
 
 }  // namespace webdeck

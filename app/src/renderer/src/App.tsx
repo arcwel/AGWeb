@@ -199,6 +199,13 @@ export default function App(): React.JSX.Element {
   useAppCommands()
 
   const revealed = deckRevealed && deckMode === 'attached'
+  // Vertical tabs are a RAIL BLOCK docked to the stage's left edge (inside the
+  // workspace, never in the title-bar row), and the toolbar moves up into the
+  // title-bar row so the mode costs one row less. The stage and the Deck's left
+  // column / dock shift right by --tabrail-w (styles.css) — nothing overlaps.
+  const verticalTabs = useShellStore((s) => s.verticalTabs)
+  const ownsChrome = window.agweb.host.ownsBrowserChrome
+  const tabRail = verticalTabs && !ownsChrome
 
   return (
     <div className="wd-shell flex h-full flex-col">
@@ -209,10 +216,24 @@ export default function App(): React.JSX.Element {
           Chromium already draws the tab strip and address bar. Drawing ours too
           would stack a second, non-functional copy beneath the working one —
           and the user would reach for whichever is nearer the content. */}
-      {!window.agweb.host.ownsBrowserChrome && (
+      {!ownsChrome && (
         <div className="wd-chrome flex flex-none flex-col">
-          <TabStrip />
-          <Toolbar />
+          {tabRail ? (
+            <div
+              className="drag-region flex items-center"
+              data-testid="title-row"
+              style={{ height: 'var(--wd-tabrow-h)', paddingLeft: 'var(--wd-titlebar-inset)' }}
+            >
+              <div className="min-w-0 flex-1">
+                <Toolbar />
+              </div>
+            </div>
+          ) : (
+            <>
+              <TabStrip />
+              <Toolbar />
+            </>
+          )}
         </div>
       )}
       {!window.agweb.host.ownsBrowserChrome && <UtilitiesBar />}
@@ -233,7 +254,7 @@ export default function App(): React.JSX.Element {
       <div
         className={`workspace ${revealed ? 'revealed' : ''} ${hasRail ? 'has-rail' : ''} ${
           dockEmpty ? 'dock-empty' : ''
-        } ${leftEmpty ? 'left-empty' : ''}`}
+        } ${leftEmpty ? 'left-empty' : ''} ${tabRail ? 'has-tabrail' : ''}`}
         style={
           {
             '--deck-col-w': `${deckSizes.colWidth}px`,
@@ -246,6 +267,7 @@ export default function App(): React.JSX.Element {
           } as React.CSSProperties
         }
       >
+        {tabRail && <TabStrip />}
         <Stage />
         {deckMode === 'attached' && <Deck />}
         <ViewportChip />

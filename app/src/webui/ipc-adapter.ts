@@ -88,15 +88,17 @@ export const SHELL_OWNED: Record<string, (...args: unknown[]) => unknown> = {
   // File choosers hand back CONTENT, never a path, so the channels that need a
   // path say so rather than inventing one. See webui/pickers.ts.
   [IpcChannels.dialogConfirm]: (message) => confirmDialog(String(message)),
+  // Both of these are answered BEFORE this table is consulted: paths come from
+  // the Shell's native panel (SHELL_BROWSER dialogPickPaths → Shell.pickPaths),
+  // and workspace:open is the picker plus the core's open-by-path (see
+  // createWebUiIpc). They stay listed so the channel coverage check sees them
+  // served; reaching either entry means the Shell route was removed.
   [IpcChannels.dialogPickPaths]: () => pickPaths(),
-  // These two answer with a workspace / the settings and have no error field,
-  // so a returned value would read as "the user cancelled" and the caller would
-  // carry on. The UI branches on host.canPickPaths and host.ownsBrowserFeatures
-  // instead of calling them, so a rejection here means a wiring bug.
   [IpcChannels.workspaceOpen]: () =>
-    unavailableHere(
-      'This build has no native folder picker — open a project by typing its path instead.'
-    ),
+    unavailableHere('workspace:open is answered by the native folder panel (Shell.pickPaths).'),
+  // Answers with the settings and has no error field, so a returned value would
+  // read as "the user cancelled". The UI branches on host.ownsBrowserFeatures
+  // instead of calling it, so a rejection here means a wiring bug.
   [IpcChannels.appSettingsChooseDownloadDir]: () =>
     unavailableHere(
       'Chromium owns the download location on this build — change it at chrome://settings/downloads.'
@@ -132,6 +134,16 @@ export function createWebUiIpc(client: CoreClient): IpcLike {
       // Shell — an unknown channel falls through to the core, as intended.
       const browser = Object.hasOwn(SHELL_BROWSER, channel) ? SHELL_BROWSER[channel] : undefined
       if (browser) return browser(...args)
+      // "Open a project" is two steps here: the browser's native folder panel
+      // (Shell.pickPaths, which reports a real path) and then the core's
+      // open-by-path. Electron did both in one main-process handler; the fork
+      // splits them across the Shell and the core, so this is the one channel
+      // that needs both. A cancelled panel answers null, like Electron's did.
+      if (channel === IpcChannels.workspaceOpen) {
+        return (SHELL_BROWSER[IpcChannels.dialogPickPaths]('dir') as Promise<string[]>).then(
+          (paths) => (paths.length ? client.invoke(IpcChannels.workspaceOpenPath, paths[0]) : null)
+        )
+      }
       const shell = Object.hasOwn(SHELL_OWNED, channel) ? SHELL_OWNED[channel] : undefined
       // Arguments are forwarded: some shell-owned channels (the exports) need
       // them, and silently dropping them made every handler look argument-free.

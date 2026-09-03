@@ -234,8 +234,19 @@ and prompts once more (Always Allow) — then it is quiet.
 an in-memory fake keychain whose key is regenerated every launch, which makes
 every previously stored cookie and password undecryptable on the next start —
 it silently logs the user out of everything on each run. Notarization (§4 [YOU])
-is the only change that removes the prompt without that cost, because a Team ID
+is the change that removes the prompt for a shipped build, because a Team ID
 gives the keychain a stable identity to bind to.
+
+**For development builds** the fork carries a third option: the gn arg
+`webdeck_dev_keychain = true` (`components/os_crypt/webdeck/dev_keychain.gni`,
+off by default). With it, a bundle that has **no Team Identifier** keeps its
+OSCrypt password in a random-once, then stable 0600 file `WebDeck Dev Keychain`
+in the profile directory, so no prompt appears and nothing is logged out between
+rebuilds. A Developer ID build never takes that path; `WEBDECK_REAL_KEYCHAIN=1`
+forces the real keychain on any build. The cost is stated plainly: on such a
+build the key is a plaintext file readable by any process running as the user.
+`verify:hardening --release` warns when the arg is on and when the bundle has no
+Team Identifier, so it cannot ship unnoticed.
 
 ## What still needs deciding before a real launch
 

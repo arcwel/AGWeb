@@ -3,6 +3,50 @@
 All notable changes to Arcwel WebDeck are recorded here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Fixed (RC1 review)
+
+- App icon: the bundle's asset catalog (Assets.car) is now WebDeck's, so Finder
+  and the Dock show the WebDeck icon instead of Chromium's.
+- Tabs sit inline with the window's traffic lights (the title bar is exactly the
+  tab row's height); deck and float windows reserve the same inset.
+- Popovers (favourites, extensions, profile) float above the page with a gap;
+  the staged tab hides while any shell overlay is open.
+- The agent's paperclip opens the native open panel and the attachment appears
+  as a chip; the core creates the attachments folder on first use.
+- Profile and settings entries open Sign in, Profiles, Browser settings and
+  Extensions as real tabs.
+- The Deck detaches into its own window and docks back; stacks float into real
+  windows.
+- The address bar and tab titles follow navigation again. The shell opened two
+  Mojo pipes to the browser at startup (the client registration and the first
+  tab creation raced); the browser keeps one Shell per page, so the client's
+  pipe closed silently and no navigation state ever reached the tab strip. The
+  remote is now resolved once, and a failed client registration is logged.
+- The window's seed tab (the blank tab Chromium opens every window with) is no
+  longer adopted as a phantom "about:blank" tab; the shell's first tab claims
+  it instead of opening a second real tab.
+- Closing the window's last real tab (a project switch restores a layout and
+  destroys every content tab) empties the tab instead of letting Chromium
+  close the window.
+
+### Added
+
+- **Vertical tabs as a rail block** docked beside the page, with tab groups as
+  sections; the toolbar moves up into the title bar in that mode.
+- **Native path picker** (`Shell.PickPaths`): "Open…" on the start page and in
+  the Files block opens the folder panel; agent attachments pick real files.
+- **Development keychain** (gn arg `webdeck_dev_keychain`, off by default): on an
+  ad-hoc or unsigned bundle the cookie encryption key is a stable 0600 file in
+  the profile instead of a login-Keychain item, so dev builds never raise the
+  "Chromium Safe Storage" prompt. `WEBDECK_REAL_KEYCHAIN=1` forces the real
+  Keychain; `verify:hardening --release` warns when the flag is on.
+- `verify:hardening --release` reports whether the bundle carries a Team
+  Identifier.
+- Electron removed: WebDeck is the Chromium fork only.
+- VS Code extensions from Open VSX; each contributed view is its own block.
+
 ## v0.1.0 — 2026-09-01
 
 First tagged release. Arcwel WebDeck is an agent-first universal IDE and browser
@@ -60,8 +104,9 @@ positioned stage, and an IDE + agent runtime (`webdeck-core`) runs alongside.
 
 - Signed distribution (DMG notarization) needs an Apple Developer ID and is
   documented, not automated (`chromium/RELEASING.md`).
-- Headless/CI launches must pass `--use-mock-keychain`: without an interactive
-  login keychain, the cookie store's OSCrypt key fetch blocks and the shell
-  cannot boot. Interactive launches are unaffected.
+- Headless/CI launches of a build without the development keychain must pass
+  `--use-mock-keychain`: without an interactive login keychain, the cookie
+  store's OSCrypt key fetch blocks and the shell cannot boot. (Superseded for
+  dev builds by `webdeck_dev_keychain`; see Unreleased.)
 - Auto-update is check-only; upstream tracking automation and update delivery
   (13.7) are in progress.

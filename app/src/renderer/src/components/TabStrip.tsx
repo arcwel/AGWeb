@@ -165,19 +165,29 @@ export function TabStrip(): React.JSX.Element {
   )
 
   if (orientation === 'vertical') {
+    // A rail BLOCK: glass, its own header, docked to the stage's left edge by
+    // App.tsx / styles.css (.tab-rail-block). Same tabs, groups and drag
+    // reorder as the horizontal strip — one tab model, two views of it.
     return (
       <nav
         data-testid="tab-strip"
         aria-label="Tabs"
         data-layout="vertical"
-        className="wd-tab-rail no-drag flex h-full min-h-0 w-52 flex-none flex-col overflow-hidden border-r border-[var(--wd-glass-border)]"
+        className="tab-rail-block glass no-drag flex min-h-0 flex-col overflow-hidden rounded-[var(--wd-r-stage)]"
       >
-        <div className="flex items-center justify-end gap-1 px-2 py-2">
+        <div className="flex flex-none items-center gap-1 border-b border-[var(--wd-glass-border)] px-3 py-2">
+          <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--wd-muted)]">
+            Tabs
+          </span>
+          <span className="text-[10px] text-[var(--wd-muted)]" data-testid="tab-rail-count">
+            · {tabs.length}
+          </span>
+          <span className="flex-1" />
           {toggleButton}
           {newTabButton}
         </div>
         <div
-          className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-2 pb-2 [scrollbar-width:thin]"
+          className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-2 py-2 [scrollbar-width:thin]"
           onDragOver={(event) => acceptDrag(event, 'end')}
           onDrop={(event) => finishDrop(event, null)}
           onDragLeave={() => setDropTarget(null)}

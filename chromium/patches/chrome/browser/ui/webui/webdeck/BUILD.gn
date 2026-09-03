@@ -64,6 +64,7 @@ source_set("impl") {
     "//services/media_session/public/mojom",
     "//services/network/public/mojom",
     "//ui/base",
+    "//ui/shell_dialogs",
     "//ui/webui",
     "//url",
   ]

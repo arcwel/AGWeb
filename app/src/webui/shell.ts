@@ -27,6 +27,7 @@ interface ShellRemote {
   openWindow(url: string): Promise<{ windowId: number }>
   focusWindow(windowId: number): void
   closeWindow(windowId: number): void
+  pickPaths(mode: number): Promise<{ paths: string[] }>
   createTab(url: string): Promise<{ tabId: number }>
   selectTab(tabId: number): void
   closeTab(tabId: number): void
@@ -124,6 +125,9 @@ function unmapTab(shellId: string): void {
   const handle = handleByShellId.get(shellId)
   handleByShellId.delete(shellId)
   if (handle !== undefined) shellIdByHandle.delete(handle)
+  // The browser never closes its last real tab (WebDeckShell::CloseTab empties
+  // it instead), so a destroyed seed is blank and unowned again: claimable.
+  if (handle !== undefined && handle === seedHandle) seedClaimed = false
 }
 function handleFor(shellId: unknown): number {
   return handleByShellId.get(String(shellId)) ?? ACTIVE
@@ -143,6 +147,19 @@ function handleFor(shellId: unknown): number {
  * phantom is coined and focus is not stolen.
  */
 const pendingCreates: string[] = []
+
+/**
+ * The window's SEED tab: the one real tab Chromium opens every window with
+ * (about:blank, staged behind the start page). The shell did not create it, so
+ * without this it would be adopted as a phantom "about:blank" tab — and, being
+ * the browser's active tab, it would take the stage and black out the start
+ * page. It is recognised on the first snapshot (no mappings yet, no create in
+ * flight, url about:blank), never adopted, and CLAIMED by the shell's first
+ * `browser.create` instead of opening a second real tab: the window keeps one
+ * real tab per shell tab, and the seed is never left over.
+ */
+let seedHandle: number | null = null
+let seedClaimed = false
 
 /**
  * The shell tab id the browser's active-tab state is attributed to.
@@ -246,12 +263,18 @@ async function ensureShellClient(): Promise<void> {
         for (const tab of tabs) {
           seen.add(tab.tabId)
           if (shellIdByHandle.has(tab.tabId)) continue
+          if (tab.tabId === seedHandle) continue
           // A shell-initiated create is waiting for exactly this new handle:
           // bind it to that shell id rather than coining a phantom adopted tab
           // and stealing focus. See `pendingCreates`.
           const pending = pendingCreates.shift()
           if (pending !== undefined) {
             mapTab(pending, tab.tabId)
+            continue
+          }
+          // The window's seed tab (see `seedHandle`): not adopted, claimed later.
+          if (seedHandle === null && handleByShellId.size === 0 && tab.url === 'about:blank') {
+            seedHandle = tab.tabId
             continue
           }
           const shellId = mintAdoptedShellId()
@@ -270,6 +293,7 @@ async function ensureShellClient(): Promise<void> {
           const shellId = shellIdByHandle.get(handle)
           if (shellId !== undefined) unmapTab(shellId)
         }
+        if (seedHandle !== null && !seen.has(seedHandle)) seedHandle = null
       },
       onTabNavigationStateChanged(info) {
         const state: BrowserTabState = {
@@ -287,6 +311,7 @@ async function ensureShellClient(): Promise<void> {
       onTabClosed(tabId) {
         const shellId = shellIdByHandle.get(tabId)
         if (shellId !== undefined) unmapTab(shellId)
+        if (tabId === seedHandle) seedHandle = null
       },
       onFindResult(tabId, activeMatch, totalMatches) {
         emitShellBrowserEvent(IpcEvents.browserFindResult, {
@@ -297,9 +322,14 @@ async function ensureShellClient(): Promise<void> {
       }
     })
     shell.setClient(receiver.$.bindNewPipeAndPassRemote())
-  } catch {
+  } catch (err) {
     // No live browser state on a non-fork host; leave clientBound set so we do
-    // not retry a failure the user cannot act on.
+    // not retry a failure the user cannot act on. Off-fork the reason is the
+    // documented "cannot reach the browser"; ON the fork any failure here means
+    // the address bar and tab titles will never update, so say so loudly.
+    if (!unavailable) {
+      console.error('WebDeck shell: could not register the ShellClient —', err)
+    }
   }
 }
 
@@ -312,21 +342,42 @@ const BINDINGS_URL = '/mojo/webdeck.mojom-webui.js'
 let remote: ShellRemote | null = null
 let unavailable: string | null = null
 
-async function getShell(): Promise<ShellRemote> {
-  if (remote) return remote
-  if (unavailable) throw new Error(unavailable)
-  try {
-    const mod = (await import(/* @vite-ignore */ BINDINGS_URL)) as {
-      Shell: { getRemote(): ShellRemote }
+/**
+ * The in-flight resolution of the remote, shared by every concurrent caller.
+ *
+ * ONE pipe, ever. `Shell.getRemote()` opens a fresh Mojo pipe on every call and
+ * the browser keeps a single WebDeckShell per page — binding a second remote
+ * REPLACES the first and closes its pipe. Before this was memoised, the client
+ * registration (ensureShellClient, at mount) and the first `browser.create`
+ * (Stage) both found `remote` unset, both imported the bindings, both bound a
+ * pipe: the browser dropped the first, `setClient` on it threw "pipe has
+ * already been closed" inside a swallowed catch, and the shell never received
+ * a single navigation event — commands worked, the address bar and tab titles
+ * stayed blank forever.
+ */
+let remotePromise: Promise<ShellRemote> | null = null
+
+function getShell(): Promise<ShellRemote> {
+  if (remote) return Promise.resolve(remote)
+  if (unavailable) return Promise.reject(new Error(unavailable))
+  if (remotePromise) return remotePromise
+  remotePromise = (async () => {
+    try {
+      const mod = (await import(/* @vite-ignore */ BINDINGS_URL)) as {
+        Shell: { getRemote(): ShellRemote }
+      }
+      remote = mod.Shell.getRemote()
+      return remote
+    } catch (err) {
+      unavailable =
+        'the WebDeck shell cannot reach the browser on this host — driving the ' +
+        `window needs the Arcwel WebDeck build (${(err as Error).message})`
+      throw new Error(unavailable, { cause: err })
+    } finally {
+      remotePromise = null
     }
-    remote = mod.Shell.getRemote()
-    return remote
-  } catch (err) {
-    unavailable =
-      'the WebDeck shell cannot reach the browser on this host — driving the ' +
-      `window needs the Arcwel WebDeck build (${(err as Error).message})`
-    throw new Error(unavailable, { cause: err })
-  }
+  })()
+  return remotePromise
 }
 
 /**
@@ -359,6 +410,14 @@ export const SHELL_BROWSER: Record<string, (...args: unknown[]) => Promise<unkno
   // Open a real tab and remember the shell id -> handle mapping.
   [IpcChannels.browserCreate]: async (shellId) => {
     const id = String(shellId)
+    // The first shell tab to need a real tab takes the window's seed tab
+    // (already open, already active) instead of opening a second one.
+    if (seedHandle !== null && !seedClaimed) {
+      await ensureShellClient()
+      seedClaimed = true
+      mapTab(id, seedHandle)
+      return
+    }
     // Register BEFORE createTab so the onTabsChanged that createTab triggers
     // (which arrives first, on the ShellClient pipe) binds the new handle to
     // this id instead of adopting a phantom. See `pendingCreates`.
@@ -406,6 +465,14 @@ export const SHELL_BROWSER: Record<string, (...args: unknown[]) => Promise<unkno
     const shell = await getShell()
     if (visible) shell.selectTab(handleFor(shellId))
     shell.setStageVisible(Boolean(visible))
+  },
+  // The native open panel, which reports real paths (Shell.PickPaths). Only a
+  // privileged shell page may learn where a file lives; the core then opens the
+  // project / reads the attachment by that path, exactly as Electron's did.
+  [IpcChannels.dialogPickPaths]: async (mode) => {
+    const code = mode === 'dir' ? 1 : mode === 'image' ? 2 : 0
+    const { paths } = await (await getShell()).pickPaths(code)
+    return paths
   },
   // Windows: the Deck detached into its own window, floating stacks, a second
   // full shell. Each is a real browser window whose shell page carries the role.

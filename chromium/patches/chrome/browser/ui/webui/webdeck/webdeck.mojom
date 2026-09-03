@@ -206,6 +206,13 @@ interface Shell {
   OpenWindow(string url) => (int32 window_id);
   FocusWindow(int32 window_id);
   CloseWindow(int32 window_id);
+
+  // Native open panel that reports real filesystem PATHS — what a web page can
+  // never learn from <input type=file>, and what the core works in (it opens a
+  // project by path and reads attachments itself). `mode`: 0 = files,
+  // 1 = one folder, 2 = image files. Empty when cancelled, or while another
+  // pick is already open. The panel is sheeted on this shell's window.
+  PickPaths(int32 mode) => (array<string> paths);
 };
 
 // Browser -> renderer(shell): navigation/tab state, so the shell's tab strip and

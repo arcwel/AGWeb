@@ -1,4 +1,6 @@
-// ../../../../../../../../../../Volumes/BG_Dev/webdeck-chromium/chromium/src/out/webdeck/gen/chrome/browser/ui/webui/webdeck/webdeck.mojom-webui.ts
+// GENERATED from out/webdeck by scripts/gen-mojo-bindings.mjs — do not edit.
+
+// ../../../../../Volumes/BG_Dev/webdeck-chromium/chromium/src/out/webdeck/gen/chrome/browser/ui/webui/webdeck/webdeck.mojom-webui.ts
 import { mojo } from "//resources/mojo/mojo/public/js/bindings.js";
 import {
   RectSpec as gfx_mojom_RectSpec
@@ -739,6 +741,61 @@ var ShellRemote = class {
       false
     );
   }
+  setStageVisible(visible) {
+    this.proxy.sendMessage(
+      34,
+      Shell_SetStageVisible_ParamsSpec.$,
+      null,
+      [
+        visible
+      ],
+      false
+    );
+  }
+  openWindow(url) {
+    return this.proxy.sendMessage(
+      35,
+      Shell_OpenWindow_ParamsSpec.$,
+      Shell_OpenWindow_ResponseParamsSpec.$,
+      [
+        url
+      ],
+      false
+    );
+  }
+  focusWindow(windowId) {
+    this.proxy.sendMessage(
+      36,
+      Shell_FocusWindow_ParamsSpec.$,
+      null,
+      [
+        windowId
+      ],
+      false
+    );
+  }
+  closeWindow(windowId) {
+    this.proxy.sendMessage(
+      37,
+      Shell_CloseWindow_ParamsSpec.$,
+      null,
+      [
+        windowId
+      ],
+      false
+    );
+  }
+  pickPaths(mode) {
+    return this.proxy.sendMessage(
+      38,
+      Shell_PickPaths_ParamsSpec.$,
+      Shell_PickPaths_ResponseParamsSpec.$,
+      [
+        mode
+      ],
+      false
+    );
+  }
 };
 var ShellReceiver = class {
   helper_internal_;
@@ -987,6 +1044,41 @@ var ShellReceiver = class {
       impl.setClient.bind(impl),
       false
     );
+    this.helper_internal_.registerHandler(
+      34,
+      Shell_SetStageVisible_ParamsSpec.$,
+      null,
+      impl.setStageVisible.bind(impl),
+      false
+    );
+    this.helper_internal_.registerHandler(
+      35,
+      Shell_OpenWindow_ParamsSpec.$,
+      Shell_OpenWindow_ResponseParamsSpec.$,
+      impl.openWindow.bind(impl),
+      false
+    );
+    this.helper_internal_.registerHandler(
+      36,
+      Shell_FocusWindow_ParamsSpec.$,
+      null,
+      impl.focusWindow.bind(impl),
+      false
+    );
+    this.helper_internal_.registerHandler(
+      37,
+      Shell_CloseWindow_ParamsSpec.$,
+      null,
+      impl.closeWindow.bind(impl),
+      false
+    );
+    this.helper_internal_.registerHandler(
+      38,
+      Shell_PickPaths_ParamsSpec.$,
+      Shell_PickPaths_ResponseParamsSpec.$,
+      impl.pickPaths.bind(impl),
+      false
+    );
     this.onConnectionError = this.helper_internal_.getConnectionErrorEventRouter();
   }
 };
@@ -1043,6 +1135,11 @@ var ShellCallbackRouter = class {
   getDefaultBrowserState;
   setAsDefaultBrowser;
   setClient;
+  setStageVisible;
+  openWindow;
+  focusWindow;
+  closeWindow;
+  pickPaths;
   onConnectionError;
   constructor() {
     this.helper_internal_ = new mojo.internal.interfaceSupport.InterfaceReceiverHelperInternal(
@@ -1492,6 +1589,71 @@ var ShellCallbackRouter = class {
       ),
       false
     );
+    this.setStageVisible = new mojo.internal.interfaceSupport.InterfaceCallbackReceiver(
+      this.router_
+    );
+    this.helper_internal_.registerHandler(
+      34,
+      Shell_SetStageVisible_ParamsSpec.$,
+      null,
+      this.setStageVisible.createReceiverHandler(
+        false
+        /* expectsResponse */
+      ),
+      false
+    );
+    this.openWindow = new mojo.internal.interfaceSupport.InterfaceCallbackReceiver(
+      this.router_
+    );
+    this.helper_internal_.registerHandler(
+      35,
+      Shell_OpenWindow_ParamsSpec.$,
+      Shell_OpenWindow_ResponseParamsSpec.$,
+      this.openWindow.createReceiverHandler(
+        true
+        /* expectsResponse */
+      ),
+      false
+    );
+    this.focusWindow = new mojo.internal.interfaceSupport.InterfaceCallbackReceiver(
+      this.router_
+    );
+    this.helper_internal_.registerHandler(
+      36,
+      Shell_FocusWindow_ParamsSpec.$,
+      null,
+      this.focusWindow.createReceiverHandler(
+        false
+        /* expectsResponse */
+      ),
+      false
+    );
+    this.closeWindow = new mojo.internal.interfaceSupport.InterfaceCallbackReceiver(
+      this.router_
+    );
+    this.helper_internal_.registerHandler(
+      37,
+      Shell_CloseWindow_ParamsSpec.$,
+      null,
+      this.closeWindow.createReceiverHandler(
+        false
+        /* expectsResponse */
+      ),
+      false
+    );
+    this.pickPaths = new mojo.internal.interfaceSupport.InterfaceCallbackReceiver(
+      this.router_
+    );
+    this.helper_internal_.registerHandler(
+      38,
+      Shell_PickPaths_ParamsSpec.$,
+      Shell_PickPaths_ResponseParamsSpec.$,
+      this.pickPaths.createReceiverHandler(
+        true
+        /* expectsResponse */
+      ),
+      false
+    );
     this.onConnectionError = this.helper_internal_.getConnectionErrorEventRouter();
   }
   /**
@@ -1763,6 +1925,13 @@ var Shell_GetDefaultBrowserState_ResponseParamsSpec = { $: {} };
 var Shell_SetAsDefaultBrowser_ParamsSpec = { $: {} };
 var Shell_SetAsDefaultBrowser_ResponseParamsSpec = { $: {} };
 var Shell_SetClient_ParamsSpec = { $: {} };
+var Shell_SetStageVisible_ParamsSpec = { $: {} };
+var Shell_OpenWindow_ParamsSpec = { $: {} };
+var Shell_OpenWindow_ResponseParamsSpec = { $: {} };
+var Shell_FocusWindow_ParamsSpec = { $: {} };
+var Shell_CloseWindow_ParamsSpec = { $: {} };
+var Shell_PickPaths_ParamsSpec = { $: {} };
+var Shell_PickPaths_ResponseParamsSpec = { $: {} };
 var ShellClient_OnTabsChanged_ParamsSpec = { $: {} };
 var ShellClient_OnTabNavigationStateChanged_ParamsSpec = { $: {} };
 var ShellClient_OnTabClosed_ParamsSpec = { $: {} };
@@ -2876,6 +3045,132 @@ mojo.internal.Struct(
   [[0, 16]]
 );
 mojo.internal.Struct(
+  Shell_SetStageVisible_ParamsSpec.$,
+  "Shell_SetStageVisible_Params",
+  [
+    mojo.internal.StructField(
+      "visible",
+      0,
+      0,
+      mojo.internal.Bool,
+      false,
+      false,
+      0,
+      void 0,
+      void 0
+    )
+  ],
+  [[0, 16]]
+);
+mojo.internal.Struct(
+  Shell_OpenWindow_ParamsSpec.$,
+  "Shell_OpenWindow_Params",
+  [
+    mojo.internal.StructField(
+      "url",
+      0,
+      0,
+      mojo.internal.String,
+      null,
+      false,
+      0,
+      void 0,
+      void 0
+    )
+  ],
+  [[0, 16]]
+);
+mojo.internal.Struct(
+  Shell_OpenWindow_ResponseParamsSpec.$,
+  "Shell_OpenWindow_ResponseParams",
+  [
+    mojo.internal.StructField(
+      "windowId",
+      0,
+      0,
+      mojo.internal.Int32,
+      0,
+      false,
+      0,
+      void 0,
+      void 0
+    )
+  ],
+  [[0, 16]]
+);
+mojo.internal.Struct(
+  Shell_FocusWindow_ParamsSpec.$,
+  "Shell_FocusWindow_Params",
+  [
+    mojo.internal.StructField(
+      "windowId",
+      0,
+      0,
+      mojo.internal.Int32,
+      0,
+      false,
+      0,
+      void 0,
+      void 0
+    )
+  ],
+  [[0, 16]]
+);
+mojo.internal.Struct(
+  Shell_CloseWindow_ParamsSpec.$,
+  "Shell_CloseWindow_Params",
+  [
+    mojo.internal.StructField(
+      "windowId",
+      0,
+      0,
+      mojo.internal.Int32,
+      0,
+      false,
+      0,
+      void 0,
+      void 0
+    )
+  ],
+  [[0, 16]]
+);
+mojo.internal.Struct(
+  Shell_PickPaths_ParamsSpec.$,
+  "Shell_PickPaths_Params",
+  [
+    mojo.internal.StructField(
+      "mode",
+      0,
+      0,
+      mojo.internal.Int32,
+      0,
+      false,
+      0,
+      void 0,
+      void 0
+    )
+  ],
+  [[0, 16]]
+);
+mojo.internal.Struct(
+  Shell_PickPaths_ResponseParamsSpec.$,
+  "Shell_PickPaths_ResponseParams",
+  [
+    mojo.internal.StructField(
+      "paths",
+      0,
+      0,
+      mojo.internal.Array(mojo.internal.String, false),
+      null,
+      false,
+      0,
+      void 0,
+      void 0
+    )
+  ],
+  [[0, 16]]
+);
+mojo.internal.Struct(
   ShellClient_OnTabsChanged_ParamsSpec.$,
   "ShellClient_OnTabsChanged_Params",
   [
@@ -3017,9 +3312,11 @@ export {
   Shell_ClearBrowsingData_ParamsSpec,
   Shell_ClearBrowsingData_ResponseParamsSpec,
   Shell_CloseTab_ParamsSpec,
+  Shell_CloseWindow_ParamsSpec,
   Shell_CreateTab_ParamsSpec,
   Shell_CreateTab_ResponseParamsSpec,
   Shell_Find_ParamsSpec,
+  Shell_FocusWindow_ParamsSpec,
   Shell_GetAdblockBlockedCount_ParamsSpec,
   Shell_GetAdblockBlockedCount_ResponseParamsSpec,
   Shell_GetAdblockEnabled_ParamsSpec,
@@ -3040,6 +3337,10 @@ export {
   Shell_GoForward_ParamsSpec,
   Shell_Navigate_ParamsSpec,
   Shell_OpenDevTools_ParamsSpec,
+  Shell_OpenWindow_ParamsSpec,
+  Shell_OpenWindow_ResponseParamsSpec,
+  Shell_PickPaths_ParamsSpec,
+  Shell_PickPaths_ResponseParamsSpec,
   Shell_Print_ParamsSpec,
   Shell_Reload_ParamsSpec,
   Shell_SelectTab_ParamsSpec,
@@ -3055,6 +3356,7 @@ export {
   Shell_SetSplit_ParamsSpec,
   Shell_SetStageBounds_ParamsSpec,
   Shell_SetStageCornerRadius_ParamsSpec,
+  Shell_SetStageVisible_ParamsSpec,
   Shell_SetZoom_ParamsSpec,
   Shell_SetZoom_ResponseParamsSpec,
   Shell_StopFind_ParamsSpec,

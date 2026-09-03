@@ -19,19 +19,24 @@ export function StartPage(): React.JSX.Element {
 
   const [typedPath, setTypedPath] = useState('')
   const [pathError, setPathError] = useState('')
-  // The fork has no native folder picker, but it can still open a project by
-  // path — workspace:open-path is served by the core. Without this the primary
-  // action on the start page is a button that silently does nothing.
+  // One field, one button. A typed path opens directly (workspace:open-path is
+  // served by the core); an EMPTY path with the button pressed opens the native
+  // folder panel, when this host has one (Shell.pickPaths on the fork). Without
+  // a picker the button simply waits for a path — it is never a dead control.
   const canPick = window.agweb.host.canPickPaths
 
   const openFolder = async (): Promise<void> => {
+    setPathError('')
     const ws = await window.agweb.openWorkspace()
     if (ws) setWorkspace(ws)
   }
 
   const openTypedPath = async (): Promise<void> => {
     const path = typedPath.trim()
-    if (!path) return
+    if (!path) {
+      if (canPick) await openFolder()
+      return
+    }
     setPathError('')
     const ws = await window.agweb.openWorkspacePath(path)
     if (ws) {
@@ -78,41 +83,36 @@ export function StartPage(): React.JSX.Element {
       </div>
 
       <div className="flex w-80 flex-col gap-2">
-        {canPick ? (
-          <button
-            onClick={() => void openFolder()}
-            className="rounded-lg bg-sky-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-sky-500"
-          >
-            Open Project Folder…
-          </button>
-        ) : (
-          <div className="flex flex-col gap-1.5">
-            <label htmlFor="wd-project-path" className="text-xs text-slate-500">
-              Open a project by path
-            </label>
-            <div className="flex gap-2">
-              <input
-                id="wd-project-path"
-                value={typedPath}
-                onChange={(e) => setTypedPath(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') void openTypedPath()
-                }}
-                placeholder="~/code/my-project"
-                spellCheck={false}
-                className="min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
-              />
-              <button
-                onClick={() => void openTypedPath()}
-                disabled={!typedPath.trim()}
-                className="rounded-lg bg-sky-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-sky-500 disabled:opacity-50"
-              >
-                Open
-              </button>
-            </div>
-            {pathError && <div className="text-xs text-rose-500">{pathError}</div>}
+        <div className="flex flex-col gap-1.5">
+          <label htmlFor="wd-project-path" className="text-xs text-slate-500">
+            {canPick
+              ? 'Open a project — type a path, or leave it empty to browse'
+              : 'Open a project by path'}
+          </label>
+          <div className="flex gap-2">
+            <input
+              id="wd-project-path"
+              value={typedPath}
+              onChange={(e) => setTypedPath(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') void openTypedPath()
+              }}
+              placeholder="~/code/my-project"
+              spellCheck={false}
+              className="min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+            />
+            <button
+              onClick={() => void openTypedPath()}
+              disabled={!canPick && !typedPath.trim()}
+              title={canPick && !typedPath.trim() ? 'Choose a project folder…' : 'Open this path'}
+              data-testid="start-open"
+              className="rounded-lg bg-sky-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-sky-500 disabled:opacity-50"
+            >
+              {canPick && !typedPath.trim() ? 'Open…' : 'Open'}
+            </button>
           </div>
-        )}
+          {pathError && <div className="text-xs text-rose-500">{pathError}</div>}
+        </div>
         {workspace && (
           <div className="truncate text-center text-xs text-slate-500" title={workspace.path}>
             Current: {workspace.name}

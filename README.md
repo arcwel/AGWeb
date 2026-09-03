@@ -8,127 +8,208 @@
 <h1 align="center">Arcwel WebDeck</h1>
 
 <p align="center"><strong>A browser that builds.</strong><br />
-Browse the web full-screen. Press <kbd>⌘D</kbd> and a full IDE slides in around the page you're already looking at.</p>
+A real Chromium browser. Press <kbd>⌘D</kbd> and a full IDE and an agent slide in around the page you're already looking at.</p>
+
+<p align="center">
+  <a href="#install">Install</a> ·
+  <a href="#what-you-get">Features</a> ·
+  <a href="docs/getting-started.md">Getting started</a> ·
+  <a href="#build-from-source">Build from source</a> ·
+  <a href="#documentation">Documentation</a>
+</p>
+
+<p align="center">
+  <img src="assets/readme/deck.png" alt="WebDeck with the Dev Deck revealed around a page: the agent, editor, terminal and file tree as blocks docked around the spotlit stage" width="960" />
+</p>
 
 ---
 
-## Why WebDeck exists
+## Why WebDeck
 
-Every IDE eventually grows a browser, and it's always the worst browser you own — a preview pane with no tabs, no extensions, no devtools worth the name. Every browser eventually grows developer tools, and they stop at inspecting someone else's code.
+Every IDE eventually grows a browser, and it is always the worst browser you own: a preview pane with no tabs, no extensions, no devtools worth the name. Every browser eventually grows developer tools, and they stop at inspecting someone else's code.
 
-WebDeck starts from the other end. It **is** a real Chromium browser — tabs, extensions, downloads, permissions, devtools. Then, when you need to build something, the **Dev Deck** slides in around the page: editor, terminal, files, source control, debugger, and an agent. Hit <kbd>⌘D</kbd> again and it's a browser again.
+WebDeck starts from the other end. It **is** Chromium, a fork of the real thing, with tabs, extensions, profiles, downloads, permissions and devtools. When you need to build, the **Dev Deck** slides in around the page: editor, terminal, files, source control, debugger, tasks, notebooks, and an agent that can drive the tabs you are looking at. Press <kbd>⌘D</kbd> again and it is a browser again.
 
-That ordering matters for the work people actually do now. You're reading docs, you try something, you check the result in the same window, an agent runs the test suite while you keep reading. The page never becomes a second-class citizen inside a tool that only really cares about files.
+Three things follow from that ordering:
 
-<p align="center">
-  <img src="assets/screenshot.png" alt="WebDeck with the Dev Deck revealed around a document: agent, editor, terminal and file tree" width="900" />
-</p>
+- **The page is never second-class.** Read the docs, try the thing, check the result, all in one window. The agent verifies its work in the same browser you use, logged in as you.
+- **The agent shows its work.** It plans first, you approve, and then every command runs in a live terminal inside the conversation, every edit ships a diff, and every browser action happens in a tab you can see. A policy engine gates anything irreversible.
+- **The IDE is real.** The editor runs on VS Code's own service layer: your settings, keybindings, themes and extensions from Open VSX, with language intelligence over LSP and debugging over DAP.
 
-## What's in it
+## What you get
 
-### A real browser, not a preview pane
+### A real browser
 
-WebDeck is a Chromium fork: the browser is the real thing, with the chrome a browser is supposed to have. Tabs sit inline with the window's traffic lights, show real site **favicons**, and shrink to fit; the address bar is centred with the bookmark star leading it and zoom on the right. There's a **native application menu** (File / Edit / View / History / Window / Help) wired to real shortcuts, a **right-click context menu** on every page (open/copy link and image, cut/copy/paste, search the selection, inspect), and the everyday essentials: back/forward/reload, **find in page**, **zoom** (⌘0 restores 100%), **print**, **new window**, **reopen closed tab**, per-tab **devtools**, downloads with progress, and site permission prompts.
-
-**Split view** splits the _page_ — two live tabs share the stage with a draggable divider — separate from the Dev Deck. A **favourites bar** is summoned rather than permanent, and can be locked open.
-
-**Profiles** work like Chrome's people: each is an isolated, persistent session with its own cookies and logins, so you can stay signed into different Google (or any) accounts side by side. Switch them from the avatar beside the Deck button; the browser presents a real Chrome user-agent so provider sign-in flows accept it.
-
-Unpacked Chrome extensions (MV3) load from the browser **⋮** menu into every profile. Downloads can save to a fixed folder or prompt for a location each time (Settings → Application). There's also an **embed proxy** for the one thing that always breaks local development: sites that refuse to be framed. Toggle it and `X-Frame-Options` plus the `frame-ancestors` CSP directive are stripped — but only for `localhost` and `127.0.0.1`, off by default, never persisted, with an amber indicator while it's live.
-
-### Settings that belong to the app
-
-Settings open as their own surface over the page — not a Dev Deck block — with four panels beyond the editor's own configuration: **Application** (hardware acceleration, tab restore, permission prompts, spell-check, Do-Not-Track, download location, clear browsing data), **AI** (provider API keys held in the OS keychain via `safeStorage`, never exposed to the page), **Colours** (a full RGBA editor for every colour the app paints), and the VS Code **Editor** / **Keybindings** documents.
+- Chromium M153, branded and built as Arcwel WebDeck. Tabs sit in the title bar, inline with the traffic lights; the toolbar carries the address bar, bookmarks, extensions and profile.
+- **Tab groups, drag-to-reorder, tab search, split view, Picture-in-Picture, Reader Mode, find in page, zoom, print, per-tab DevTools.**
+- **Vertical tabs** as a rail block docked beside the page, with groups as sections.
+- Chromium **profiles**, Google sign-in, and the real `chrome://settings`, `chrome://extensions` and `chrome://history`.
+- **Extensions** from the Chrome Web Store, per profile.
+- **Ad and tracker blocking** with a live blocked count, third-party cookie controls, Do Not Track, HTTPS-Only mode.
+- A summonable **favourites bar** that floats above the page and can be pinned.
 
 ### The Dev Deck
 
-<kbd>⌘D</kbd> retreats the page into a spotlit frame and brings in your blocks. Every block is a peer: drag them into stacks, split them out, float one into its own OS window, or collapse it to the rail. Layouts persist per project, and there are presets for Browsing, Building and Debugging.
+- <kbd>⌘D</kbd> retreats the page into a spotlit stage and docks your blocks around it: a right column, a bottom dock, a left column and a collapsed rail.
+- Every block is a peer: drag into stacks, split out, **float into its own window**, or **detach the whole Deck into a second window**. Blocks fit their zone or become a tab in a stack; they never overlap.
+- Layouts persist per project, with **Browsing**, **Building** and **Debugging** presets.
+- Blocks: **Agent · Editor · Files · Terminal · Source Control · Git Graph · Debug · Tasks · Search · Preview · Notebook · REST client · Database · Page Assistant · Extensions · Settings**, plus any **extension view** as its own block.
 
-Blocks: **Editor**, **Files**, **Terminal**, **Agent**, **Source Control**, **Debug**, **Tasks**, **Search**, **Preview**, **Settings**, **Logs**.
+### An agent that acts as you
 
-### An agent that shows its work
+- Plan → approve → execute → verify. The plan is editable before anything runs.
+- Commands run in **live terminals inside the transcript**; file edits come with before/after diffs; browser actions drive real tabs in your session over an in-process DevTools channel, never a debugging port.
+- **Agent Vision**: the agent reads the page, the console and the network of the tabs it opened.
+- Composer with **attachments** from the native file panel, `@mention` for workspace files, `/` commands, voice input, and a model picker (Anthropic, OpenAI, Gemini).
+- **Permission modes** from Secure (ask about everything) to Agent (run freely), per-site permissions, inline prompts, and an audit log. The policy gate fails closed.
+- Conversations rename, branch from any turn, export, and hand back to the composer.
 
-The agent plans first, and the plan is editable before you approve it. Then it executes — and you watch it happen: commands run in **live terminals inside the conversation**, file edits come with before/after diffs, and browser actions drive real tabs you can see.
+### A genuine IDE
 
-The composer is what you'd expect from a modern assistant: attachments, `@mention` to pull in workspace files, `/` commands, voice input, model picker. Conversations can be renamed, branched from any turn, exported, or handed back to the composer to edit and resend.
-
-**Permissions are the point.** A policy engine sits between the agent and anything irreversible, in four modes from _Secure_ (ask about everything) to _Agent_ (run freely). Prompts appear inline, exactly where the agent is asking. Every decision is written to an audit log.
-
-### A genuine IDE underneath
-
-The editor isn't Monaco-in-a-box — it runs on **VS Code's own service layer**, so configuration, keybindings, themes, TextMate grammars and quick-access are the real ones.
-
-- **Language intelligence** over LSP: completion, go-to-definition, find-references, rename, hover, diagnostics and code actions.
-- **Debugging** with Microsoft's js-debug — the same adapter VS Code uses. Click the gutter, hit Debug, get breakpoints, stepping, call stack, variables and watch, with source maps and TypeScript.
-- **Source control**: staged and unstaged changes, stage/unstage, commit, branch switching, and side-by-side diffs.
-- **Tasks** from `package.json` and `tasks.json`, where the output becomes editor diagnostics — a build error lands as a squiggle on the line that caused it.
-- **Settings** in real `settings.json` and `keybindings.json`, user and per-workspace, and you can import your existing VS Code config.
+- Editor on **VS Code's service layer**: real `settings.json` and `keybindings.json`, themes, TextMate grammars, quick-access, breadcrumbs, outline, minimap.
+- **Extensions from Open VSX** run in the web extension host; each contributed view becomes a Deck block.
+- **Language intelligence** over LSP: completion, go-to-definition, references, rename, hover, diagnostics, code actions. Servers ship inside the core for TypeScript and JavaScript (typescript-language-server), Python (pyright) and Rust (rust-analyzer); Go uses your `gopls`. Adding one is documented in [`app/docs/LANGUAGE_SUPPORT.md`](app/docs/LANGUAGE_SUPPORT.md).
+- **Debugging** with Microsoft's js-debug: breakpoints, stepping, call stack, variables, watch, source maps.
+- **Source control**: status, staged and unstaged diffs, stage, commit, branches.
+- **Tasks** with problem matchers, so a build error lands as a squiggle on the line that caused it.
+- **Terminal** on node-pty, **multi-root workspaces**, workspace search, dev-server preview.
 
 ### Document Studio
 
-Markdown, JSON, YAML, CSV and TOML render as styled documents in the browser rather than raw text — with Mermaid diagrams, math, and a one-click toggle back to source. `.slides.md` files become Reveal.js decks. Export to HTML or PDF.
+Markdown, JSON, YAML, CSV and TOML render as styled documents with Mermaid diagrams and math, a one-click toggle to source, and export to HTML or PDF. `.slides.md` files become Reveal.js decks.
 
-## Safety
+### Settings and sync
 
-WebDeck runs an autonomous agent with filesystem and shell access, so the boundaries are explicit and documented in [`SECURITY.md`](SECURITY.md):
+Settings open as their own surface: Application, AI keys (held in the OS keychain, or read from your password manager so WebDeck stores nothing), Colours (every colour the app paints), Browser privacy, and the VS Code Editor and Keybindings documents. **WebDeck Sync** keeps settings, policy, model and theme identical across machines through a local-first file, with no account and no server.
 
-- The renderer is sandboxed with context isolation; a single typed bridge is the only way in.
-- Every path is checked against the folders you've opened. Additional folders are granted through a picker, apply for that session only, and are never restored silently on launch.
-- The embed proxy is localhost-only and off by default.
-- Browser extensions load into the browser's own session, never the shell.
+### Built to be trusted
 
-## Getting started
+- `chrome://webdeck` is a privileged WebUI page under Chromium's process sandbox and full site isolation; `verify:hardening` measures both on the running binary.
+- The page reaches the core only over a loopback WebSocket with a per-boot token; its CSP allows no remote origin, no eval, no inline script.
+- The agent's file tools are pinned to the folders you opened, and its browsing is limited to `http` and `https`.
+- Every trust boundary and residual risk is written down in [`SECURITY.md`](SECURITY.md).
+
+## Screenshots
+
+| | |
+| :-- | :-- |
+| <img src="assets/readme/browser.png" alt="Browsing: tabs in the title bar, the toolbar, and a page" /> | <img src="assets/readme/tab-rail.png" alt="Vertical tabs as a rail block docked to the page" /> |
+| Browsing full-screen | Vertical tabs as a rail block |
+| <img src="assets/readme/deck-window.png" alt="The Dev Deck detached into its own window" /> | <img src="assets/readme/agent-attach.png" alt="The agent composer with an attached file" /> |
+| The Deck in its own window | Attaching files to the agent |
+
+## Install
+
+**Requirements:** macOS 13 or later on Apple Silicon.
+
+1. Download `Arcwel-WebDeck-<version>-arm64.dmg` from the [releases](https://github.com/arcwel/WebDeck/releases), or build it (below).
+2. Open the DMG and drag **Arcwel WebDeck** to Applications.
+3. First launch of a build that is not notarized: right-click the app, choose **Open**, and confirm. After that it opens normally.
+
+The agent needs a provider key. **Settings → AI** stores it in the macOS Keychain, or points WebDeck at your password manager (`op read`, `pass show`, `security find-generic-password`, `vault read`). `ANTHROPIC_API_KEY` in the environment also works.
+
+Then read [Getting Started](docs/getting-started.md): the first five minutes, the blocks, and the shortcuts.
+
+## Build from source
+
+WebDeck is two builds: the **core** (a Node service compiled to a single executable) and the **browser** (a Chromium checkout with this repository's patches applied). Full detail, including signing and notarization, is in [`chromium/RELEASING.md`](chromium/RELEASING.md).
+
+**Prerequisites:** Xcode with command-line tools, depot_tools, a Chromium checkout at the base pinned in [`chromium/fork.json`](chromium/fork.json) (about 100 GB and a few hours the first time), Node 20+.
 
 ```bash
-cd app
-npm ci
-npm run dev
+# 1. The core
+cd app && npm ci && npm run build:core
+
+# 2. The browser: apply the patch set to the checkout, then configure and build
+node scripts/verify-patches.mjs                     # the repo describes the fork
+autoninja -C out/webdeck-release chrome/browser/ui/webui/webdeck:mojo_bindings
+npm run pack:webui:release                          # WebUI + Mojo bindings for THIS out dir
+autoninja -C out/webdeck-release chrome -j 6
+
+# 3. Put the core in the bundle, prove it, package
+node scripts/install-core.mjs --app "out/webdeck-release/Arcwel WebDeck.app"
+node scripts/verify-deliverable.mjs --app "out/webdeck-release/Arcwel WebDeck.app"
+node scripts/package-fork.mjs --build-dir out/webdeck-release --out ../dist
 ```
 
-Open a project folder, browse to something, and press <kbd>⌘D</kbd>.
+### The development loop
 
-To give the agent a task you'll need an Anthropic API key. **Settings → AI** offers two ways to supply it: store it in WebDeck (encrypted into the OS keychain — Keychain / libsecret / DPAPI — never plaintext), or point WebDeck at your **password manager** (`op read`, `pass show`, `security find-generic-password`, `vault read`), in which case WebDeck stores nothing at all. `ANTHROPIC_API_KEY` also works. Keys for OpenAI and Gemini are handled the same way.
+| Change | Rebuild |
+| :-- | :-- |
+| WebUI (React, `app/src/renderer`, `app/src/webui`) | `npm run pack:webui` (component build) or `pack:webui:release`, then `autoninja … chrome` relinks in about three minutes |
+| Core (`app/src/core`) | `npm run build:core && node scripts/install-core.mjs --app <.app>`; no browser rebuild |
+| Chromium patches (`chromium/patches`) | Edit the checkout, `git diff --binary > chromium/patches/upstream-edits.diff`, `npm run verify:patches` |
+| A `.mojom` change | Build `…:mojo_bindings` first, then pack; packing refuses bindings that do not match the out dir |
 
-Verify a build the way CI does:
+Verification gates, in the order CI runs them:
 
 ```bash
-npm run lint && npm run typecheck && npm test && npm run build && node scripts/smoke.mjs
+npm run lint && npm run typecheck && npm test        # the app
+npm run verify:patches                               # the repo reproduces the fork
+npm run verify:fork -- --browser <binary>            # the shell boots, opens a project, exports
+npm run verify:hardening -- --browser <binary> --release   # sandbox, site isolation, CSP, gn config, signature
+node scripts/verify-deliverable.mjs --app <.app>     # runs on a machine that never saw the build tree
 ```
 
-The smoke test drives the real application end to end — browser, deck, editor, terminal, language server, debugger, source control, tasks and agent — and is the check that matters before a push.
+Developer builds are ad-hoc signed. With the `webdeck_dev_keychain` gn arg on, such a build keeps its cookie encryption key in the profile instead of raising the macOS Keychain prompt on every rebuild; a Developer ID build never takes that path. See [`chromium/RELEASING.md`](chromium/RELEASING.md).
 
-## Project map
+## How it fits together
 
-| File                                     | What it holds                                                                                                  |
-| :--------------------------------------- | :------------------------------------------------------------------------------------------------------------- |
-| [`PRD.md`](PRD.md)                       | Product requirements and the technology decisions                                                              |
-| [`TASKS.md`](TASKS.md)                   | The phased build plan with live status                                                                         |
-| [`DESIGN.md`](DESIGN.md)                 | The Dev Deck's design spec and motion                                                                          |
-| [`IDE_FOUNDATION.md`](IDE_FOUNDATION.md) | Why the IDE is built on VS Code's services rather than a fork                                                  |
-| [`SECURITY.md`](SECURITY.md)             | Trust boundaries, the agent's limits, residual risks                                                           |
-| [`RESOURCES.md`](RESOURCES.md)           | Every library and technique, with licences                                                                     |
-| [`docs/`](docs/README.md)                | User guides — getting started, permission modes, agent workflows, Document Studio                              |
-| `app/`                                   | The application — the chrome://webdeck WebUI (React, TypeScript, Tailwind) and the webdeck-core service (Node) |
+```
+┌──────────────────────────── Arcwel WebDeck.app ────────────────────────────┐
+│  Chromium (M153 + chromium/patches)                                        │
+│   ├─ chrome://webdeck  ── the WebUI shell: tabs, toolbar, Deck, blocks     │
+│   │      │  Mojo (Shell, AgentTabs): stage bounds, tabs, windows, pickers  │
+│   ├─ the staged tab ── the real page, positioned into the shell's stage    │
+│   └─ webdeck-core  ── Node single-executable, spawned by the browser       │
+│           loopback WebSocket + per-boot token                              │
+│           files · terminals · LSP · DAP · git · tasks · agent · policy     │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+The shell page owns the window and streams the stage rectangle to the browser; Chromium positions the active tab into it. Deck and float windows are ordinary browser windows whose shell page carries a role. The core is the same on every host, so the UI never knows which process answered.
+
+## Repository map
+
+| Path | What it holds |
+| :-- | :-- |
+| `app/src/renderer` | The shell UI: React, TypeScript, Tailwind. Blocks, Deck, tab strip, composer |
+| `app/src/webui` | The `chrome://webdeck` entry: Mojo bridge, pickers, exports, window sync |
+| `app/src/core` | `webdeck-core`: the domains (fs, terminal, lsp, debug, git, tasks, agent, policy, workspace) and the transport |
+| `app/scripts` | Build, pack, verify and package scripts |
+| `chromium/` | The fork: `fork.json` pin, `patches/` (new file trees plus `upstream-edits.diff`), build and release docs |
+| `docs/` | User guides |
+| `design/` | Design canvases and review pages |
+
+## Documentation
+
+| Document | Read it when |
+| :-- | :-- |
+| [Getting Started](docs/getting-started.md) | You have just installed it |
+| [Agent Workflows](docs/agent-workflows.md) · [Permission Modes](docs/permission-modes.md) | You are giving the agent work |
+| [Document Studio](docs/document-studio.md) · [Settings Sync](docs/settings-sync.md) | You want the rendered docs or the same setup on two machines |
+| [`PRD.md`](PRD.md) · [`ROADMAP.md`](ROADMAP.md) | You want to know what it is for and where it is going |
+| [`DESIGN.md`](DESIGN.md) | You are changing how the Deck looks or moves |
+| [`IDE_FOUNDATION.md`](IDE_FOUNDATION.md) | You are touching the editor, LSP or DAP |
+| [`SECURITY.md`](SECURITY.md) | You are touching the agent, the policy gate or a process boundary |
+| [`chromium/README.md`](chromium/README.md) · [`chromium/SHELL_ARCHITECTURE.md`](chromium/SHELL_ARCHITECTURE.md) | You are working on the fork or the Shell interface |
+| [`chromium/RELEASING.md`](chromium/RELEASING.md) · [`chromium/SHIPPABLE.md`](chromium/SHIPPABLE.md) | You are cutting a release |
+| [`CHANGELOG.md`](CHANGELOG.md) | You want to know what changed |
+
+## Contributing
+
+- Conventional commits (`feat:`, `fix:`, `docs:`, `refactor:`, `security:`). Commit from the repository root.
+- Before a commit: `npm run lint && npm run typecheck && npm test` in `app/`, and `npm run verify:patches` when the fork changed.
+- UI work is reviewed on the real window, with screenshots, before it is called done.
+- Design changes go through a review page first (see `design/`).
 
 ## Status
 
-Pre-release, and honest about it. The browser, the Dev Deck, Document Studio, the agent runtime with its permission engine, and the IDE layer (language intelligence, debugging, source control, tasks, settings) are built and covered by the end-to-end smoke test.
-
-**Next:** packaged installers. **Deferred to a future release:** VS Code _editor_ extensions from Open VSX — the sandbox they need doesn't hold on the current renderer, and the reasoning is written up in [`SECURITY.md`](SECURITY.md). Browser extensions are unaffected and work today.
-
----
+Pre-release. The browser, the Dev Deck, the agent with its permission engine, the IDE layer and Document Studio are built, verified on the real window, and shipped as a release candidate DMG. Signed distribution needs an Apple Developer ID and is documented, not yet automated.
 
 ## License
 
-Arcwel WebDeck is [MIT licensed](LICENSE). It is a derivative of Chromium
-(BSD-3-Clause) and embeds the Node.js runtime (MIT); the full inventory of
-bundled components and their licenses is in
-[THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md) and in the app under
-**Settings → About**. The browser's own components are credited at
-`chrome://credits`.
-
-Building the browser from source and producing a release is documented in
-[chromium/RELEASING.md](chromium/RELEASING.md).
+Arcwel WebDeck is [MIT licensed](LICENSE). It is a derivative of Chromium (BSD-3-Clause) and embeds the Node.js runtime (MIT); the inventory of bundled components and their licences is in [`THIRD_PARTY_LICENSES.md`](THIRD_PARTY_LICENSES.md) and under **Settings → About**. The browser's own components are credited at `chrome://credits`.
 
 ---
 

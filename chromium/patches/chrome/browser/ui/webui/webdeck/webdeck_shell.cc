@@ -27,6 +27,7 @@
 #include "chrome/browser/ui/browser_window/public/browser_window_interface_iterator.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
+#include "chrome/browser/ui/select_file_policy/chrome_select_file_policy.h"
 #include "chrome/browser/ui/tabs/tab_enums.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
@@ -52,10 +53,13 @@
 #include "content/public/browser/reload_type.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/common/referrer.h"
 #include "content/public/common/url_constants.h"
 #include "mojo/public/cpp/bindings/callback_helpers.h"
 #include "services/media_session/public/mojom/media_session.mojom.h"
 #include "ui/base/page_transition_types.h"
+#include "ui/shell_dialogs/select_file_dialog.h"
+#include "ui/shell_dialogs/selected_file_info.h"
 #include "url/gurl.h"
 #include "url/url_constants.h"
 
@@ -142,6 +146,11 @@ WebDeckShell::WebDeckShell(content::WebContents* shell_contents,
       receiver_(this, std::move(receiver)) {}
 
 WebDeckShell::~WebDeckShell() {
+  if (select_file_dialog_) {
+    // The panel outlives us on the native side; it must not call back.
+    select_file_dialog_->ListenerDestroyed();
+    select_file_dialog_ = nullptr;
+  }
   if (observed_model_) {
     observed_model_->RemoveObserver(this);
   }
@@ -323,9 +332,23 @@ void WebDeckShell::CloseTab(int32_t tab_id) {
   }
   TabStripModel* model = window->GetTabStripModel();
   const int index = model->GetIndexOfWebContents(contents);
-  if (index >= 0) {
-    model->CloseWebContentsAt(index, TabCloseTypes::CLOSE_USER_GESTURE);
+  if (index < 0) {
+    return;
   }
+  // Chromium closes a window whose last tab closes. The shell's tabs are a
+  // view over this window's real tabs, and the shell owns the window — so
+  // closing its last real tab (a project switch restores a layout and
+  // destroys every content tab) must empty the tab, not end the window.
+  // The blank tab becomes the window's seed again (shell.ts claims it on the
+  // next create), which is exactly the state a fresh window starts in.
+  if (model->count() == 1) {
+    contents->GetController().LoadURL(GURL(url::kAboutBlankURL),
+                                      content::Referrer(),
+                                      ui::PAGE_TRANSITION_AUTO_TOPLEVEL,
+                                      std::string());
+    return;
+  }
+  model->CloseWebContentsAt(index, TabCloseTypes::CLOSE_USER_GESTURE);
 }
 
 void WebDeckShell::Navigate(int32_t tab_id, const std::string& url) {
@@ -939,6 +962,75 @@ void WebDeckShell::FocusWindow(int32_t window_id) {
 void WebDeckShell::CloseWindow(int32_t window_id) {
   if (BrowserWindowInterface* browser = FindBrowserById(window_id)) {
     browser->GetWindow()->Close();
+  }
+}
+
+// The native open panel, sheeted on the shell's window. A privileged WebUI page
+// may learn real paths — the core opens projects and reads attachments by path,
+// so this is the one place a path can honestly come from. One panel at a time;
+// the reply is owed until the panel answers (FileSelected / MultiFilesSelected /
+// FileSelectionCanceled) or the shell goes away (dtor: ListenerDestroyed, and
+// the callback is dropped, which Mojo reports as a disconnected reply).
+void WebDeckShell::PickPaths(int32_t mode, PickPathsCallback callback) {
+  if (select_file_dialog_) {
+    std::move(callback).Run({});
+    return;
+  }
+  BrowserWindowInterface* window = GetWindow();
+  gfx::NativeWindow owner =
+      window ? window->GetWindow()->GetNativeWindow() : gfx::NativeWindow();
+
+  ui::SelectFileDialog::Type type = ui::SelectFileDialog::SELECT_OPEN_MULTI_FILE;
+  std::u16string title = u"Attach Files";
+  ui::SelectFileDialog::FileTypeInfo file_types;
+  file_types.allowed_paths = ui::SelectFileDialog::FileTypeInfo::NATIVE_PATH;
+  switch (mode) {
+    case 1:
+      type = ui::SelectFileDialog::SELECT_FOLDER;
+      title = u"Open Project Folder";
+      break;
+    case 2:
+      title = u"Attach Images";
+      file_types.extensions = {{FILE_PATH_LITERAL("png"), FILE_PATH_LITERAL("jpg"),
+                                FILE_PATH_LITERAL("jpeg"), FILE_PATH_LITERAL("gif"),
+                                FILE_PATH_LITERAL("webp"), FILE_PATH_LITERAL("svg")}};
+      file_types.include_all_files = true;
+      break;
+    default:
+      break;
+  }
+
+  pick_paths_callback_ = std::move(callback);
+  select_file_dialog_ = ui::SelectFileDialog::Create(
+      this, std::make_unique<ChromeSelectFilePolicy>(shell_contents_));
+  select_file_dialog_->SelectFile(type, title, base::FilePath(), &file_types, 0,
+                                  base::FilePath::StringType(), owner);
+}
+
+void WebDeckShell::FileSelected(const ui::SelectedFileInfo& file, int index) {
+  select_file_dialog_ = nullptr;
+  if (pick_paths_callback_) {
+    std::move(pick_paths_callback_).Run({file.file_path.value()});
+  }
+}
+
+void WebDeckShell::MultiFilesSelected(
+    const std::vector<ui::SelectedFileInfo>& files) {
+  select_file_dialog_ = nullptr;
+  std::vector<std::string> paths;
+  paths.reserve(files.size());
+  for (const ui::SelectedFileInfo& file : files) {
+    paths.push_back(file.file_path.value());
+  }
+  if (pick_paths_callback_) {
+    std::move(pick_paths_callback_).Run(std::move(paths));
+  }
+}
+
+void WebDeckShell::FileSelectionCanceled() {
+  select_file_dialog_ = nullptr;
+  if (pick_paths_callback_) {
+    std::move(pick_paths_callback_).Run({});
   }
 }
 

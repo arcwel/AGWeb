@@ -180,11 +180,12 @@ async function main(): Promise<void> {
     // true — downloads, zoom and find are still Chromium's, reached its own way.
     ownsBrowserChrome: false,
     ownsBrowserFeatures: true,
-    // Deck and float windows are real browser windows (Shell.openWindow). No
-    // native path picker: a page cannot learn where a file lives, so the
-    // agent's attachments are copied into the workspace instead (Composer).
+    // Deck and float windows are real browser windows (Shell.openWindow), and
+    // the native open panel reports real paths (Shell.pickPaths) — a privileged
+    // shell page may learn where a file lives, so projects open from a folder
+    // picker and attachments are referenced in place.
     canOpenWindows: true,
-    canPickPaths: false,
+    canPickPaths: true,
     // Export works, done the browser's own way: a download for HTML, the print
     // preview for PDF. See webui/export.ts.
     canExport: true

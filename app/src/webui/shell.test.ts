@@ -61,7 +61,9 @@ const SECONDARY = [
   IpcChannels.browserGetAdblockCount,
   IpcChannels.browserClearData,
   IpcChannels.browserDefaultStatus,
-  IpcChannels.browserMakeDefault
+  IpcChannels.browserMakeDefault,
+  // The native open panel that reports real paths (Shell.PickPaths)
+  IpcChannels.dialogPickPaths
 ]
 
 describe('SHELL_BROWSER known-channel allowlist', () => {

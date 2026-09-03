@@ -206,10 +206,29 @@ body,
   --rail-w: 48px;
 }
 
+/* Vertical tabs: a rail BLOCK docked to the stage's left edge. It is a sibling
+   of the stage inside the workspace, sized by --tabrail-w; the stage and the
+   Deck's left column / dock are inset by the same amount, so the rail is never
+   on top of anything (the Deck rule: blocks fit their zone, never overlap). */
+.workspace {
+  --tabrail-w: 0px;
+}
+.workspace.has-tabrail {
+  --tabrail-w: 232px;
+}
+.tab-rail-block {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  bottom: 6px;
+  width: calc(var(--tabrail-w) - 12px);
+  z-index: 5;
+}
+
 /* The stage is the browser viewport. Browsing: full bleed. Deck: spotlit frame. */
 .stage {
   position: absolute;
-  inset: 0;
+  inset: 0 0 0 var(--tabrail-w);
   overflow: hidden;
   border: 0;
   border-radius: 0;
@@ -245,7 +264,7 @@ body,
 }
 .workspace.revealed .stage {
   inset: 6px calc(var(--deck-col-w) + 12px + var(--rail-w)) calc(var(--deck-dock-h) + 12px)
-    calc(var(--deck-left-w) + 6px);
+    calc(var(--deck-left-w) + 6px + var(--tabrail-w));
   border-radius: var(--wd-r-stage);
   box-shadow: 0 18px 46px rgba(0, 0, 0, 0.5);
   transition-delay: 0s;
@@ -327,14 +346,14 @@ body,
 .deck-left {
   position: absolute;
   top: 6px;
-  left: 6px;
+  left: calc(6px + var(--tabrail-w));
   bottom: calc(var(--deck-dock-h) + 12px);
   width: var(--deck-left-w);
   display: flex;
   flex-direction: column;
   gap: 6px;
   overflow: hidden;
-  transform: translateX(calc(-100% - 12px));
+  transform: translateX(calc(-100% - 12px - var(--tabrail-w)));
   transition: transform 0.55s cubic-bezier(0.32, 0.72, 0, 1) 0.07s;
 }
 .workspace.revealed .deck-left {
@@ -380,7 +399,7 @@ body,
 /* Bottom dock: rises from below, last. */
 .deck-dock {
   position: absolute;
-  left: calc(var(--deck-left-w) + 6px);
+  left: calc(var(--deck-left-w) + 6px + var(--tabrail-w));
   right: calc(6px + var(--rail-w));
   bottom: 6px;
   height: var(--deck-dock-h);

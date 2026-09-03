@@ -12,3 +12,6 @@ app/resources/lsp-bin/
 # Release update-channel private signing key — NEVER commit (10.2)
 update-signing-key.pem
 app/release/update-signing-key.pem
+
+# The working task list is never committed (Anthony).
+TASKS.md

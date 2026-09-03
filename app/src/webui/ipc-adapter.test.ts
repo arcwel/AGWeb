@@ -95,12 +95,16 @@ function reachableCore(): CoreClient {
 }
 
 describe('channels that need a path a browser will not give', () => {
-  it('workspace:open reports that there is no picker instead of a silent cancel', async () => {
+  it('workspace:open goes to the native folder panel, and fails loudly off-fork', async () => {
     const ipc = createWebUiIpc(reachableCore())
 
-    // `null` is the value that means "the user cancelled", so answering with one
-    // would leave the caller with nothing to say and nothing to show.
-    await expect(ipc.invoke(IpcChannels.workspaceOpen)).rejects.toThrow(/typing its path/)
+    // On the fork this opens Shell.pickPaths('dir') and then the core's
+    // open-by-path. Off the fork there is no Mojo host, so it must REJECT with
+    // the Shell's clear reason — never answer `null`, which means "cancelled"
+    // and would leave the caller with nothing to say and nothing to show.
+    await expect(ipc.invoke(IpcChannels.workspaceOpen)).rejects.toThrow(
+      /cannot reach the browser|Arcwel WebDeck build/
+    )
   })
 
   it('choose-download-dir points at the setting Chromium actually uses', async () => {
