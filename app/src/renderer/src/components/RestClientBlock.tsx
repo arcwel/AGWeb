@@ -524,7 +524,7 @@ function HistoryPane({
   onClear: () => void
 }): React.JSX.Element {
   return (
-    <div className="flex w-44 flex-none flex-col border-l border-slate-200 dark:border-slate-800">
+    <div className="flex w-44 max-w-[45%] min-w-0 flex-none flex-col border-l border-slate-200 dark:border-slate-800">
       <div className="flex flex-none items-center gap-1 border-b border-slate-200 px-2.5 py-1.5 dark:border-slate-800">
         <span className="font-semibold text-slate-500">History</span>
         {history.length > 0 && (

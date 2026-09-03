@@ -106,7 +106,7 @@ export function AiAnswer({ query, url, title, onOpen, onClose }: AiAnswerProps):
 
   return (
     <div
-      className="wd-omnibox-pop glass absolute left-0 right-0 top-[calc(100%+6px)] z-50 max-h-[28rem] overflow-y-auto rounded-[14px]"
+      className="wd-omnibox-pop glass absolute left-0 right-0 top-[calc(100%+6px)] z-50 max-h-[min(28rem,calc(100vh-7rem))] overflow-y-auto rounded-[14px]"
       role="region"
       aria-label="AI answer"
     >

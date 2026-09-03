@@ -133,7 +133,7 @@ export function SourceControlBlock(): React.JSX.Element {
 
           {branchOpen && (
             <div
-              className="absolute left-0 top-full z-20 mt-1 w-56 overflow-hidden rounded-lg border border-slate-200 bg-white py-1 shadow-lg dark:border-slate-700 dark:bg-slate-900"
+              className="absolute left-0 top-full z-20 mt-1 max-h-56 w-56 overflow-y-auto rounded-lg border border-slate-200 bg-white py-1 shadow-lg dark:border-slate-700 dark:bg-slate-900"
               data-testid="git-branch-menu"
             >
               {branches.map((branch) => (

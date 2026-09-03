@@ -53,7 +53,7 @@ export function CsvTable({
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
           placeholder="Filter rows…"
-          className="w-64 rounded-md border border-slate-300 bg-slate-50 px-2.5 py-1 text-xs outline-none focus:border-sky-500 dark:border-slate-700 dark:bg-[#0b0f14]"
+          className="w-64 min-w-0 max-w-full rounded-md border border-slate-300 bg-slate-50 px-2.5 py-1 text-xs outline-none focus:border-sky-500 dark:border-slate-700 dark:bg-[#0b0f14]"
         />
         <span className="text-[11px] text-slate-500">{visible.length.toLocaleString()} rows</span>
       </div>

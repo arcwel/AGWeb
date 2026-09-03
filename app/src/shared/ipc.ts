@@ -332,11 +332,49 @@ export interface PolicyStatus {
   /** Standing per-site decisions. Outrank the mode in both directions. */
   sites: SitePermission[]
   /**
-   * Ask before the agent acts on a high-consequence site, even under full
-   * autonomy. On by default. The built-in list is a seed, not coverage — see
-   * SENSITIVE_HOSTS in policy.ts.
+   * Guards: ask before the agent acts on a class of high-consequence site,
+   * even under full autonomy — each one is the user's own choice. The built-in
+   * host lists are a seed, not coverage — see GUARD_HOSTS in policy.ts.
    */
-  blockSensitiveSites: boolean
+  guards: PolicyGuards
+}
+
+/** A class of site the agent must ask about before acting there. */
+export type PolicyGuard = 'payments' | 'banking' | 'passwords' | 'messaging' | 'posting'
+export type PolicyGuards = Record<PolicyGuard, boolean>
+
+/** The guards, in the order the UI lists them, with the words it shows. */
+export const POLICY_GUARDS: ReadonlyArray<{ id: PolicyGuard; label: string; hint: string }> = [
+  {
+    id: 'payments',
+    label: 'Payments & checkout',
+    hint: 'Payment processors and wallets, and any page that looks like a checkout'
+  },
+  { id: 'banking', label: 'Banking & brokerage', hint: 'Banks, brokerages and exchanges' },
+  {
+    id: 'passwords',
+    label: 'Passwords & identity',
+    hint: 'Password managers and account portals'
+  },
+  {
+    id: 'messaging',
+    label: 'Email & messaging',
+    hint: 'Mail and chat apps: Gmail, Outlook, Slack, Discord, WhatsApp'
+  },
+  {
+    id: 'posting',
+    label: 'Posting publicly',
+    hint: 'Publishing surfaces: X, LinkedIn, Reddit, YouTube, Medium, a new GitHub issue or PR'
+  }
+]
+
+/** Money and identity guards on; messaging and posting are opt-in. */
+export const DEFAULT_POLICY_GUARDS: PolicyGuards = {
+  payments: true,
+  banking: true,
+  passwords: true,
+  messaging: false,
+  posting: false
 }
 
 /** A gated agent action waiting on the user's confirmation. */
@@ -345,6 +383,8 @@ export interface PolicyPromptInfo {
   kind: PolicyActionKind
   detail: string
   sessionId: string
+  /** The guard that raised this prompt, when one did — so the prompt can say why. */
+  guard?: PolicyGuard
 }
 
 /** A denied agent action, surfaced to the user so a silent block isn't invisible. */
@@ -734,7 +774,7 @@ export const IpcChannels = {
   policySetCustom: 'policy:set-custom',
   policySetSite: 'policy:set-site',
   policyClearSite: 'policy:clear-site',
-  policySetSensitive: 'policy:set-sensitive',
+  policySetGuard: 'policy:set-guard',
   policyRespond: 'policy:respond',
   editorCommandRespond: 'editor:command-respond',
   syncStatus: 'sync:status',
@@ -1313,8 +1353,8 @@ export interface AgwebApi {
     setSite(host: string, decision: 'allow' | 'deny'): Promise<PolicyStatus>
     /** Forget a site's standing decision, returning it to the mode. */
     clearSite(host: string): Promise<PolicyStatus>
-    /** Ask before acting on high-consequence sites, even under full autonomy. */
-    setSensitive(enabled: boolean): Promise<PolicyStatus>
+    /** Turn one guard on or off (ask before acting on that class of site). */
+    setGuard(guard: PolicyGuard, enabled: boolean): Promise<PolicyStatus>
     /**
      * Answer a pending action prompt. For a navigation, `always` records a
      * standing decision for THAT SITE — not a blanket grant for the session.

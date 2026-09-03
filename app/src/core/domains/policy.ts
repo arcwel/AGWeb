@@ -2,12 +2,15 @@ import { appendFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { coreEnv } from '../env'
 import { IpcChannels, IpcEvents } from '@shared/ipc'
+import { DEFAULT_POLICY_GUARDS, POLICY_GUARDS } from '@shared/ipc'
 import type {
   SitePermission,
   CustomPolicyRules,
   PolicyActionKind,
   PolicyDecision,
   PolicyDeniedInfo,
+  PolicyGuard,
+  PolicyGuards,
   PolicyPromptInfo,
   PolicyStatus
 } from '@shared/ipc'
@@ -43,47 +46,101 @@ const DEFAULT_CUSTOM: CustomPolicyRules = {
 const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '0.0.0.0', '[::1]'])
 
 /**
- * Sites the agent must ask about even under full autonomy, while
- * `blockSensitiveSites` is on.
+ * Guards: classes of site the agent must ask about even under full autonomy,
+ * each one switched on or off by the user (PolicyStatus.guards).
  *
- * A SEED LIST, not coverage, and it is important to be honest about that: there
+ * SEED LISTS, not coverage, and it is important to be honest about that: there
  * is no way to enumerate every bank, broker, or patient portal from a keyword,
- * and pretending otherwise would sell a guarantee this cannot keep. Its job is
- * to make the highest-consequence destinations stop and ask by default, and to
- * give the user somewhere to add their own. Real protection is the user's own
- * per-site decisions.
+ * and pretending otherwise would sell a guarantee this cannot keep. Their job
+ * is to make the highest-consequence destinations stop and ask by default, and
+ * to give the user somewhere to add their own. Real protection is the user's
+ * own per-site decisions.
  */
-const SENSITIVE_HOSTS: readonly string[] = [
-  // Payments and brokerages — an agent acting here moves money.
-  'paypal.com',
-  'stripe.com',
-  'venmo.com',
-  'wise.com',
-  'coinbase.com',
-  'binance.com',
-  'robinhood.com',
-  'fidelity.com',
-  'schwab.com',
-  'vanguard.com',
-  // Retail banks with a large share of users.
-  'chase.com',
-  'bankofamerica.com',
-  'wellsfargo.com',
-  'citi.com',
-  'capitalone.com',
-  'americanexpress.com',
+const GUARD_HOSTS: Record<PolicyGuard, readonly string[]> = {
+  // Payment processors and wallets — an agent acting here moves money.
+  payments: [
+    'paypal.com',
+    'stripe.com',
+    'venmo.com',
+    'wise.com',
+    'cash.app',
+    'pay.google.com',
+    'pay.apple.com',
+    'checkout.shopify.com'
+  ],
+  // Banks, brokerages and exchanges.
+  banking: [
+    'coinbase.com',
+    'binance.com',
+    'robinhood.com',
+    'fidelity.com',
+    'schwab.com',
+    'vanguard.com',
+    'chase.com',
+    'bankofamerica.com',
+    'wellsfargo.com',
+    'citi.com',
+    'capitalone.com',
+    'americanexpress.com'
+  ],
   // Identity and password stores — the keys to everything else.
-  'accounts.google.com',
-  '1password.com',
-  'lastpass.com',
-  'bitwarden.com'
-]
+  passwords: [
+    'accounts.google.com',
+    'appleid.apple.com',
+    'account.apple.com',
+    'login.microsoftonline.com',
+    'login.live.com',
+    '1password.com',
+    'lastpass.com',
+    'bitwarden.com',
+    'dashlane.com'
+  ],
+  // Mail and chat: what is sent from here is sent as the user.
+  messaging: [
+    'mail.google.com',
+    'outlook.live.com',
+    'outlook.office.com',
+    'mail.yahoo.com',
+    'slack.com',
+    'discord.com',
+    'web.whatsapp.com',
+    'messenger.com',
+    'teams.microsoft.com',
+    'web.telegram.org'
+  ],
+  // Publishing surfaces: a post is public the moment it lands.
+  posting: [
+    'x.com',
+    'twitter.com',
+    'linkedin.com',
+    'reddit.com',
+    'studio.youtube.com',
+    'medium.com',
+    'facebook.com',
+    'instagram.com',
+    'threads.net',
+    'bsky.app',
+    'mastodon.social'
+  ]
+}
+
+/**
+ * Path heuristics that extend a guard beyond its host list. Payments: any site
+ * whose page looks like a checkout. Posting: the pages on a code host where
+ * something becomes public (a new issue, a pull request, a release).
+ */
+const GUARD_PATHS: Partial<Record<PolicyGuard, RegExp>> = {
+  payments: /\/(checkout|cart|basket|payment|payments|pay|billing|order)(\/|$|\?|#)/i,
+  posting: /\/(issues\/new|compare|pull\/new|releases\/new)(\/|$|\?|#)/i
+}
+/** Hosts whose posting guard is decided by GUARD_PATHS.posting, not the host. */
+const POSTING_PATH_HOSTS = ['github.com', 'gitlab.com']
 
 const store = new JsonStore<PolicyStatus>('policy', {
   mode: 'review',
   custom: DEFAULT_CUSTOM,
   sites: [],
-  blockSensitiveSites: true
+  guards: DEFAULT_POLICY_GUARDS
 })
 
 /** Does `url`'s host match `host`, or a subdomain of it? */
@@ -107,8 +164,50 @@ function siteDecision(url: string, sites: SitePermission[]): 'allow' | 'deny' | 
   return null
 }
 
-function isSensitive(url: string): boolean {
-  return SENSITIVE_HOSTS.some((host) => hostMatches(url, host))
+/** Path plus query of a URL, or null when it does not parse. */
+function pathOf(url: string): string | null {
+  try {
+    const parsed = new URL(url)
+    return parsed.pathname + parsed.search
+  } catch {
+    return null
+  }
+}
+
+/** The first ENABLED guard that covers `url`, or null. Exported for tests. */
+export function guardFor(url: string, guards: PolicyGuards): PolicyGuard | null {
+  const path = pathOf(url)
+  if (path === null) return null
+  for (const { id } of POLICY_GUARDS) {
+    if (!guards[id]) continue
+    if (GUARD_HOSTS[id].some((host) => hostMatches(url, host))) return id
+    const pattern = GUARD_PATHS[id]
+    if (!pattern) continue
+    if (id === 'posting') {
+      if (POSTING_PATH_HOSTS.some((host) => hostMatches(url, host)) && pattern.test(path)) return id
+      continue
+    }
+    if (pattern.test(path)) return id
+  }
+  return null
+}
+
+/**
+ * The guards as stored, tolerant of older files: a file written when the
+ * protection was one switch (`blockSensitiveSites`) keeps that choice for the
+ * three guards it used to cover, and a file with no setting at all protects by
+ * default rather than inheriting "off" from an older version.
+ */
+function normalizeGuards(
+  saved: Partial<PolicyStatus> & { blockSensitiveSites?: boolean }
+): PolicyGuards {
+  if (saved.guards && typeof saved.guards === 'object') {
+    return { ...DEFAULT_POLICY_GUARDS, ...saved.guards }
+  }
+  if (saved.blockSensitiveSites === false) {
+    return { ...DEFAULT_POLICY_GUARDS, payments: false, banking: false, passwords: false }
+  }
+  return { ...DEFAULT_POLICY_GUARDS }
 }
 
 interface PendingPrompt {
@@ -194,9 +293,7 @@ export function getPolicyStatus(): PolicyStatus {
     mode: saved.mode,
     custom: { ...DEFAULT_CUSTOM, ...saved.custom },
     sites: Array.isArray(saved.sites) ? saved.sites : [],
-    // Absent in a file written before this existed: protect by default rather
-    // than inheriting "off" from an older version.
-    blockSensitiveSites: saved.blockSensitiveSites !== false
+    guards: normalizeGuards(saved)
   }
 }
 
@@ -261,20 +358,19 @@ function hostAllowlisted(url: string, allowedHosts: string[]): boolean {
  *  1. An explicit per-site DENY. The user said no to this site; nothing,
  *     including full autonomy, overrides that.
  *  2. An explicit per-site ALLOW. They said yes to this site specifically, so
- *     it also lifts the sensitive-site check below — that check exists to catch
+ *     it also lifts the guards below — they exist to catch
  *     sites they have not considered, not to argue with ones they have.
- *  3. A sensitive site, while that protection is on: ask, even under full
- *     autonomy, because these are the destinations where one wrong action is
- *     not recoverable.
+ *  3. A site an ENABLED guard covers: ask, even under full autonomy, because
+ *     these are the destinations where one wrong action is not recoverable.
  *  4. The mode.
  */
 export function decide(kind: PolicyActionKind, detail: string): PolicyDecision {
-  const { mode, custom, sites, blockSensitiveSites } = getPolicyStatus()
+  const { mode, custom, sites, guards } = getPolicyStatus()
 
   if (kind === 'browser_navigate') {
     const site = siteDecision(detail, sites)
     if (site === 'deny') return 'deny'
-    if (site !== 'allow' && blockSensitiveSites && isSensitive(detail)) return 'confirm'
+    if (site !== 'allow' && guardFor(detail, guards)) return 'confirm'
     if (site === 'allow') return 'allow'
   }
   // Secure mode confirms everything, local targets included (P2-1); the other
@@ -324,7 +420,8 @@ export async function checkAction(
   // Only a 'confirm' verdict needs a human. With no channel to ask on, fail
   // closed — but say why, so this is distinguishable from a policy deny.
   const id = `policy-${nextPromptId++}`
-  const prompt: PolicyPromptInfo = { id, kind, detail, sessionId }
+  const guard = kind === 'browser_navigate' ? guardFor(detail, getPolicyStatus().guards) : null
+  const prompt: PolicyPromptInfo = { id, kind, detail, sessionId, ...(guard ? { guard } : {}) }
   // Register the waiter BEFORE delivering, so a synchronous answer can't be lost.
   const allowed = await new Promise<boolean>((resolve) => {
     pending.set(id, { resolve, sessionId, kind, detail })
@@ -414,16 +511,23 @@ export function clearSitePermission(host: string): PolicyStatus {
   return getPolicyStatus()
 }
 
-/** Turn the sensitive-site check on or off. */
-export function setBlockSensitiveSites(enabled: boolean): PolicyStatus {
-  store.write({ ...getPolicyStatus(), blockSensitiveSites: enabled })
+/** Turn one guard on or off. */
+export function setGuard(guard: PolicyGuard, enabled: boolean): PolicyStatus {
+  const current = getPolicyStatus()
+  store.write({ ...current, guards: { ...current.guards, [guard]: enabled } })
   audit({
     event: 'mode-change',
-    detail: `sensitive-site protection: ${enabled ? 'on' : 'off'}`,
+    detail: `guard ${guard}: ${enabled ? 'on' : 'off'}`,
     decision: 'allow'
   })
   broadcastChange?.(getPolicyStatus())
   return getPolicyStatus()
+}
+
+/** Is this an untrusted string naming a guard? */
+export function sanitizeGuard(guard: unknown): PolicyGuard | null {
+  const g = POLICY_GUARDS.find((entry) => entry.id === guard)
+  return g ? g.id : null
 }
 
 /* ---- Audit log (9.6) ---- */
@@ -537,9 +641,10 @@ export function registerPolicyRpc(): void {
     const h = asString(host)
     return h ? clearSitePermission(h) : getPolicyStatus()
   })
-  core.register(IpcChannels.policySetSensitive, (enabled) =>
-    setBlockSensitiveSites(enabled === true)
-  )
+  core.register(IpcChannels.policySetGuard, (guard, enabled) => {
+    const g = sanitizeGuard(guard)
+    return g ? setGuard(g, enabled === true) : getPolicyStatus()
+  })
   core.register(IpcChannels.policyRespond, (id, allow, always) => {
     const s = asString(id)
     if (s) respondToPolicyPrompt(s, allow === true, always === true)

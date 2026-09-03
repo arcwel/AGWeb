@@ -3,13 +3,15 @@ import type { AgentLogEntry, AgentSessionInfo, AgentStatus } from '@shared/agent
 import { monaco } from '@/monaco'
 import { useMonacoReady } from '@/monaco-ready'
 import { useShellStore } from '@/store'
+import { usePopover } from '@/popover'
 import { CloseIcon } from '@/components/icons'
-import { PolicyControls } from '@/components/PolicyControls'
+import { PermissionPopover, usePolicyStatus } from '@/components/PermissionPopover'
+import { AnchoredPopover } from '@/components/AnchoredPopover'
+import { POLICY_GUARDS } from '@shared/ipc'
 import { Composer } from '@/components/Composer'
 import { InlineTerminal } from '@/components/InlineTerminal'
 import { ProseTurn, ToolCall } from './TranscriptTurn'
 import { usePolicyPrompts } from '@/components/ActionPrompts'
-import { usePopover } from '@/popover'
 
 /**
  * Mission Control (Phase 6): compose a task, review + approve the agent's
@@ -56,6 +58,16 @@ const PLAN_KIND_GLYPHS: Record<string, string> = {
 export function AgentsBlock(): React.JSX.Element {
   const agentSessions = useShellStore((s) => s.agentSessions)
   const [diffEntry, setDiffEntry] = useState<AgentLogEntry | null>(null)
+  // The shield: the same permission popover the composer's pill opens, kept
+  // in the header so it is reachable when the composer is scrolled away.
+  const policy = usePolicyStatus()
+  const [permOpen, setPermOpen] = useState(false)
+  const permPanelRef = useRef<HTMLDivElement>(null)
+  const permRef = usePopover(
+    permOpen,
+    useCallback(() => setPermOpen(false), []),
+    permPanelRef
+  )
 
   const sessions = useMemo(
     () => Object.values(agentSessions).sort((a, b) => b.createdAt - a.createdAt),
@@ -72,6 +84,46 @@ export function AgentsBlock(): React.JSX.Element {
         </span>
         <span className="text-[10px] text-slate-400">{sessions.length}</span>
         <div className="ml-auto flex items-center gap-1">
+          {policy && (
+            <div className="relative" ref={permRef}>
+              <button
+                onClick={() => setPermOpen((o) => !o)}
+                className={`rounded p-1 hover:bg-slate-100 dark:hover:bg-slate-800 ${
+                  permOpen ? 'text-slate-700 dark:text-slate-200' : 'text-slate-400'
+                }`}
+                title="Agent permissions"
+                aria-label="Agent permissions"
+                aria-expanded={permOpen}
+                data-testid="agent-permissions"
+              >
+                <svg
+                  width="12"
+                  height="12"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={2.2}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M12 3l8 3v6c0 5-3.5 8.5-8 9-4.5-.5-8-4-8-9V6l8-3z" />
+                </svg>
+              </button>
+              {permOpen && (
+                <AnchoredPopover
+                  anchorRef={permRef}
+                  panelRef={permPanelRef}
+                  placement="below"
+                  align="end"
+                  width={300}
+                  role="dialog"
+                  aria-label="Agent permissions"
+                >
+                  <PermissionPopover policy={policy} />
+                </AnchoredPopover>
+              )}
+            </div>
+          )}
           <HistoryMenu sessions={sessions} />
           <button
             onClick={() => useShellStore.getState().loadDraft('', [])}
@@ -94,7 +146,6 @@ export function AgentsBlock(): React.JSX.Element {
           </button>
         </div>
       </div>
-      <PolicyControls />
       {anyFinished && (
         <div className="flex flex-none justify-end border-b border-slate-200 px-2.5 py-1 dark:border-slate-800">
           <button
@@ -424,6 +475,11 @@ function SessionCard({
                 <path d="M12 8v5M12 16.4h.01" />
               </svg>
               <span className="min-w-0 truncate text-[11.5px] text-amber-700 dark:text-amber-400">
+                {prompt.guard && (
+                  <span className="font-semibold">
+                    {POLICY_GUARDS.find((g) => g.id === prompt.guard)?.label} guard:{' '}
+                  </span>
+                )}
                 wants to {PROMPT_VERBS[prompt.kind]}{' '}
                 <span className="font-mono">{prompt.detail}</span>
               </span>
@@ -545,9 +601,11 @@ function ActivityFeed({
 function HistoryMenu({ sessions }: { sessions: AgentSessionInfo[] }): React.JSX.Element {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
+  const panelRef = useRef<HTMLDivElement>(null)
   const ref = usePopover(
     open,
-    useCallback(() => setOpen(false), [])
+    useCallback(() => setOpen(false), []),
+    panelRef
   )
 
   const matches = sessions.filter((session) =>
@@ -580,8 +638,14 @@ function HistoryMenu({ sessions }: { sessions: AgentSessionInfo[] }): React.JSX.
       </button>
 
       {open && (
-        <div
-          className="absolute right-0 top-full z-30 mt-1 max-h-80 w-72 overflow-y-auto rounded-lg border border-slate-200 bg-white py-1 shadow-lg dark:border-slate-700 dark:bg-slate-900"
+        <AnchoredPopover
+          anchorRef={ref}
+          panelRef={panelRef}
+          placement="below"
+          align="end"
+          width={288}
+          maxHeight={320}
+          className="rounded-lg border border-slate-200 bg-white py-1 shadow-lg dark:border-slate-700 dark:bg-slate-900"
           data-testid="agent-history-menu"
         >
           <input
@@ -618,7 +682,7 @@ function HistoryMenu({ sessions }: { sessions: AgentSessionInfo[] }): React.JSX.
               </span>
             </button>
           ))}
-        </div>
+        </AnchoredPopover>
       )}
     </div>
   )

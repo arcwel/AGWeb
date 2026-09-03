@@ -135,7 +135,7 @@ export function OmniboxDropdown({
       id={OMNIBOX_LISTBOX_ID}
       role="listbox"
       aria-label="Address suggestions"
-      className="wd-omnibox-pop glass absolute left-0 right-0 top-[calc(100%+6px)] z-50 max-h-96 overflow-y-auto rounded-[14px] py-1"
+      className="wd-omnibox-pop glass absolute left-0 right-0 top-[calc(100%+6px)] z-50 max-h-[min(24rem,calc(100vh-7rem))] overflow-y-auto rounded-[14px] py-1"
     >
       {suggestions.map((suggestion, index) => {
         const selected = index === selectedIndex

@@ -5,6 +5,8 @@ import { useShellStore } from '@/store'
 import { usePopover } from '@/popover'
 import { AttachIcon, FolderIcon, ImageIcon, MicIcon, SendIcon, SlashIcon } from '@/components/icons'
 import { useSpeechInput } from '@/speech'
+import { PermissionPopover, policySummary, usePolicyStatus } from '@/components/PermissionPopover'
+import { AnchoredPopover } from '@/components/AnchoredPopover'
 
 /**
  * The agent composer (Phase 11): the input surface an agentic IDE needs —
@@ -39,6 +41,8 @@ export function Composer(): React.JSX.Element {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [modelOpen, setModelOpen] = useState(false)
+  const [permOpen, setPermOpen] = useState(false)
+  const policy = usePolicyStatus()
   const [model, setModel] = useState<string>(MODELS[0])
   const [mention, setMention] = useState<{ query: string; at: number } | null>(null)
   const [slash, setSlash] = useState(false)
@@ -54,6 +58,14 @@ export function Composer(): React.JSX.Element {
   const modelRef = usePopover(
     modelOpen,
     useCallback(() => setModelOpen(false), [])
+  )
+  // The permission panel is portalled (it must not be clipped by the block),
+  // so the outside-press check needs the panel as well as the pill.
+  const permPanelRef = useRef<HTMLDivElement>(null)
+  const permRef = usePopover(
+    permOpen,
+    useCallback(() => setPermOpen(false), []),
+    permPanelRef
   )
 
   // Auto-grow: the input is the primary surface, so it expands with content
@@ -238,8 +250,10 @@ export function Composer(): React.JSX.Element {
     if (dropped.length > 0) addAttachments(dropped, 'file')
   }
 
+  // Every control on the bottom row is shrink-0 except the permission pill,
+  // which truncates: the row is one line at any block width, never two.
   const iconBtn =
-    'flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-200/60 hover:text-slate-600 dark:hover:bg-slate-700/60 dark:hover:text-slate-200'
+    'flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-200/60 hover:text-slate-600 dark:hover:bg-slate-700/60 dark:hover:text-slate-200'
 
   return (
     <div className="flex-none border-t border-slate-200 p-2.5 dark:border-slate-800">
@@ -252,7 +266,7 @@ export function Composer(): React.JSX.Element {
         {mention && mentionMatches.length > 0 && (
           <div
             data-testid="composer-mentions"
-            className="absolute bottom-full left-2 mb-1.5 w-72 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl dark:border-slate-700 dark:bg-[#0e1420]"
+            className="absolute bottom-full left-2 mb-1.5 w-72 max-w-[calc(100%-16px)] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl dark:border-slate-700 dark:bg-[#0e1420]"
           >
             {mentionMatches.map((path) => (
               <button
@@ -266,7 +280,7 @@ export function Composer(): React.JSX.Element {
           </div>
         )}
         {slash && (
-          <div className="absolute bottom-full left-2 mb-1.5 w-72 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl dark:border-slate-700 dark:bg-[#0e1420]">
+          <div className="absolute bottom-full left-2 mb-1.5 w-72 max-w-[calc(100%-16px)] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl dark:border-slate-700 dark:bg-[#0e1420]">
             {SLASH_COMMANDS.filter((c) => c.name.startsWith(text)).map((c) => (
               <button
                 key={c.name}
@@ -320,7 +334,7 @@ export function Composer(): React.JSX.Element {
           className="w-full resize-none bg-transparent px-3 py-2.5 text-[13px] outline-none placeholder:text-slate-400"
         />
 
-        <div className="flex items-center gap-0.5 px-1.5 pb-1.5">
+        <div className="flex min-w-0 items-center gap-0.5 px-1.5 pb-1.5">
           <button onClick={() => void pick('file')} className={iconBtn} aria-label="Attach a file">
             <AttachIcon size={15} />
           </button>
@@ -350,15 +364,15 @@ export function Composer(): React.JSX.Element {
             <SlashIcon size={15} />
           </button>
 
-          <span className="mx-1.5 h-4 w-px bg-slate-200 dark:bg-slate-700" />
+          <span className="mx-1.5 h-4 w-px shrink-0 bg-slate-200 dark:bg-slate-700" />
 
-          <div className="relative" ref={modelRef}>
+          <div className="relative shrink-0" ref={modelRef}>
             <button
               onClick={() => setModelOpen((o) => !o)}
-              className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-[11px] text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"
+              className="flex items-center gap-1.5 whitespace-nowrap rounded-lg px-2 py-1 text-[11px] text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"
               aria-label="Model"
             >
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" />
               {model.replace('claude-', '')}
             </button>
             {modelOpen && (
@@ -379,7 +393,41 @@ export function Composer(): React.JSX.Element {
             )}
           </div>
 
-          <div className="ml-auto flex items-center gap-1.5">
+          {/* The permission pill: the other per-run decision, made where the
+              run starts. Reads the mode and how many guards are on. */}
+          {policy && (
+            <div className="relative min-w-0" ref={permRef}>
+              <button
+                onClick={() => setPermOpen((o) => !o)}
+                className="flex max-w-full items-center gap-1.5 rounded-lg px-2 py-1 text-[11px] text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"
+                aria-label="Agent permissions"
+                aria-expanded={permOpen}
+                data-testid="permission-pill"
+                title={policySummary(policy)}
+              >
+                <span
+                  className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+                    policy.mode === 'autonomous' ? 'bg-amber-500' : 'bg-sky-500'
+                  }`}
+                />
+                <span className="min-w-0 truncate">{policySummary(policy)}</span>
+              </button>
+              {permOpen && (
+                <AnchoredPopover
+                  anchorRef={permRef}
+                  panelRef={permPanelRef}
+                  placement="above"
+                  width={300}
+                  role="dialog"
+                  aria-label="Agent permissions"
+                >
+                  <PermissionPopover policy={policy} />
+                </AnchoredPopover>
+              )}
+            </div>
+          )}
+
+          <div className="ml-auto flex shrink-0 items-center gap-1.5">
             {text.length > MAX_CHARS * 0.8 && (
               <span className="text-[10px] text-slate-400">
                 {text.length}/{MAX_CHARS}

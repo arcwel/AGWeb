@@ -562,7 +562,7 @@ function ProfileButton(): React.JSX.Element {
       {open && window.agweb.host.ownsBrowserFeatures && (
         // Chromium owns profiles and Google sign-in on the fork: hand the person
         // to the browser's own pages, opened as tabs in this window.
-        <div className="glass absolute right-0 top-11 z-50 w-72 overflow-hidden rounded-[14px] p-1">
+        <div className="glass absolute right-0 top-11 z-50 w-72 max-w-[calc(100vw-1rem)] overflow-hidden rounded-[14px] p-1">
           <p className="px-3 pb-1 pt-1.5 text-[10px] font-bold uppercase tracking-wider text-[var(--wd-dim)]">
             Google account
           </p>
@@ -586,7 +586,7 @@ function ProfileButton(): React.JSX.Element {
         </div>
       )}
       {open && !window.agweb.host.ownsBrowserFeatures && state && (
-        <div className="glass absolute right-0 top-11 z-50 w-72 overflow-hidden rounded-[14px] p-1">
+        <div className="glass absolute right-0 top-11 z-50 w-72 max-w-[calc(100vw-1rem)] overflow-hidden rounded-[14px] p-1">
           <p className="px-3 pb-1 pt-1.5 text-[10px] font-bold uppercase tracking-wider text-[var(--wd-dim)]">
             Google profiles
           </p>

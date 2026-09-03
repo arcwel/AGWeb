@@ -68,6 +68,32 @@ asking** — not a modal you have to hunt for. You can:
 A **Deny** always wins: an explicit deny rule (or a denied prompt) outranks any
 "don't ask again" grant.
 
+## Guards: sites that always ask
+
+Independent of the mode, five **guards** make the agent ask before it acts on a
+class of site — even under full autonomy. Each is its own switch, set from the
+permission pill beside the model in the composer (or the shield in the Agents
+header):
+
+| Guard | Covers | Default |
+| :-- | :-- | :-- |
+| Payments & checkout | Payment processors and wallets, and any page that looks like a checkout | On |
+| Banking & brokerage | Banks, brokerages and exchanges | On |
+| Passwords & identity | Password managers and account portals | On |
+| Email & messaging | Mail and chat apps | Off |
+| Posting publicly | Social sites, forums, and a new issue, pull request or release on a code host | Off |
+
+A guard covers every way the agent can act on such a page, not only the
+navigation there: opening or navigating a tab to it, clicking, typing, and
+running script in it (`browser_eval`) each ask first, and a redirect that lands
+on a guarded page is stopped. The prompt names the guard that asked ("Banking &
+brokerage guard: wants to open …"). A standing **always allow** for a site lifts
+the guards for that site only; **always deny** wins over everything. The guards
+outrank the mode and the custom rules, so a custom rule that allows navigation
+still asks on a guarded page. In Secure and Review the mode already confirms
+every remote navigation, so the switches change nothing there and the popover
+dims them.
+
 ## Tightening binds immediately
 
 If you change the mode or edit your custom rules, any "don't ask again" grants you

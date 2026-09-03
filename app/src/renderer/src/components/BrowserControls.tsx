@@ -83,7 +83,7 @@ export function BookmarkControls({
         <div
           // Floats clear of the toolbar (top-11 leaves the bar visible behind it) and
           // wears the same glass as every other popover, banner padded like theirs.
-          className={`glass absolute ${align === 'left' ? 'left-0' : 'right-0'} top-11 z-50 max-h-96 w-80 overflow-y-auto rounded-[14px] py-1.5`}
+          className={`glass absolute ${align === 'left' ? 'left-0' : 'right-0'} top-11 z-50 max-h-[min(24rem,calc(100vh-6rem))] w-80 max-w-[calc(100vw-2rem)] overflow-y-auto rounded-[14px] py-1.5`}
         >
           <div className="flex items-center justify-between px-3.5 pb-2 pt-1.5">
             <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--wd-dim)]">

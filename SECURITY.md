@@ -181,11 +181,22 @@ the user, and this section needs rewriting rather than extending.
 The policy gate (`src/core/domains/policy.ts`) is the backstop, and its precedence
 order _is_ the security property: an explicit per-site **deny** first (nothing,
 including full autonomy, overrides it), then a per-site **allow** (which also
-lifts the sensitive-site check — that check exists to catch sites the user has
-not considered, not to argue with ones they have), then the sensitive-site
-check, then the mode.
+lifts the guards — they exist to catch sites the user has not considered, not
+to argue with ones they have), then the guards, then the mode.
 
-`SENSITIVE_HOSTS` is **a seed list of twenty hosts, not categorisation**. There
+The guards are five switches the user sets one by one — payments & checkout,
+banking & brokerage, passwords & identity, email & messaging, posting publicly
+— each backed by a host list (`GUARD_HOSTS`) and, for payments and posting, a
+path heuristic (a checkout-looking path; a new issue, pull request or release
+on a code host). The first three are on by default. A guard is checked
+wherever the agent touches a page, not only when it navigates: `browser_open`
+and `browser_navigate` check the destination; `browser_click`, `browser_type`
+and `browser_eval` check the page the tab is currently on before acting (an
+eval used to pass only the command gate, which full autonomy allows — closed,
+with an end-to-end test that drives all three on a guarded page under full
+autonomy and expects a prompt for each); and a redirect or in-page navigation
+onto a guarded page is stopped by the navigation guard. Every list is **a seed,
+not categorisation**. There
 is no way to enumerate every bank, broker or patient portal from a keyword, and
 the code says so itself. A bank that is not on the list gets no special
 treatment whatsoever. Its job is to make the highest-consequence destinations

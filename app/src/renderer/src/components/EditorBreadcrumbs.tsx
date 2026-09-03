@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { documentSymbols, type OutlineSymbol } from '@/lsp'
 import { languageForPath } from '@/monaco'
 import { usePopover } from '@/popover'
+import { AnchoredPopover } from '@/components/AnchoredPopover'
 
 /**
  * Breadcrumbs and symbol outline (task 12.7).
@@ -44,9 +45,13 @@ export function EditorBreadcrumbs({
 }): React.JSX.Element {
   const [symbols, setSymbols] = useState<OutlineSymbol[]>([])
   const [open, setOpen] = useState(false)
+  // The bar is 24px tall and overflow-hidden, so an outline menu positioned
+  // inside it never showed at all. It is portalled and anchored to the bar.
+  const panelRef = useRef<HTMLDivElement>(null)
   const ref = usePopover(
     open,
-    useCallback(() => setOpen(false), [])
+    useCallback(() => setOpen(false), []),
+    panelRef
   )
 
   useEffect(() => {
@@ -103,9 +108,16 @@ export function EditorBreadcrumbs({
       )}
 
       {open && (
-        <div
-          className="absolute left-2 top-full z-20 mt-0.5 max-h-72 w-64 overflow-y-auto rounded-lg border border-slate-200 bg-white py-1 shadow-lg dark:border-slate-700 dark:bg-slate-900"
+        <AnchoredPopover
+          anchorRef={ref}
+          panelRef={panelRef}
+          placement="below"
+          align="start"
+          width={256}
+          maxHeight={288}
+          className="rounded-lg border border-slate-200 bg-white py-1 shadow-lg dark:border-slate-700 dark:bg-slate-900"
           data-testid="outline-menu"
+          role="menu"
         >
           {symbols.map((symbol, i) => (
             <button
@@ -123,7 +135,7 @@ export function EditorBreadcrumbs({
               <span className="truncate text-slate-600 dark:text-slate-300">{symbol.name}</span>
             </button>
           ))}
-        </div>
+        </AnchoredPopover>
       )}
     </div>
   )

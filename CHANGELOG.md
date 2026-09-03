@@ -45,6 +45,40 @@ All notable changes to Arcwel WebDeck are recorded here. This project adheres to
 
 ### Added
 
+- **Permissions live in the composer.** The permission mode is a pill beside
+  the model pill ("Full autonomy · 2 guards") opening one popover with the
+  modes, the guards, custom rules and the per-site decisions; the Agents
+  header keeps a shield that opens the same popover. The two settings strips
+  above the transcript are gone.
+- **Guards are separate choices.** The single "banking, payment and password
+  sites" switch is now five: payments & checkout, banking & brokerage,
+  passwords & identity, email & messaging, posting publicly. Payments and
+  posting also match by path (a checkout-looking page; a new issue, pull
+  request or release on a code host). Prompts name the guard that asked. An
+  older policy file's single switch carries over to the first three guards.
+- **Guards reach injected script.** `browser_eval` was gated only as a
+  command, which full autonomy allows, so script could act on a guarded
+  checkout or banking page that a click would have asked about. It is now
+  checked against the page it runs on first, like a click or a keystroke; an
+  end-to-end test drives click, type and eval on a guarded page under full
+  autonomy and expects a prompt for each.
+- **Popovers are never clipped by their block.** Menus opened inside a Deck
+  block (the permission panel, conversation history) render through a portal
+  with fixed positioning: clamped to the window, flipped to the side with
+  room, and capped to the space available so they scroll instead of running
+  off the edge. The composer's bottom row stays on one line at any block
+  width (the permission pill truncates; nothing wraps).
+- **Responsiveness pass across the shell** (audit at the Deck's 330×260
+  minimum and in narrow windows): the tab context menu and the editor's
+  outline menu were rendered inside `overflow-hidden` parents and clipped
+  (the outline menu never showed at all; the rail's tab menu was invisible) —
+  both are portalled now; the Files block's recents no longer squash into
+  half-height rows; the branch, downloads, bookmarks, omnibox and profile
+  menus cap their height to the window and scroll; the REST history and DB
+  schema sidebars give way below 45% of the block; the CSV filter and the
+  start page's brand lockup shrink with their container.
+- The new-tab page's WebDeck mark is 60px (was 40px).
+
 - **A browsing-first new-tab page**: the address field is focused, top sites
   and bookmarks are one click away, and projects are one quiet row (recents
   plus "Open a project…"). The brand lockup and opener show only while the

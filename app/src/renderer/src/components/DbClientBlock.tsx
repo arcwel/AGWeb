@@ -263,7 +263,7 @@ function SchemaSidebar({
   onOpen: (table: DbTable) => void
 }): React.JSX.Element {
   return (
-    <div className="flex w-48 flex-none flex-col border-r border-slate-200 dark:border-slate-800">
+    <div className="flex w-48 max-w-[45%] min-w-0 flex-none flex-col border-r border-slate-200 dark:border-slate-800">
       <div className="flex-none border-b border-slate-200 px-2.5 py-1.5 font-semibold text-slate-500 dark:border-slate-800">
         Schema
       </div>

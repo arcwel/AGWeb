@@ -59,7 +59,7 @@ export function DownloadsIndicator(): React.JSX.Element | null {
         <span>{active > 0 ? `${active}…` : downloads.length}</span>
       </button>
       {open && (
-        <div className="absolute right-0 top-9 z-50 w-80 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl dark:border-slate-700 dark:bg-[#0e1420]">
+        <div className="absolute right-0 top-9 z-50 max-h-[min(24rem,calc(100vh-6rem))] w-80 max-w-[calc(100vw-2rem)] overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-xl dark:border-slate-700 dark:bg-[#0e1420]">
           {downloads.map((d) => (
             <div key={d.id} className="border-b border-slate-100 px-3.5 py-2 dark:border-slate-800">
               <div className="flex items-center gap-2 text-xs">

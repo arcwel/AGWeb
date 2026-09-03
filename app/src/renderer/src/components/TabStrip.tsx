@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useState } from 'react'
+import { Fragment, useCallback, useRef, useState } from 'react'
 import type { DragEvent } from 'react'
 import {
   TAB_GROUP_COLORS,
@@ -9,6 +9,7 @@ import {
 } from '@/store'
 import { CloseIcon, DocIcon, GlobeIcon } from '@/components/icons'
 import { usePopover } from '@/popover'
+import { AnchoredPopover } from '@/components/AnchoredPopover'
 
 /**
  * Tab strip with drag-to-reorder and Chrome-style tab groups, in two layouts.
@@ -485,71 +486,87 @@ function TabMenu({
   onUngroup: () => void
   onCloseTab: () => void
 }): React.JSX.Element {
-  const ref = usePopover(true, onClose)
+  // The tab row is `overflow-hidden` (it clips its own title) and the rail is
+  // too, so a menu positioned inside either was cut off: invisible in the
+  // rail, a sliver in the strip. It is portalled instead and anchored to the
+  // row through a zero-size span that covers it. Opens below the row in both
+  // orientations (beside it in the rail would sit over the page).
+  const anchorRef = useRef<HTMLSpanElement>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
+  const ref = usePopover(true, onClose, panelRef)
   const item =
     'block w-full px-3 py-1.5 text-left text-[11px] hover:bg-slate-100 dark:hover:bg-slate-800'
-  // In the rail the menu opens beside the row; in the strip, below the tab.
-  const position = orientation === 'vertical' ? 'left-full top-0 ml-1' : 'left-0 top-full'
   const otherGroups = groups.filter((g) => g.id !== currentGroupId)
 
   return (
-    <div
-      ref={ref}
-      onClick={(e) => e.stopPropagation()}
-      className={`absolute ${position} z-50 w-44 overflow-hidden rounded-lg border border-slate-200 bg-white py-1 shadow-xl dark:border-slate-700 dark:bg-[#0e1420]`}
-      data-testid="tab-menu"
-    >
-      {inGroup ? (
-        <button
-          className={item}
-          onClick={() => {
-            onUngroup()
-            onClose()
-          }}
-        >
-          Remove from group
-        </button>
-      ) : (
-        <button
-          className={item}
-          onClick={() => {
-            onGroup()
-            onClose()
-          }}
-        >
-          Add to new group
-        </button>
-      )}
-      {otherGroups.length > 0 && (
-        <>
-          <div className="mt-1 border-t border-slate-200 pt-1 dark:border-slate-700" />
-          {otherGroups.map((g) => (
+    <div ref={ref} className="contents" data-orientation={orientation}>
+      <span ref={anchorRef} aria-hidden className="pointer-events-none absolute inset-0" />
+      <AnchoredPopover
+        anchorRef={anchorRef}
+        panelRef={panelRef}
+        placement="below"
+        align="start"
+        width={176}
+        className="rounded-lg border border-slate-200 bg-white py-1 shadow-xl dark:border-slate-700 dark:bg-[#0e1420]"
+        data-testid="tab-menu"
+        role="menu"
+      >
+        {/* A click in the menu must not reach the tab row's onClick (activate)
+          through React's tree, portal or not. */}
+        <div onClick={(e) => e.stopPropagation()}>
+          {inGroup ? (
             <button
-              key={g.id}
-              className={`${item} flex items-center gap-2`}
+              className={item}
               onClick={() => {
-                onAddToGroup(g.id)
+                onUngroup()
                 onClose()
               }}
             >
-              <span
-                className={`h-1.5 w-1.5 shrink-0 rounded-full ${TAB_GROUP_COLORS[g.color].dot}`}
-              />
-              <span className="min-w-0 truncate">Add to {g.name}</span>
+              Remove from group
             </button>
-          ))}
-        </>
-      )}
-      <div className="mt-1 border-t border-slate-200 pt-1 dark:border-slate-700" />
-      <button
-        className={`${item} text-rose-500`}
-        onClick={() => {
-          onCloseTab()
-          onClose()
-        }}
-      >
-        Close tab
-      </button>
+          ) : (
+            <button
+              className={item}
+              onClick={() => {
+                onGroup()
+                onClose()
+              }}
+            >
+              Add to new group
+            </button>
+          )}
+          {otherGroups.length > 0 && (
+            <>
+              <div className="mt-1 border-t border-slate-200 pt-1 dark:border-slate-700" />
+              {otherGroups.map((g) => (
+                <button
+                  key={g.id}
+                  className={`${item} flex items-center gap-2`}
+                  onClick={() => {
+                    onAddToGroup(g.id)
+                    onClose()
+                  }}
+                >
+                  <span
+                    className={`h-1.5 w-1.5 shrink-0 rounded-full ${TAB_GROUP_COLORS[g.color].dot}`}
+                  />
+                  <span className="min-w-0 truncate">Add to {g.name}</span>
+                </button>
+              ))}
+            </>
+          )}
+          <div className="mt-1 border-t border-slate-200 pt-1 dark:border-slate-700" />
+          <button
+            className={`${item} text-rose-500`}
+            onClick={() => {
+              onCloseTab()
+              onClose()
+            }}
+          >
+            Close tab
+          </button>
+        </div>
+      </AnchoredPopover>
     </div>
   )
 }

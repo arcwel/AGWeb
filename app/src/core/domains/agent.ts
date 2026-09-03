@@ -1095,12 +1095,24 @@ async function executeTool(
     }
     case 'browser_eval': {
       const expression = String(input.expression ?? '')
+      const evalTabId = String(input.tab_id ?? '')
+      // Script runs on whatever page the tab is showing, with that page's
+      // cookies, so it is checked against that site first — exactly like a
+      // click. Without this, the command gate alone let full autonomy run
+      // `document.querySelector('#place-order').click()` on a guarded checkout
+      // or banking page, which is the one thing the guards exist to stop.
+      const refusedEval = await gateInteraction(
+        session,
+        evalTabId,
+        `eval ${expression.slice(0, 80)}`
+      )
+      if (refusedEval) return refusedEval
       // Injected JS runs with the page origin's full powers (fetch, beacon,
-      // location) — it is an egress channel, so it passes the same gate as a
-      // shell command rather than being unguarded (P0-2).
+      // location) — it is an egress channel, so it also passes the same gate as
+      // a shell command rather than being unguarded (P0-2).
       const denied = await gate(session, 'command', `browser_eval: ${expression}`)
       if (denied) return denied
-      return agentBrowser().evaluate(String(input.tab_id ?? ''), expression)
+      return agentBrowser().evaluate(evalTabId, expression)
     }
     case 'browser_click': {
       const selector = String(input.selector ?? '')

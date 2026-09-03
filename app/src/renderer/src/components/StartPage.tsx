@@ -81,7 +81,7 @@ export function StartPage(): React.JSX.Element {
       data-testid="start-page"
     >
       <div
-        className={`flex w-full max-w-2xl flex-col items-center ${fresh ? 'pt-[12vh]' : 'pt-[16vh]'}`}
+        className={`flex w-full max-w-2xl shrink-0 flex-col items-center ${fresh ? 'pt-[12vh]' : 'pt-[16vh]'}`}
       >
         {fresh ? (
           <div className="mb-8 flex flex-col items-center gap-3">
@@ -90,14 +90,14 @@ export function StartPage(): React.JSX.Element {
               alt="Arcwel WebDeck"
               width={276}
               height={88}
-              className="dark:hidden"
+              className="h-auto max-w-full dark:hidden"
             />
             <img
               src="./webdeck-lockup-dark.svg"
               alt="Arcwel WebDeck"
               width={276}
               height={88}
-              className="hidden dark:block"
+              className="hidden h-auto max-w-full dark:block"
             />
             <div className="text-sm text-slate-500">
               Browse anywhere. Press{' '}
@@ -108,7 +108,7 @@ export function StartPage(): React.JSX.Element {
             </div>
           </div>
         ) : (
-          <img src="./webdeck-icon.svg" alt="" width={40} height={40} className="mb-6 opacity-80" />
+          <img src="./webdeck-icon.svg" alt="" width={60} height={60} className="mb-6 opacity-80" />
         )}
 
         <form

@@ -62,7 +62,8 @@ Three things follow from that ordering:
 - Commands run in **live terminals inside the transcript**; file edits come with before/after diffs; browser actions drive real tabs in your session over an in-process DevTools channel, never a debugging port.
 - **Agent Vision**: the agent reads the page, the console and the network of the tabs it opened.
 - Composer with **attachments** from the native file panel, `@mention` for workspace files, `/` commands, voice input, and a model picker (Anthropic, OpenAI, Gemini).
-- **Permission modes** from Secure (ask about everything) to Agent (run freely), per-site permissions, inline prompts, and an audit log. The policy gate fails closed.
+- **Permissions where the run starts.** A pill beside the model picker in the composer sets the mode, from Secure (ask about everything) to Full autonomy (never asks), with custom rules and the standing per-site decisions in the same popover.
+- **Five guards, each its own switch**: payments & checkout, banking & brokerage, passwords & identity, email & messaging, posting publicly. A guard makes the agent ask before it navigates to, clicks, types in or runs script on that kind of page, even under full autonomy. Inline prompts name the guard that asked; an audit log records every decision. The policy gate fails closed.
 - Conversations rename, branch from any turn, export, and hand back to the composer.
 
 ### A genuine IDE
@@ -98,6 +99,8 @@ Settings open as their own surface: Application, AI keys (held in the OS keychai
 | Browsing full-screen | Vertical tabs as a rail block |
 | <img src="assets/readme/deck-window.png" alt="The Dev Deck detached into its own window" /> | <img src="assets/readme/agent-attach.png" alt="The agent composer with an attached file" /> |
 | The Deck in its own window | Attaching files to the agent |
+| <img src="assets/readme/permissions.png" alt="The permission popover open above the composer: the five modes and the five guards" /> | <img src="assets/readme/deck-small.png" alt="The Deck in a 760 by 640 window: every block and popover fits" /> |
+| Permission modes and guards, from the composer | The Deck in a small window |
 
 ## Install
 
@@ -110,6 +113,20 @@ Settings open as their own surface: Application, AI keys (held in the OS keychai
 The agent needs a provider key. **Settings → AI** stores it in the macOS Keychain, or points WebDeck at your password manager (`op read`, `pass show`, `security find-generic-password`, `vault read`). `ANTHROPIC_API_KEY` in the environment also works.
 
 Then read [Getting Started](docs/getting-started.md): the first five minutes, the blocks, and the shortcuts.
+
+### Testing a pre-release build
+
+This is a release candidate shared for feedback. What to know before you start:
+
+- **It is ad-hoc signed, not notarized.** macOS will refuse the first launch; right-click the app, choose **Open**, and confirm once. If Finder shows a crossed-out icon, that is a stale Launch Services entry: drag the app out of Applications and back, or run `/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "/Applications/Arcwel WebDeck.app"` and relaunch Finder.
+- **The development keychain is on.** Because the bundle is unsigned, the key that encrypts cookies and saved passwords is a 0600 file in the profile folder rather than a login-Keychain item. Fine for testing; do not treat this build as your daily browser for banking.
+- **The profile lives in `~/Library/Application Support/Chromium`** and is separate from Chrome's. Nothing in your Chrome profile is read or changed.
+- **The agent needs a provider key** (Settings → AI). Start in **Review-driven** or **Agent-driven** mode; leave the three money and identity guards on, and turn on **Email & messaging** and **Posting publicly** if the agent will be anywhere near your mail or social accounts.
+- **Cast is off** by default, so no "find devices on the local network" prompt.
+
+Things worth trying: browse for a while and see whether anything feels less than Chrome; press <kbd>⌘D</kbd> over a page and give the agent a task that touches the page you are looking at; resize the window down to about 760 × 640 and open every menu; open a project and use the editor, terminal and source control together; detach the Deck into its own window.
+
+**Feedback:** open an issue at [github.com/arcwel/WebDeck/issues](https://github.com/arcwel/WebDeck/issues) with what you did, what you expected, what happened, and a screenshot. For a crash, attach the newest report from `~/Library/Logs/DiagnosticReports`. For anything security-related, see [SECURITY.md](SECURITY.md) rather than a public issue.
 
 ## Build from source
 
@@ -206,7 +223,7 @@ The shell page owns the window and streams the stage rectangle to the browser; C
 
 ## Status
 
-Pre-release. The browser, the Dev Deck, the agent with its permission engine, the IDE layer and Document Studio are built, verified on the real window, and shipped as a release candidate DMG. Signed distribution needs an Apple Developer ID and is documented, not yet automated.
+Pre-release, in user testing. The browser, the Dev Deck, the agent with its permission engine and guards, the IDE layer and Document Studio are built, verified on the real window at normal and small window sizes, and shipped as a release candidate DMG. Signed distribution needs an Apple Developer ID and is documented, not yet automated. The [changelog](CHANGELOG.md) lists what changed in each round.
 
 ## License
 

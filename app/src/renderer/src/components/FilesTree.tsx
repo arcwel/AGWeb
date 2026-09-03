@@ -465,7 +465,11 @@ function NoWorkspace(): React.JSX.Element {
   }, [workspace])
 
   return (
-    <div className="flex h-full flex-col gap-2 overflow-y-auto p-3 text-xs">
+    // Children never shrink: a flex column squeezes its items to fit before it
+    // scrolls, and a squeezed button with `truncate` clips its own text (the
+    // recents list rendered as half-height rows in a short dock block). With
+    // shrink-0 on every row the column overflows and scrolls instead.
+    <div className="flex h-full flex-col gap-2 overflow-y-auto p-3 text-xs [&>*]:shrink-0">
       {window.agweb.host.canPickPaths ? (
         <button
           onClick={() =>

@@ -410,7 +410,7 @@ export function createAgwebApi(ipcRenderer: IpcLike, host: HostCapabilities): Ag
       setCustom: (rules) => ipcRenderer.invoke(IpcChannels.policySetCustom, rules),
       setSite: (host, decision) => ipcRenderer.invoke(IpcChannels.policySetSite, host, decision),
       clearSite: (host) => ipcRenderer.invoke(IpcChannels.policyClearSite, host),
-      setSensitive: (enabled) => ipcRenderer.invoke(IpcChannels.policySetSensitive, enabled),
+      setGuard: (guard, enabled) => ipcRenderer.invoke(IpcChannels.policySetGuard, guard, enabled),
       respond: (id, allow, always) =>
         ipcRenderer.invoke(IpcChannels.policyRespond, id, allow, always),
       onPrompt: (listener) => {

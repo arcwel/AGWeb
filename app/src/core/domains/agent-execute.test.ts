@@ -3,6 +3,7 @@ import { mkdirSync, rmSync, existsSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { AgentSessionInfo } from '@shared/agents'
+import type { PolicyPromptInfo } from '@shared/ipc'
 import { setCoreEnv } from '../env'
 import { setAgentBrowserPort, type AgentBrowserPort } from '../agent-browser-port'
 
@@ -89,15 +90,16 @@ async function waitForStatus(id: string, status: string, tries = 400): Promise<A
   throw new Error(`session ${id} never reached ${status} (was ${find(id)?.status})`)
 }
 
+// checkAction is fail-closed without a prompt host (no window → deny all), so
+// wire a fake window. Most tests use only allow/deny rules (never 'confirm'),
+// so the host's send is never actually invoked; the guard test below swaps in
+// a sink that answers.
+const fakeWindow = {
+  isDestroyed: () => false,
+  webContents: { send: () => {} }
+}
 beforeAll(() => {
   mkdirSync(h.dir, { recursive: true })
-  // checkAction is fail-closed without a prompt host (no window → deny all), so
-  // wire a fake window. These tests use only allow/deny rules (never 'confirm'),
-  // so the host's send is never actually invoked.
-  const fakeWindow = {
-    isDestroyed: () => false,
-    webContents: { send: () => {} }
-  }
   policy.initPolicy(fakeWindow as unknown as Parameters<typeof policy.initPolicy>[0])
 })
 afterAll(() => rmSync(h.dir, { recursive: true, force: true }))
@@ -181,5 +183,68 @@ describe('clicking and typing pass the permission gate', () => {
     policy.clearSitePermission('blocked.test')
     mockTabUrl = 'http://localhost:5173/'
     policy.setPolicyMode('agent')
+  })
+})
+
+describe('the guards reach every way of acting on a page', () => {
+  it('asks before a click, a keystroke AND injected script on a guarded page, even under full autonomy', async () => {
+    // Full autonomy never asks — except on a guarded destination. The tab sits
+    // on a checkout page (the payments guard matches by path on any host), so
+    // every interaction must come back as a prompt naming that guard. This is
+    // the end-to-end proof that the switches in the popover are enforced by
+    // the tools, not just stored: browser_eval used to pass only the command
+    // gate, which full autonomy allows, so script could place the order.
+    mockTabUrl = 'https://shop.test/checkout'
+    policy.setPolicyMode('autonomous')
+    policy.setGuard('payments', true)
+    const seen: PolicyPromptInfo[] = []
+    policy.setPolicyPromptSink((prompt) => {
+      seen.push(prompt)
+      policy.respondToPolicyPrompt(prompt.id, false, false)
+      return true
+    })
+    try {
+      const id = agent.startAgentTask('Do the mock task on a checkout page')
+      await waitForStatus(id, 'awaiting_approval')
+      agent.approveAgentPlan(id)
+      const done = await waitForStatus(id, 'done')
+
+      expect(seen.length).toBeGreaterThan(0)
+      expect(seen.every((p) => p.guard === 'payments')).toBe(true)
+      expect(seen.every((p) => p.detail === mockTabUrl)).toBe(true)
+      const refusals = done.log.filter((e) => e.text.startsWith('Refused: '))
+      expect(refusals.some((e) => e.text.includes('click'))).toBe(true)
+      expect(refusals.some((e) => e.text.includes('type into'))).toBe(true)
+      expect(refusals.some((e) => e.text.includes('eval'))).toBe(true)
+    } finally {
+      policy.initPolicy(fakeWindow as unknown as Parameters<typeof policy.initPolicy>[0])
+      mockTabUrl = 'http://localhost:5173/'
+      policy.setPolicyMode('agent')
+    }
+  })
+
+  it('does not ask on that same page once the payments guard is off', async () => {
+    mockTabUrl = 'https://shop.test/checkout'
+    policy.setPolicyMode('autonomous')
+    policy.setGuard('payments', false)
+    const seen: PolicyPromptInfo[] = []
+    policy.setPolicyPromptSink((prompt) => {
+      seen.push(prompt)
+      policy.respondToPolicyPrompt(prompt.id, false, false)
+      return true
+    })
+    try {
+      const id = agent.startAgentTask('Do the mock task on a checkout page, guard off')
+      await waitForStatus(id, 'awaiting_approval')
+      agent.approveAgentPlan(id)
+      const done = await waitForStatus(id, 'done')
+      expect(seen).toEqual([])
+      expect(done.log.some((e) => e.text.startsWith('Refused: '))).toBe(false)
+    } finally {
+      policy.setGuard('payments', true)
+      policy.initPolicy(fakeWindow as unknown as Parameters<typeof policy.initPolicy>[0])
+      mockTabUrl = 'http://localhost:5173/'
+      policy.setPolicyMode('agent')
+    }
   })
 })

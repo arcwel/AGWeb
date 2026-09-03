@@ -18,7 +18,8 @@ import {
   sanitizeSyncedPolicyMode,
   setSitePermission,
   clearSitePermission,
-  setBlockSensitiveSites,
+  setGuard,
+  guardFor,
   getPolicyStatus
 } from './policy'
 
@@ -393,7 +394,11 @@ describe('sync cannot escalate the agent to full autonomy', () => {
 describe('per-site permissions', () => {
   beforeEach(() => {
     for (const site of getPolicyStatus().sites) clearSitePermission(site.host)
-    setBlockSensitiveSites(true)
+    setGuard('payments', true)
+    setGuard('banking', true)
+    setGuard('passwords', true)
+    setGuard('messaging', false)
+    setGuard('posting', false)
     setPolicyMode('autonomous')
   })
 
@@ -428,15 +433,71 @@ describe('per-site permissions', () => {
     expect(decide('browser_navigate', 'https://paypal.com/send')).toBe('confirm')
   })
 
-  it('respects the protection being switched off', () => {
-    setBlockSensitiveSites(false)
+  it('each guard is its own switch', () => {
+    // Anthony: "I might want payments to be asked but not passwords."
+    setGuard('banking', false)
     expect(decide('browser_navigate', 'https://chase.com/transfer')).toBe('allow')
+    expect(decide('browser_navigate', 'https://www.paypal.com/send')).toBe('confirm')
+    setGuard('passwords', false)
+    expect(decide('browser_navigate', 'https://accounts.google.com/signin')).toBe('allow')
+    expect(decide('browser_navigate', 'https://paypal.com/send')).toBe('confirm')
   })
 
-  it('defaults the protection ON for a policy file written before it existed', () => {
+  it('the opt-in guards are off by default and cover their surfaces when on', () => {
+    expect(decide('browser_navigate', 'https://mail.google.com/mail/u/0/')).toBe('allow')
+    expect(decide('browser_navigate', 'https://github.com/arcwel/WebDeck/issues/new')).toBe('allow')
+    setGuard('messaging', true)
+    setGuard('posting', true)
+    expect(decide('browser_navigate', 'https://mail.google.com/mail/u/0/')).toBe('confirm')
+    expect(decide('browser_navigate', 'https://github.com/arcwel/WebDeck/issues/new')).toBe(
+      'confirm'
+    )
+    // Reading code on the host is not publishing.
+    expect(decide('browser_navigate', 'https://github.com/arcwel/WebDeck')).toBe('allow')
+  })
+
+  it('a guard still asks under custom rules that allow navigation', () => {
+    // The popover dims the guards only under Secure and Review-driven, which
+    // confirm every remote site anyway. Custom rules can allow navigation
+    // outright, and the guard has to outrank that rule or it is decoration.
+    setPolicyMode('custom')
+    setCustomRules({
+      fileWrites: 'allow',
+      commands: 'allow',
+      navigation: 'allow',
+      allowedHosts: []
+    })
+    expect(decide('browser_navigate', 'https://shop.example.com/products/1')).toBe('allow')
+    expect(decide('browser_navigate', 'https://shop.example.com/checkout')).toBe('confirm')
+    expect(decide('browser_navigate', 'https://chase.com/transfer')).toBe('confirm')
+    // An allowlisted host is a deliberate choice about that site, like a
+    // per-site allow — but only the per-site allow lifts a guard.
+    setCustomRules({
+      fileWrites: 'allow',
+      commands: 'allow',
+      navigation: 'confirm',
+      allowedHosts: ['chase.com']
+    })
+    expect(decide('browser_navigate', 'https://chase.com/transfer')).toBe('confirm')
+    setPolicyMode('autonomous')
+  })
+
+  it('the payments guard also catches a checkout page on any site', () => {
+    expect(guardFor('https://shop.example.com/checkout', getPolicyStatus().guards)).toBe('payments')
+    expect(guardFor('https://shop.example.com/products/1', getPolicyStatus().guards)).toBeNull()
+  })
+
+  it('names the guard that asked', () => {
+    expect(guardFor('https://chase.com/transfer', getPolicyStatus().guards)).toBe('banking')
+    expect(guardFor('https://1password.com/vault', getPolicyStatus().guards)).toBe('passwords')
+  })
+
+  it('defaults the money and identity guards ON for a policy file written before they existed', () => {
     // Inheriting "off" from an older file would silently drop the protection
     // for every existing user.
-    expect(getPolicyStatus().blockSensitiveSites).toBe(true)
+    const { guards } = getPolicyStatus()
+    expect(guards.payments && guards.banking && guards.passwords).toBe(true)
+    expect(guards.messaging || guards.posting).toBe(false)
   })
 
   it('deny wins when a site somehow has both', () => {
