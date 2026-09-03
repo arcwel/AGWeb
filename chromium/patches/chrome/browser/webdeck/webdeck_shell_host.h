@@ -3,6 +3,7 @@
 #ifndef CHROME_BROWSER_WEBDECK_WEBDECK_SHELL_HOST_H_
 #define CHROME_BROWSER_WEBDECK_WEBDECK_SHELL_HOST_H_
 
+#include "base/functional/callback.h"
 #include "base/memory/raw_ptr.h"
 #include "content/public/browser/web_contents_user_data.h"
 #include "url/gurl.h"
@@ -30,6 +31,29 @@ namespace webdeck {
 // chrome://webdeck (main role).
 void SetNextShellUrl(const GURL& url);
 GURL TakeNextShellUrl();
+
+// Browser commands (IDC_*) that a WebDeck window's shell owns. The shell
+// registers a forwarder when its client binds (WebDeckShell::SetClient);
+// BrowserCommandController asks ForwardCommand() FIRST for every command and
+// runs Chromium's own handler only when it returns false. That is how ⌘T from
+// a focused page opens WebDeck's new tab rather than chrome://newtab, and how
+// ⌘D reaches the Deck instead of the bookmark star. A window with no shell (or
+// no client yet) forwards nothing, so ordinary Chromium windows are untouched.
+//
+// The forwarder answers two questions: with `execute` false, "is this command
+// yours?" (so the command controller reports it supported and enabled — a
+// WebDeck window has no native location bar, so Chromium would otherwise
+// disable ⌘L and the menu would refuse the key before any dispatch); with
+// `execute` true, "take it" (send it to the shell).
+using CommandForwarder =
+    base::RepeatingCallback<bool(int command_id, bool execute)>;
+void SetCommandForwarder(BrowserWindowInterface* window,
+                         CommandForwarder forwarder);
+void ClearCommandForwarder(BrowserWindowInterface* window);
+// True if the window's shell owns `command_id` (nothing is sent).
+bool OwnsCommand(BrowserWindowInterface* window, int command_id);
+// Sends `command_id` to the shell if it owns it; true if it did.
+bool ForwardCommand(BrowserWindowInterface* window, int command_id);
 
 class WebDeckShellHost : public content::WebContentsUserData<WebDeckShellHost> {
  public:

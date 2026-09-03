@@ -1,29 +1,59 @@
-import { useEffect, useState, useSyncExternalStore } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { AppInfo, RecentProject } from '@shared/ipc'
 import { useShellStore } from '@/store'
-import { subscribeShortcuts, getShortcuts } from '@/shortcuts'
+import { navigateTab, toNavigableUrl } from '@/components/Toolbar'
+
+/**
+ * The new-tab page: a browser's start page first, a project opener second.
+ *
+ * Every new tab lands here. The address field is focused, the sites you go
+ * back to are one click away, bookmarks sit under them, and projects are one
+ * quiet row at the bottom — recents plus "Open a project…", which opens the
+ * native folder panel. The brand lockup shows only while the profile is fresh
+ * (nothing visited, nothing opened); after that the page gets out of the way.
+ */
+const TOP_SITES = 8
+const BOOKMARK_CHIPS = 8
+const RECENT_PROJECTS = 5
 
 export function StartPage(): React.JSX.Element {
+  const activeTabId = useShellStore((s) => s.activeTabId)
   const setWorkspace = useShellStore((s) => s.setWorkspace)
   const workspace = useShellStore((s) => s.workspace)
+  const history = useShellStore((s) => s.history)
+  const bookmarks = useShellStore((s) => s.bookmarks)
   const [recent, setRecent] = useState<RecentProject[]>([])
   const [info, setInfo] = useState<AppInfo | null>(null)
-  // Subscribe so the shortcut list fills in as shortcuts register after first
-  // paint, instead of rendering the empty/partial registry once (P3-8).
-  const shortcuts = useSyncExternalStore(subscribeShortcuts, getShortcuts)
+  const [query, setQuery] = useState('')
+  const [typedPath, setTypedPath] = useState('')
+  const [showPathBox, setShowPathBox] = useState(false)
+  const [pathError, setPathError] = useState('')
+  const searchRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     void window.agweb.getRecentProjects().then(setRecent)
     void window.agweb.getAppInfo().then(setInfo)
   }, [workspace])
 
-  const [typedPath, setTypedPath] = useState('')
-  const [pathError, setPathError] = useState('')
-  // One field, one button. A typed path opens directly (workspace:open-path is
-  // served by the core); an EMPTY path with the button pressed opens the native
-  // folder panel, when this host has one (Shell.pickPaths on the fork). Without
-  // a picker the button simply waits for a path — it is never a dead control.
+  // The address field takes focus so a new tab is one keystroke from a page.
+  useEffect(() => {
+    searchRef.current?.focus()
+  }, [activeTabId])
+
+  const topSites = useMemo(
+    () =>
+      [...history]
+        .sort((a, b) => b.visitCount - a.visitCount || b.lastVisit - a.lastVisit)
+        .slice(0, TOP_SITES),
+    [history]
+  )
+  const fresh = history.length === 0 && recent.length === 0 && !workspace
   const canPick = window.agweb.host.canPickPaths
+
+  const go = (input: string): void => {
+    const url = toNavigableUrl(input)
+    if (url) void navigateTab(activeTabId, url)
+  }
 
   const openFolder = async (): Promise<void> => {
     setPathError('')
@@ -33,63 +63,164 @@ export function StartPage(): React.JSX.Element {
 
   const openTypedPath = async (): Promise<void> => {
     const path = typedPath.trim()
-    if (!path) {
-      if (canPick) await openFolder()
-      return
-    }
+    if (!path) return
     setPathError('')
     const ws = await window.agweb.openWorkspacePath(path)
     if (ws) {
       setWorkspace(ws)
       setTypedPath('')
+      setShowPathBox(false)
     } else {
       setPathError(`Could not open "${path}" — check the path and try again.`)
     }
   }
 
   return (
-    <div className="flex h-full flex-col items-center justify-center gap-8 bg-slate-50 text-slate-900 dark:bg-[#0b0f14] dark:text-slate-100">
-      <div className="flex flex-col items-center gap-3">
-        {/* The brand lockup carries the mark and the "WebDeck by Arcwel"
-            wordmark together, so it replaces both the icon and the headline
-            text that used to be assembled here by hand.
+    <div
+      className="flex h-full flex-col items-center overflow-y-auto bg-slate-50 px-6 text-slate-900 dark:bg-[#0b0f14] dark:text-slate-100"
+      data-testid="start-page"
+    >
+      <div
+        className={`flex w-full max-w-2xl flex-col items-center ${fresh ? 'pt-[12vh]' : 'pt-[16vh]'}`}
+      >
+        {fresh ? (
+          <div className="mb-8 flex flex-col items-center gap-3">
+            <img
+              src="./webdeck-lockup-light.svg"
+              alt="Arcwel WebDeck"
+              width={276}
+              height={88}
+              className="dark:hidden"
+            />
+            <img
+              src="./webdeck-lockup-dark.svg"
+              alt="Arcwel WebDeck"
+              width={276}
+              height={88}
+              className="hidden dark:block"
+            />
+            <div className="text-sm text-slate-500">
+              Browse anywhere. Press{' '}
+              <kbd className="rounded border border-slate-300 bg-slate-100 px-1.5 py-0.5 font-mono text-xs dark:border-slate-600 dark:bg-slate-800">
+                ⌘D
+              </kbd>{' '}
+              when it&apos;s time to build.
+            </div>
+          </div>
+        ) : (
+          <img src="./webdeck-icon.svg" alt="" width={40} height={40} className="mb-6 opacity-80" />
+        )}
 
-            Two files rather than one: the lockups differ only in text colour,
-            and the app's theme is a `.dark` class on <html> (see theme.ts), not
-            the OS preference — so a <picture> with prefers-color-scheme would
-            ignore the user's own choice. The `dark:` variant follows the store.
-            Only one is ever displayed, so only one reaches the a11y tree. */}
-        <img
-          src="./webdeck-lockup-light.svg"
-          alt="Arcwel WebDeck"
-          width={276}
-          height={88}
-          className="dark:hidden"
-        />
-        <img
-          src="./webdeck-lockup-dark.svg"
-          alt="Arcwel WebDeck"
-          width={276}
-          height={88}
-          className="hidden dark:block"
-        />
-        <div className="text-sm text-slate-500">
-          Browse anywhere. Press{' '}
-          <kbd className="rounded border border-slate-300 bg-slate-100 px-1.5 py-0.5 font-mono text-xs dark:border-slate-600 dark:bg-slate-800">
-            ⌘D
-          </kbd>{' '}
-          when it&apos;s time to build.
-        </div>
+        <form
+          className="w-full"
+          onSubmit={(e) => {
+            e.preventDefault()
+            go(query)
+          }}
+        >
+          <input
+            ref={searchRef}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search or enter address"
+            aria-label="Search or enter address"
+            spellCheck={false}
+            autoComplete="off"
+            data-testid="start-search"
+            className="glass w-full rounded-full border border-[var(--wd-glass-border)] px-5 py-3 text-[15px] text-slate-900 shadow-sm outline-none placeholder:text-slate-400 focus:border-[var(--wd-accent)] dark:text-slate-100"
+          />
+        </form>
+
+        {topSites.length > 0 && (
+          <div
+            className="mt-8 grid w-full grid-cols-4 gap-3 sm:grid-cols-8"
+            data-testid="start-top-sites"
+          >
+            {topSites.map((site) => (
+              <button
+                key={site.url}
+                onClick={() => void navigateTab(activeTabId, site.url)}
+                title={site.url}
+                className="flex flex-col items-center gap-2 rounded-xl px-1 py-3 hover:bg-slate-200/70 dark:hover:bg-slate-800/70"
+              >
+                <span className="flex h-11 w-11 items-center justify-center rounded-full bg-white text-sm font-semibold text-slate-600 shadow-sm dark:bg-slate-800 dark:text-slate-200">
+                  {site.favicon ? (
+                    <img src={site.favicon} alt="" width={20} height={20} />
+                  ) : (
+                    (hostLabel(site.url)[0] ?? '?').toUpperCase()
+                  )}
+                </span>
+                <span className="w-full truncate text-center text-[11px] text-slate-600 dark:text-slate-300">
+                  {site.title || hostLabel(site.url)}
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
+
+        {bookmarks.length > 0 && (
+          <div
+            className="mt-6 flex w-full flex-wrap justify-center gap-2"
+            data-testid="start-bookmarks"
+          >
+            {bookmarks.slice(0, BOOKMARK_CHIPS).map((b) => (
+              <button
+                key={b.url}
+                onClick={() => void navigateTab(activeTabId, b.url)}
+                title={b.url}
+                className="glass max-w-[180px] truncate rounded-full border border-[var(--wd-glass-border)] px-3 py-1 text-xs text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-slate-100"
+              >
+                {b.title || hostLabel(b.url)}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
-      <div className="flex w-80 flex-col gap-2">
-        <div className="flex flex-col gap-1.5">
-          <label htmlFor="wd-project-path" className="text-xs text-slate-500">
-            {canPick
-              ? 'Open a project — type a path, or leave it empty to browse'
-              : 'Open a project by path'}
-          </label>
-          <div className="flex gap-2">
+      <div className="mt-auto w-full max-w-2xl pb-8 pt-12" data-testid="start-projects">
+        <div className="mb-2 flex items-center gap-3">
+          <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+            Projects
+          </span>
+          {workspace && (
+            <span className="truncate text-[11px] text-slate-500" title={workspace.path}>
+              Current: <span className="text-slate-700 dark:text-slate-300">{workspace.name}</span>
+            </span>
+          )}
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {recent.slice(0, RECENT_PROJECTS).map((project) => (
+            <button
+              key={project.path}
+              onClick={() => void window.agweb.openWorkspacePath(project.path)}
+              title={project.path}
+              className={`glass max-w-[200px] truncate rounded-full border px-3 py-1 text-xs ${
+                workspace?.path === project.path
+                  ? 'border-[var(--wd-accent)] text-slate-900 dark:text-slate-100'
+                  : 'border-[var(--wd-glass-border)] text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-slate-100'
+              }`}
+            >
+              ▸ {project.name}
+            </button>
+          ))}
+          {canPick ? (
+            <button
+              onClick={() => void openFolder()}
+              data-testid="start-open"
+              className="rounded-full bg-sky-600 px-3.5 py-1 text-xs font-medium text-white hover:bg-sky-500"
+            >
+              Open a project…
+            </button>
+          ) : null}
+          <button
+            onClick={() => setShowPathBox((v) => !v)}
+            className="text-[11px] text-slate-500 underline-offset-2 hover:underline"
+          >
+            {showPathBox ? 'hide path' : 'type a path'}
+          </button>
+        </div>
+        {(showPathBox || !canPick) && (
+          <div className="mt-2 flex gap-2">
             <input
               id="wd-project-path"
               value={typedPath}
@@ -99,61 +230,34 @@ export function StartPage(): React.JSX.Element {
               }}
               placeholder="~/code/my-project"
               spellCheck={false}
-              className="min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+              aria-label="Open a project by path"
+              className="min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
             />
             <button
               onClick={() => void openTypedPath()}
-              disabled={!canPick && !typedPath.trim()}
-              title={canPick && !typedPath.trim() ? 'Choose a project folder…' : 'Open this path'}
-              data-testid="start-open"
-              className="rounded-lg bg-sky-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-sky-500 disabled:opacity-50"
+              disabled={!typedPath.trim()}
+              className="rounded-lg bg-sky-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-sky-500 disabled:opacity-50"
             >
-              {canPick && !typedPath.trim() ? 'Open…' : 'Open'}
+              Open
             </button>
           </div>
-          {pathError && <div className="text-xs text-rose-500">{pathError}</div>}
-        </div>
-        {workspace && (
-          <div className="truncate text-center text-xs text-slate-500" title={workspace.path}>
-            Current: {workspace.name}
-          </div>
         )}
-        {recent.length > 0 && (
-          <div className="mt-2 flex flex-col gap-1">
-            <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Recent
-            </div>
-            {recent.slice(0, 5).map((project) => (
-              <button
-                key={project.path}
-                onClick={() => void window.agweb.openWorkspacePath(project.path)}
-                className="truncate rounded-md px-2 py-1.5 text-left text-sm text-slate-600 hover:bg-slate-200 dark:text-slate-300 dark:hover:bg-slate-800"
-                title={project.path}
-              >
-                {project.name}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-
-      <div className="flex flex-col items-center gap-1 text-xs text-slate-500">
-        {shortcuts.slice(0, 5).map((s) => (
-          <div key={s.combo}>
-            <kbd className="rounded border border-slate-300 bg-slate-100 px-1.5 py-0.5 font-mono text-[10px] dark:border-slate-600 dark:bg-slate-800">
-              {s.combo}
-            </kbd>{' '}
-            {s.description}
-          </div>
-        ))}
+        {pathError && <div className="mt-1 text-xs text-rose-500">{pathError}</div>}
         {info && (
-          <div className="mt-3 text-[11px] text-slate-400 dark:text-slate-600">
+          <div className="mt-4 text-[11px] text-slate-400 dark:text-slate-600">
             WebDeck {info.version}
-            {info.electron ? ` · Electron ${info.electron}` : ''}
-            {info.chrome ? ` · Chromium ${info.chrome}` : ''}
+            {info.chrome ? ` · Chromium ${info.chrome}` : ''} · ⌘D reveals the Dev Deck
           </div>
         )}
       </div>
     </div>
   )
+}
+
+function hostLabel(url: string): string {
+  try {
+    return new URL(url).host.replace(/^www\./, '')
+  } catch {
+    return url
+  }
 }

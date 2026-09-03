@@ -6,6 +6,7 @@
 #include <string>
 
 #include "base/memory/raw_ptr.h"
+#include "base/memory/weak_ptr.h"
 #include "chrome/browser/ui/tabs/tab_strip_model_observer.h"
 #include "chrome/browser/ui/webui/webdeck/webdeck.mojom.h"
 #include "components/find_in_page/find_result_observer.h"
@@ -154,6 +155,11 @@ class WebDeckShell : public mojom::Shell,
   void PushActiveTabState();
   // Push the full tab list + active tab id to the shell (no-op if no client).
   void PushTabList();
+  // A browser command (IDC_*) for this window: true if the shell owns it and
+  // it was sent to the client as ShellClient.OnCommand; false to let Chromium
+  // handle it. Registered with the window via webdeck::SetCommandForwarder.
+  // With `execute` false only answers whether the shell owns the command.
+  bool ForwardCommand(int command_id, bool execute);
 
   const raw_ptr<content::WebContents> shell_contents_;
   mojo::Receiver<mojom::Shell> receiver_;
@@ -172,6 +178,10 @@ class WebDeckShell : public mojom::Shell,
   // PickPaths while this is set answers empty at once.
   scoped_refptr<ui::SelectFileDialog> select_file_dialog_;
   PickPathsCallback pick_paths_callback_;
+  // The window this registered a command forwarder with, so the destructor
+  // clears exactly that registration.
+  raw_ptr<BrowserWindowInterface> forwarding_window_ = nullptr;
+  base::WeakPtrFactory<WebDeckShell> weak_factory_{this};
 };
 
 }  // namespace webdeck

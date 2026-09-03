@@ -13,7 +13,7 @@ import { ToastHost } from '@/components/ToastHost'
 import { useShellStore } from '@/store'
 import { useThemeEffect } from '@/theme'
 import { useShortcut } from '@/shortcuts'
-import { useAppCommands } from '@/commands'
+import { runMenuCommand, useAppCommands } from '@/commands'
 import { useWindowReconciler } from '@/windowSync'
 import { installEditorAgentBridge } from '@/editor-agent-bridge'
 
@@ -81,11 +81,18 @@ export default function App(): React.JSX.Element {
     const offDoc = window.agweb.browser.onOpenDoc((path) => {
       useShellStore.getState().openDoc(path)
     })
+    // Shell-owned commands from the native menu / key equivalents that fired
+    // while the PAGE had focus (the shortcut registry only sees keys when the
+    // shell is focused). Same vocabulary as the menu: runMenuCommand.
+    const offCommand = window.agweb.browser.onCommand((command) => {
+      void runMenuCommand(command)
+    })
     return () => {
       offState()
       offOpen()
       offAdopt()
       offDoc()
+      offCommand()
     }
   }, [])
 

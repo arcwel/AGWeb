@@ -758,6 +758,8 @@ export const IpcEvents = {
   browserOpenTab: 'event:browser-open-tab',
   browserFindResult: 'event:browser-find-result',
   browserAdoptTab: 'event:browser-adopt-tab',
+  /** A shell-owned browser command from the native menu / a key equivalent. */
+  browserCommand: 'event:browser-command',
   shellSync: 'event:shell-sync',
   requestSync: 'event:request-sync',
   deckWindowClosed: 'event:deck-window-closed',
@@ -976,6 +978,12 @@ export interface AgwebApi {
     onOpenTab(listener: (url: string) => void): () => void
     /** An agent created a browser view in main; adopt it as a real tab. */
     onAdoptTab(listener: (tabId: string, url: string) => void): () => void
+    /**
+     * A shell-owned command from the browser's native menu or a key equivalent
+     * that fired while the page had focus: 'app:new-tab', 'app:close-tab',
+     * 'app:toggle-deck', … (the `app:*` vocabulary of commands.ts).
+     */
+    onCommand(listener: (command: string) => void): () => void
     /** A `file:` navigation to a workspace doc — open it in Document Studio. */
     onOpenDoc(listener: (path: string) => void): () => void
   }

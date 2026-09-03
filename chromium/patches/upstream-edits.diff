@@ -1,3 +1,19 @@
+diff --git a/chrome/app/chrome_command_ids.h b/chrome/app/chrome_command_ids.h
+index 65b9ce9bc44ce..6fa8db8dfafba 100644
+--- a/chrome/app/chrome_command_ids.h
++++ b/chrome/app/chrome_command_ids.h
+@@ -552,6 +552,11 @@
+ #define IDC_OMNIBOX_EVERYWHERE_STATUS_ICON_MENU_CUSTOMIZE_KEYBOARD_SHORTCUT 54031
+ #define IDC_OMNIBOX_EVERYWHERE_STATUS_ICON_MENU_SETTINGS                    54032
+ 
++// WebDeck: ⌘D reveals / hides the Dev Deck in a WebDeck window (forwarded to
++// the shell by BrowserCommandController via webdeck::ForwardCommand). Bookmark
++// This Tab keeps its menu item on ⌘⌥D.
++#define IDC_WEBDECK_TOGGLE_DECK 54100
++
+ // NOTE: The last valid command value is 57343 (0xDFFF)
+ // See http://msdn.microsoft.com/en-us/library/t2zechd4(VS.71).aspx
+ 
 diff --git a/chrome/app/theme/chromium/mac/Assets.car b/chrome/app/theme/chromium/mac/Assets.car
 index cc692a8a680ac943fcae904ca161930ee2722284..25b966bd9e2b3f2888da75471275be84368b3878 100644
 GIT binary patch
@@ -56804,6 +56820,20 @@ index f2a3fe25fe45f..f0d5e7c0d6a6e 100644
        scoped_data_holder_(browser->GetUnownedUserDataHost(), *this) {
    for (ContentsContainerView* contents_container_view :
         contents_container_views) {
+diff --git a/chrome/browser/global_keyboard_shortcuts_mac.mm b/chrome/browser/global_keyboard_shortcuts_mac.mm
+index 1bbe4c5fab656..b8bde816abbb1 100644
+--- a/chrome/browser/global_keyboard_shortcuts_mac.mm
++++ b/chrome/browser/global_keyboard_shortcuts_mac.mm
+@@ -114,6 +114,9 @@ const std::vector<KeyboardShortcutData>& GetShortcutsNotPresentInMainMenu() {
+     std::vector<KeyboardShortcutData> keys({
+     // cmd    shift  cntrl  option vkeycode               command
+     // ---    -----  -----  ------ --------               -------
++      // WebDeck: ⌘D toggles the Dev Deck (the shell handles it via
++      // ShellClient.OnCommand; Bookmark This Tab is ⌘⌥D on the menu).
++      {true,  false, false, false, kVK_ANSI_D,            IDC_WEBDECK_TOGGLE_DECK},
+       {true,  true,  false, false, kVK_ANSI_RightBracket, IDC_SELECT_NEXT_TAB},
+       {true,  true,  false, false, kVK_ANSI_LeftBracket,  IDC_SELECT_PREVIOUS_TAB},
+       {false, false, true,  false, kVK_PageDown,          IDC_SELECT_NEXT_TAB},
 diff --git a/chrome/browser/prefs/browser_prefs.cc b/chrome/browser/prefs/browser_prefs.cc
 index b0923f5e9cd91..b89b6a047e18b 100644
 --- a/chrome/browser/prefs/browser_prefs.cc
@@ -56857,6 +56887,63 @@ index bd7c42556fa36..68623f5cae097 100644
  
        # TODO(crbug.com/430013958): Remove this circular dependency when
        # `translate_bubble_factory.cc` stop including c/b/ui/browser_window.h.
+diff --git a/chrome/browser/ui/browser_command_controller.cc b/chrome/browser/ui/browser_command_controller.cc
+index 3f62ffd338d63..79639ca48c1de 100644
+--- a/chrome/browser/ui/browser_command_controller.cc
++++ b/chrome/browser/ui/browser_command_controller.cc
+@@ -6,6 +6,8 @@
+ 
+ #include <stddef.h>
+ 
++#include "chrome/browser/webdeck/webdeck_shell_host.h"
++
+ #include <algorithm>
+ #include <string>
+ 
+@@ -620,11 +622,17 @@ void BrowserCommandController::ShowCustomizeChromeSidePanel(
+ // BrowserCommandController, CommandUpdater implementation:
+ 
+ bool BrowserCommandController::SupportsCommand(int id) const {
+-  return command_updater_->SupportsCommand(id);
++  // WebDeck: a command the window's shell owns is always supported and
++  // enabled, whatever the native state — the window has no native location
++  // bar, so Chromium would disable IDC_FOCUS_LOCATION and the menu would
++  // refuse ⌘L before it could ever be forwarded.
++  return webdeck::OwnsCommand(browser_, id) ||
++         command_updater_->SupportsCommand(id);
+ }
+ 
+ bool BrowserCommandController::IsCommandEnabled(int id) const {
+-  return command_updater_->IsCommandEnabled(id);
++  return webdeck::OwnsCommand(browser_, id) ||
++         command_updater_->IsCommandEnabled(id);
+ }
+ 
+ bool BrowserCommandController::ExecuteCommandWithDispositionAndContext(
+@@ -632,6 +640,13 @@ bool BrowserCommandController::ExecuteCommandWithDispositionAndContext(
+     WindowOpenDisposition disposition,
+     std::optional<actions::ActionInvocationContext> context,
+     base::TimeTicks time_stamp) {
++  // WebDeck: a window whose shell owns this command (new tab, close tab, tab
++  // switching, find, ⌘L, ⌘D…) gets it over Mojo and Chromium's handler does
++  // not run. Ordinary windows have no forwarder and fall through unchanged.
++  if (webdeck::ForwardCommand(browser_, id)) {
++    return true;
++  }
++
+   if (!SupportsCommand(id) || !IsCommandEnabled(id)) {
+     return false;
+   }
+@@ -1741,6 +1756,9 @@ void BrowserCommandController::InitCommandState() {
+   // Window management commands
+   command_updater_->UpdateCommandEnabled(IDC_CLOSE_WINDOW, true);
+   command_updater_->UpdateCommandEnabled(IDC_NEW_TAB, true);
++  // WebDeck: ⌘D → the Dev Deck. Forwarded to the shell before dispatch; in a
++  // window without a shell it is a no-op (Unimplemented Command warning).
++  command_updater_->UpdateCommandEnabled(IDC_WEBDECK_TOGGLE_DECK, true);
+   command_updater_->UpdateCommandEnabled(IDC_CLOSE_TAB, true);
+   command_updater_->UpdateCommandEnabled(
+       IDC_DUPLICATE_TAB,
 diff --git a/chrome/browser/ui/browser_commands.cc b/chrome/browser/ui/browser_commands.cc
 index b1cbee4f63c62..c5f10a62b5668 100644
 --- a/chrome/browser/ui/browser_commands.cc
@@ -56914,6 +57001,21 @@ index c6e44f9a4bc26..10d5960d2605b 100644
    // The app name associated with the browser window.
    std::string app_name;
  
+diff --git a/chrome/browser/ui/cocoa/accelerators_cocoa.mm b/chrome/browser/ui/cocoa/accelerators_cocoa.mm
+index 12d6be60e250e..8ae9b78a60cfd 100644
+--- a/chrome/browser/ui/cocoa/accelerators_cocoa.mm
++++ b/chrome/browser/ui/cocoa/accelerators_cocoa.mm
+@@ -51,7 +51,9 @@ const struct AcceleratorMapping {
+      ui::VKEY_B},
+     {IDC_SHOW_BOOKMARK_MANAGER, ui::EF_COMMAND_DOWN | ui::EF_ALT_DOWN,
+      ui::VKEY_B},
+-    {IDC_BOOKMARK_THIS_TAB, ui::EF_COMMAND_DOWN, ui::VKEY_D},
++    // WebDeck: ⌘D is the Dev Deck (IDC_WEBDECK_TOGGLE_DECK, see
++    // global_keyboard_shortcuts_mac.mm); bookmarking moves to ⌘⌥D.
++    {IDC_BOOKMARK_THIS_TAB, ui::EF_COMMAND_DOWN | ui::EF_ALT_DOWN, ui::VKEY_D},
+     {IDC_SHOW_DOWNLOADS, ui::EF_COMMAND_DOWN | ui::EF_SHIFT_DOWN, ui::VKEY_J},
+     {IDC_SHOW_HISTORY, ui::EF_COMMAND_DOWN, ui::VKEY_Y},
+     {IDC_VIEW_SOURCE, ui::EF_COMMAND_DOWN | ui::EF_ALT_DOWN, ui::VKEY_U},
 diff --git a/chrome/browser/ui/startup/startup_browser_creator_impl.cc b/chrome/browser/ui/startup/startup_browser_creator_impl.cc
 index 332a48ebee92f..ab7dc6bc8e3e4 100644
 --- a/chrome/browser/ui/startup/startup_browser_creator_impl.cc

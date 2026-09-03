@@ -227,6 +227,15 @@ interface ShellClient {
   // Find-in-page results for `tab_id`: which match is active (1-based) and how
   // many there are in total. active_match is 0 when there are no matches.
   OnFindResult(int32 tab_id, int32 active_match, int32 total_matches);
+
+  // A browser command the shell owns, arriving from the native menu or a key
+  // equivalent while the PAGE had focus (the shell's own key handling only
+  // sees keys when the shell is focused). Chromium's IDC_* is mapped to a
+  // stable name in the browser (WebDeckShell::ForwardCommand): "new-tab",
+  // "close-tab", "next-tab", "prev-tab", "select-tab-<1..8|last>",
+  // "reopen-tab", "focus-address", "find", "find-next", "find-prev",
+  // "bookmark", "devtools", "toggle-deck". Anything not forwarded runs natively.
+  OnCommand(string command);
 };
 
 struct TabInfo {

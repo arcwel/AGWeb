@@ -72,9 +72,13 @@ arrangement at once.
 
 | Shortcut | Action |
 | :-- | :-- |
-| **⌘D** | Reveal / hide the Dev Deck |
-| **⌘T** | New browser tab |
+| **⌘D** | Reveal / hide the Dev Deck (from anywhere, page focused or not) |
+| **⌘⌥D** | Bookmark this tab |
+| **⌘T** | New browser tab — the start page: address field, top sites, bookmarks, projects |
 | **⌘W** | Close the active tab |
+| **⌘L** | Focus the address bar |
+| **⌘⇧T** | Reopen the last closed tab |
+| **⌘1–9**, **⌘⇧[ ]** | Switch tabs |
 | **⌘⇧L** | Toggle light / dark theme |
 | **⌘0** | Reset page zoom to 100% |
 

@@ -55,7 +55,67 @@ export async function runMenuCommand(command: string): Promise<void> {
   const store = useShellStore.getState()
   const tabId = store.activeTabId
 
+  // ⌘1…⌘8 / ⌘9 from the browser (see ShellClient.OnCommand): the shell's own
+  // ⌘1–3 layout presets only fire when the shell has focus; with the page
+  // focused these arrive as Chromium's tab-selection commands and select tabs.
+  if (command.startsWith('app:select-tab-')) {
+    const which = command.slice('app:select-tab-'.length)
+    const ids = store.tabs.map((t) => t.id)
+    const id = which === 'last' ? ids[ids.length - 1] : ids[Number(which) - 1]
+    if (id) store.activateTab(id)
+    return
+  }
+
   switch (command) {
+    // Commands the browser forwards when the PAGE has focus. The same actions
+    // the shell's own shortcuts run; here they arrive over Mojo instead.
+    case 'app:new-tab':
+      store.newTab()
+      return
+
+    case 'app:close-tab':
+      store.closeTab(tabId)
+      return
+
+    case 'app:next-tab':
+    case 'app:prev-tab': {
+      const ids = store.tabs.map((t) => t.id)
+      if (ids.length < 2) return
+      const i = ids.indexOf(tabId)
+      const step = command === 'app:next-tab' ? 1 : ids.length - 1
+      store.activateTab(ids[(i + step) % ids.length])
+      return
+    }
+
+    case 'app:focus-address': {
+      const input = document.querySelector<HTMLInputElement>('input[placeholder^="Enter URL"]')
+      input?.focus()
+      input?.select()
+      return
+    }
+
+    case 'app:find-next':
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'g', metaKey: true }))
+      return
+
+    case 'app:find-prev':
+      window.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'g', metaKey: true, shiftKey: true })
+      )
+      return
+
+    case 'app:bookmark': {
+      const state = store.browserStates[tabId]
+      if (!state?.url) return
+      if (store.bookmarks.some((b) => b.url === state.url)) store.removeBookmark(state.url)
+      else store.addBookmark(state.url, state.title)
+      return
+    }
+
+    case 'app:toggle-deck':
+      store.toggleDeck()
+      return
+
     case 'app:settings':
       // Settings opens as its own overlay, not a deck block — it configures
       // the app and browser, not the developer workspace.

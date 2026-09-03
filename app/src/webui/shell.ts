@@ -186,7 +186,10 @@ export const SHELL_BROWSER_EVENTS: ReadonlySet<string> = new Set([
   IpcEvents.browserFindResult,
   // Emitted by onTabsChanged when the browser opened a tab the shell did not
   // (window.open / target=_blank / ctrl-click) — the store adopts it.
-  IpcEvents.browserAdoptTab
+  IpcEvents.browserAdoptTab,
+  // A shell-owned command from the native menu / a key equivalent that fired
+  // while the page had focus (ShellClient.OnCommand).
+  IpcEvents.browserCommand
 ])
 
 const browserEventListeners = new Map<string, Set<(payload: unknown) => void>>()
@@ -250,6 +253,7 @@ async function ensureShellClient(): Promise<void> {
         }): void
         onTabClosed(tabId: number): void
         onFindResult(tabId: number, activeMatch: number, totalMatches: number): void
+        onCommand(command: string): void
       }) => ShellClientReceiver
     }
     const receiver = new mod.ShellClientReceiver({
@@ -319,6 +323,11 @@ async function ensureShellClient(): Promise<void> {
           matches: totalMatches,
           active: activeMatch
         })
+      },
+      // The browser names the command ("new-tab"); the renderer's vocabulary
+      // is `app:<name>` (commands.ts runMenuCommand).
+      onCommand(command) {
+        emitShellBrowserEvent(IpcEvents.browserCommand, `app:${command}`)
       }
     })
     shell.setClient(receiver.$.bindNewPipeAndPassRemote())

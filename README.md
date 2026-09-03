@@ -43,6 +43,7 @@ Three things follow from that ordering:
 - Chromium M153, branded and built as Arcwel WebDeck. Tabs sit in the title bar, inline with the traffic lights; the toolbar carries the address bar, bookmarks, extensions and profile.
 - **Tab groups, drag-to-reorder, tab search, split view, Picture-in-Picture, Reader Mode, find in page, zoom, print, per-tab DevTools.**
 - **Vertical tabs** as a rail block docked beside the page, with groups as sections.
+- A **new-tab page that is a start page**: address field focused, top sites, bookmarks, and one quiet row of projects. Every shortcut works whether the page or the shell has focus; <kbd>⌘D</kbd> always means the Deck.
 - Chromium **profiles**, Google sign-in, and the real `chrome://settings`, `chrome://extensions` and `chrome://history`.
 - **Extensions** from the Chrome Web Store, per profile.
 - **Ad and tracker blocking** with a live blocked count, third-party cookie controls, Do Not Track, HTTPS-Only mode.

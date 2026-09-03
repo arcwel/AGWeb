@@ -33,6 +33,17 @@ All notable changes to Arcwel WebDeck are recorded here. This project adheres to
 
 ### Added
 
+- **A browsing-first new-tab page**: the address field is focused, top sites
+  and bookmarks are one click away, and projects are one quiet row (recents
+  plus "Open a project…"). The brand lockup and opener show only while the
+  profile is fresh.
+- **Shell-owned browser commands**: in a WebDeck window the native menu and
+  key equivalents that fire while the page has focus (⌘T, ⌘W, ⌘L, ⌘F, ⌘⇧T,
+  ⌘1–9, ⌘⇧[ ], DevTools, Bookmark This Tab) are forwarded to the shell
+  (`ShellClient.OnCommand`) instead of running Chromium's handlers — so ⌘T
+  opens WebDeck's new tab, never chrome://newtab.
+- **⌘D reveals the Dev Deck** from anywhere, page focused or not
+  (`IDC_WEBDECK_TOGGLE_DECK`); Bookmark This Tab moves to ⌘⌥D.
 - **Vertical tabs as a rail block** docked beside the page, with tab groups as
   sections; the toolbar moves up into the title bar in that mode.
 - **Native path picker** (`Shell.PickPaths`): "Open…" on the start page and in

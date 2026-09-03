@@ -10,6 +10,7 @@
 
 #include "base/functional/bind.h"
 #include "base/memory/scoped_refptr.h"
+#include "chrome/app/chrome_command_ids.h"
 #include "base/notimplemented.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
@@ -146,6 +147,10 @@ WebDeckShell::WebDeckShell(content::WebContents* shell_contents,
       receiver_(this, std::move(receiver)) {}
 
 WebDeckShell::~WebDeckShell() {
+  if (forwarding_window_) {
+    webdeck::ClearCommandForwarder(forwarding_window_);
+    forwarding_window_ = nullptr;
+  }
   if (select_file_dialog_) {
     // The panel outlives us on the native side; it must not call back.
     select_file_dialog_->ListenerDestroyed();
@@ -706,6 +711,84 @@ void WebDeckShell::SetClient(mojo::PendingRemote<mojom::ShellClient> client) {
   // Now that the shell can receive state, observe the window's tabs and push the
   // active tab's current navigation state (url/title/back-forward/loading).
   StartObserving();
+  // And take the window's shell-owned commands (menu / key equivalents fired
+  // while the page had focus). Cleared in the destructor.
+  if (BrowserWindowInterface* window = GetWindow()) {
+    forwarding_window_ = window;
+    // A WeakPtr cannot be the receiver of a bound method that returns a value,
+    // so the weak pointer rides as an argument and is checked by hand.
+    webdeck::SetCommandForwarder(
+        window,
+        base::BindRepeating(
+            [](base::WeakPtr<WebDeckShell> shell, int command_id,
+               bool execute) {
+              return shell ? shell->ForwardCommand(command_id, execute)
+                           : false;
+            },
+            weak_factory_.GetWeakPtr()));
+  }
+}
+
+// Chromium's command ids the shell owns in a WebDeck window, by stable name.
+// Everything else (reload, back/forward, zoom, print, new window, downloads,
+// history, view source, fullscreen…) stays native: it acts on the real tab or
+// the real window and needs nothing from the shell.
+bool WebDeckShell::ForwardCommand(int command_id, bool execute) {
+  if (!client_.is_bound()) {
+    return false;
+  }
+  std::string name;
+  switch (command_id) {
+    case IDC_NEW_TAB:              name = "new-tab"; break;
+    case IDC_CLOSE_TAB:            name = "close-tab"; break;
+    case IDC_SELECT_NEXT_TAB:      name = "next-tab"; break;
+    case IDC_SELECT_PREVIOUS_TAB:  name = "prev-tab"; break;
+    case IDC_SELECT_TAB_0:         name = "select-tab-1"; break;
+    case IDC_SELECT_TAB_1:         name = "select-tab-2"; break;
+    case IDC_SELECT_TAB_2:         name = "select-tab-3"; break;
+    case IDC_SELECT_TAB_3:         name = "select-tab-4"; break;
+    case IDC_SELECT_TAB_4:         name = "select-tab-5"; break;
+    case IDC_SELECT_TAB_5:         name = "select-tab-6"; break;
+    case IDC_SELECT_TAB_6:         name = "select-tab-7"; break;
+    case IDC_SELECT_TAB_7:         name = "select-tab-8"; break;
+    case IDC_SELECT_LAST_TAB:      name = "select-tab-last"; break;
+    case IDC_RESTORE_TAB:          name = "reopen-tab"; break;
+    case IDC_FOCUS_LOCATION:       name = "focus-address"; break;
+    case IDC_FOCUS_SEARCH:         name = "focus-address"; break;
+    case IDC_FIND:                 name = "find"; break;
+    case IDC_FIND_NEXT:            name = "find-next"; break;
+    case IDC_FIND_PREVIOUS:        name = "find-prev"; break;
+    case IDC_BOOKMARK_THIS_TAB:    name = "bookmark"; break;
+    case IDC_DEV_TOOLS:            name = "devtools"; break;
+    case IDC_DEV_TOOLS_CONSOLE:    name = "devtools"; break;
+    case IDC_DEV_TOOLS_INSPECT:    name = "devtools"; break;
+    case IDC_WEBDECK_TOGGLE_DECK:  name = "toggle-deck"; break;
+    default:
+      return false;
+  }
+  if (!execute) {
+    return true;
+  }
+  // Commands that put the user INTO the shell (the address bar, the find bar,
+  // the start page's search field, the Deck) must also move keyboard focus
+  // there: a DOM focus() in the shell page cannot take the window's first
+  // responder away from the staged page's native view, so without this the
+  // keystrokes that follow ⌘L keep going to the page.
+  if (name == "focus-address" || name == "find" || name == "find-next" ||
+      name == "find-prev" || name == "new-tab" || name == "toggle-deck") {
+    // Through the views FocusManager, not WebContents::Focus() alone: the
+    // staged tab's WebView is the focused view, and only RequestFocus on the
+    // shell's own WebView moves both the views focus and the native first
+    // responder (WebView::OnFocus then focuses the shell WebContents).
+    if (ContentsContainerView* container = GetContentsContainerView()) {
+      if (views::WebView* shell_view = container->shell_web_view()) {
+        shell_view->RequestFocus();
+      }
+    }
+    shell_contents_->Focus();
+  }
+  client_->OnCommand(name);
+  return true;
 }
 
 void WebDeckShell::OnTabStripModelChanged(
