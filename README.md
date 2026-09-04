@@ -44,7 +44,7 @@ Three things follow from that ordering:
 - **Tab groups, drag-to-reorder, tab search, split view, Picture-in-Picture, Reader Mode, find in page, zoom, print, per-tab DevTools.**
 - **Vertical tabs** as a rail block docked beside the page, with groups as sections.
 - A **new-tab page that is a start page**: address field focused, top sites, bookmarks, and one quiet row of projects. Every shortcut works whether the page or the shell has focus; <kbd>⌘D</kbd> always means the Deck.
-- Chromium **profiles**, Google sign-in, and the real `chrome://settings`, `chrome://extensions` and `chrome://history`.
+- Chromium **profiles** and the real `chrome://settings`, `chrome://extensions` and `chrome://history`. Browser sign-in to Google is not possible in a fork — see [Sync and your data](#sync-and-your-data).
 - **Extensions** from the Chrome Web Store, per profile.
 - **Ad and tracker blocking** with a live blocked count, third-party cookie controls, Do Not Track, HTTPS-Only mode.
 - A summonable **favourites bar** that floats above the page and can be pinned.
@@ -79,11 +79,35 @@ Three things follow from that ordering:
 
 ### Document Studio
 
-Markdown, JSON, YAML, CSV and TOML render as styled documents with Mermaid diagrams and math, a one-click toggle to source, and export to HTML or PDF. `.slides.md` files become Reveal.js decks.
+Markdown, JSON, YAML, CSV, TSV, XML, SVG and TOML render as styled documents with Mermaid diagrams and math, a one-click toggle to source, and export to HTML or PDF. `.slides.md` files become Reveal.js decks.
 
-### Settings and sync
+**Files open where they live.** Drop one on the window, pick one with **Open file…**, or click it in the Files block: a document opens in Document Studio at its own path, editable and saveable in place. Nothing is copied and nothing is posted through the socket, so a large file costs what reading a file costs. A PDF goes the other way, to Chromium's own viewer with its annotation tools; images, HTML and plain text render there too.
+
+The page carries the path but is not trusted with it. The browser signs a path only when you actually picked or dropped that file, with a key the page never holds, and the core refuses anything unsigned.
+
+### Settings
 
 Settings open as their own surface: Application, AI keys (held in the OS keychain, or read from your password manager so WebDeck stores nothing), Colours (every colour the app paints), Browser privacy, and the VS Code Editor and Keybindings documents. **WebDeck Sync** keeps settings, policy, model and theme identical across machines through a local-first file, with no account and no server.
+
+### Bring your history and bookmarks with you
+
+Settings → WebDeck → Application lists every browser profile on the machine with a page count and an Import button: Chrome, Edge, Brave, Vivaldi, Opera, Arc, Chromium, Firefox and Safari. Importing the same browser twice adds nothing rather than doubling what is there. Bookmarks import from an exported HTML or JSON file.
+
+### Sync and your data
+
+**WebDeck cannot sync with a Google account, and that is Google's decision rather than a gap here.** Signing in to a Chromium build needs an OAuth token that grants access to Chrome Sync, and Google issues it only to Google Chrome. Chromium's own documentation says so. Supplying your own API keys does not change it: the keys are not the barrier, the token is.
+
+A Google account still works normally in a tab. Gmail, Drive and Docs are unaffected. What cannot happen is the browser itself signing in to sync your bookmarks to Google.
+
+So both halves are ours. [`sync/`](sync/README.md) is a service that speaks Chromium's own sync protocol, built against the browser's own `.proto` files rather than a transcription of them, plus the identity endpoints the sign-in layer talks to. `--sync-url` redirects one and `--gaia-config` redirects the other, and both switches are already in the browser we ship.
+
+```bash
+cd sync && npm install
+./src/cli.mjs account --add you@example.com     # prints a refresh token
+./src/cli.mjs serve                             # then --sync-url=http://127.0.0.1:8384
+```
+
+It carries commits and updates for all 75 datatypes, with per-account storage, progress markers, tombstones and store birthdays. What is not finished: the interactive sign-in pages, the encryption node, and a completed round trip with a real browser. Until then, **import** is the way to bring existing data in.
 
 ### Built to be trusted
 
@@ -94,14 +118,16 @@ Settings open as their own surface: Application, AI keys (held in the OS keychai
 
 ## Screenshots
 
-| | |
-| :-- | :-- |
-| <img src="assets/readme/browser.png" alt="Browsing: tabs in the title bar, the toolbar, and a page" /> | <img src="assets/readme/tab-rail.png" alt="Vertical tabs as a rail block docked to the page" /> |
-| Browsing full-screen | Vertical tabs as a rail block |
-| <img src="assets/readme/deck-window.png" alt="The Dev Deck detached into its own window" /> | <img src="assets/readme/agent-attach.png" alt="The agent composer with an attached file" /> |
-| The Deck in its own window | Attaching files to the agent |
-| <img src="assets/readme/permissions.png" alt="The permission popover open above the composer: the five modes and the five guards" /> | <img src="assets/readme/deck-small.png" alt="The Deck in a 760 by 640 window: every block and popover fits" /> |
-| Permission modes and guards, from the composer | The Deck in a small window |
+|                                                                                                                                              |                                                                                                                                            |
+| :------------------------------------------------------------------------------------------------------------------------------------------- | :----------------------------------------------------------------------------------------------------------------------------------------- |
+| <img src="assets/readme/browser.png" alt="Browsing: tabs in the title bar, the toolbar, and a page" />                                       | <img src="assets/readme/tab-rail.png" alt="Vertical tabs as a rail block docked to the page" />                                            |
+| Browsing full-screen                                                                                                                         | Vertical tabs as a rail block                                                                                                              |
+| <img src="assets/readme/deck-window.png" alt="The Dev Deck detached into its own window" />                                                  | <img src="assets/readme/agent-attach.png" alt="The agent composer with an attached file" />                                                |
+| The Deck in its own window                                                                                                                   | Attaching files to the agent                                                                                                               |
+| <img src="assets/readme/permissions.png" alt="The permission popover open above the composer: the five modes and the five guards" />         | <img src="assets/readme/deck-small.png" alt="The Deck in a 760 by 640 window: every block and popover fits" />                             |
+| Permission modes and guards, from the composer                                                                                               | The Deck in a small window                                                                                                                 |
+| <img src="assets/readme/document-studio.png" alt="A markdown file rendered in Document Studio, with a table, a list and highlighted code" /> | <img src="assets/readme/history-import.png" alt="Import browsing history: every browser profile found on the machine, with page counts" /> |
+| A document in Document Studio                                                                                                                | Importing history from another browser                                                                                                     |
 
 ## Install
 
@@ -182,12 +208,12 @@ node scripts/package-fork.mjs --build-dir out/webdeck-release --out ../dist
 
 ### The development loop
 
-| Change | Rebuild |
-| :-- | :-- |
+| Change                                             | Rebuild                                                                                                                  |
+| :------------------------------------------------- | :----------------------------------------------------------------------------------------------------------------------- |
 | WebUI (React, `app/src/renderer`, `app/src/webui`) | `npm run pack:webui` (component build) or `pack:webui:release`, then `autoninja … chrome` relinks in about three minutes |
-| Core (`app/src/core`) | `npm run build:core && node scripts/install-core.mjs --app <.app>`; no browser rebuild |
-| Chromium patches (`chromium/patches`) | Edit the checkout, `git diff --binary > chromium/patches/upstream-edits.diff`, `npm run verify:patches` |
-| A `.mojom` change | Build `…:mojo_bindings` first, then pack; packing refuses bindings that do not match the out dir |
+| Core (`app/src/core`)                              | `npm run build:core && node scripts/install-core.mjs --app <.app>`; no browser rebuild                                   |
+| Chromium patches (`chromium/patches`)              | Edit the checkout, `git diff --binary > chromium/patches/upstream-edits.diff`, `npm run verify:patches`                  |
+| A `.mojom` change                                  | Build `…:mojo_bindings` first, then pack; packing refuses bindings that do not match the out dir                         |
 
 Verification gates, in the order CI runs them:
 
@@ -235,30 +261,32 @@ The shell page owns the window and streams the stage rectangle to the browser; C
 
 ## Repository map
 
-| Path | What it holds |
-| :-- | :-- |
-| `app/src/renderer` | The shell UI: React, TypeScript, Tailwind. Blocks, Deck, tab strip, composer |
-| `app/src/webui` | The `chrome://webdeck` entry: Mojo bridge, pickers, exports, window sync |
-| `app/src/core` | `webdeck-core`: the domains (fs, terminal, lsp, debug, git, tasks, agent, policy, workspace) and the transport |
-| `app/scripts` | Build, pack, verify and package scripts |
-| `chromium/` | The fork: `fork.json` pin, `patches/` (new file trees plus `upstream-edits.diff`), build and release docs |
-| `docs/` | User guides |
-| `design/` | Design canvases and review pages |
+| Path               | What it holds                                                                                                  |
+| :----------------- | :------------------------------------------------------------------------------------------------------------- |
+| `app/src/renderer` | The shell UI: React, TypeScript, Tailwind. Blocks, Deck, tab strip, composer                                   |
+| `app/src/webui`    | The `chrome://webdeck` entry: Mojo bridge, pickers, exports, window sync                                       |
+| `app/src/core`     | `webdeck-core`: the domains (fs, terminal, lsp, debug, git, tasks, agent, policy, workspace) and the transport |
+| `app/scripts`      | Build, pack, verify and package scripts                                                                        |
+| `chromium/`        | The fork: `fork.json` pin, `patches/` (new file trees plus `upstream-edits.diff`), build and release docs      |
+| `sync/`            | The sync and identity service, and Chromium's sync `.proto` files vendored from the checkout                   |
+| `docs/`            | User guides                                                                                                    |
+| `design/`          | Design canvases and review pages                                                                               |
 
 ## Documentation
 
-| Document | Read it when |
-| :-- | :-- |
-| [Getting Started](docs/getting-started.md) | You have just installed it |
-| [Agent Workflows](docs/agent-workflows.md) · [Permission Modes](docs/permission-modes.md) | You are giving the agent work |
-| [Document Studio](docs/document-studio.md) · [Settings Sync](docs/settings-sync.md) | You want the rendered docs or the same setup on two machines |
-| [`PRD.md`](PRD.md) · [`ROADMAP.md`](ROADMAP.md) | You want to know what it is for and where it is going |
-| [`DESIGN.md`](DESIGN.md) | You are changing how the Deck looks or moves |
-| [`IDE_FOUNDATION.md`](IDE_FOUNDATION.md) | You are touching the editor, LSP or DAP |
-| [`SECURITY.md`](SECURITY.md) | You are touching the agent, the policy gate or a process boundary |
-| [`chromium/README.md`](chromium/README.md) · [`chromium/SHELL_ARCHITECTURE.md`](chromium/SHELL_ARCHITECTURE.md) | You are working on the fork or the Shell interface |
-| [`chromium/RELEASING.md`](chromium/RELEASING.md) · [`chromium/SHIPPABLE.md`](chromium/SHIPPABLE.md) | You are cutting a release |
-| [`CHANGELOG.md`](CHANGELOG.md) | You want to know what changed |
+| Document                                                                                                        | Read it when                                                         |
+| :-------------------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------- |
+| [Getting Started](docs/getting-started.md)                                                                      | You have just installed it                                           |
+| [Agent Workflows](docs/agent-workflows.md) · [Permission Modes](docs/permission-modes.md)                       | You are giving the agent work                                        |
+| [Document Studio](docs/document-studio.md) · [Settings Sync](docs/settings-sync.md)                             | You want the rendered docs or the same setup on two machines         |
+| [`PRD.md`](PRD.md) · [`ROADMAP.md`](ROADMAP.md)                                                                 | You want to know what it is for and where it is going                |
+| [`DESIGN.md`](DESIGN.md)                                                                                        | You are changing how the Deck looks or moves                         |
+| [`IDE_FOUNDATION.md`](IDE_FOUNDATION.md)                                                                        | You are touching the editor, LSP or DAP                              |
+| [`SECURITY.md`](SECURITY.md)                                                                                    | You are touching the agent, the policy gate or a process boundary    |
+| [`chromium/README.md`](chromium/README.md) · [`chromium/SHELL_ARCHITECTURE.md`](chromium/SHELL_ARCHITECTURE.md) | You are working on the fork or the Shell interface                   |
+| [`chromium/RELEASING.md`](chromium/RELEASING.md) · [`chromium/SHIPPABLE.md`](chromium/SHIPPABLE.md)             | You are cutting a release                                            |
+| [`CHANGELOG.md`](CHANGELOG.md)                                                                                  | You want to know what changed                                        |
+| [`sync/README.md`](sync/README.md)                                                                              | You want to run the sync or identity service, or change the protocol |
 
 ## Contributing
 
