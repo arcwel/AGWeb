@@ -5,7 +5,7 @@ import { create } from 'zustand'
 export type ComposerSurface = 'deck' | 'assistant'
 
 import { docNavTarget } from '@shared/ipc'
-import type { BrowserTabState, WorkspaceInfo } from '@shared/ipc'
+import type { BrowserTabState, ImportedVisitInfo, WorkspaceInfo } from '@shared/ipc'
 import type { HistoryEntry } from '@/omnibox-rank'
 import type { AgentAttachment, AgentSessionInfo } from '@shared/agents'
 import type {
@@ -778,6 +778,8 @@ interface ShellState {
   history: HistoryEntry[]
   /** Record (or refresh) a visit; called as browser state updates flow in. */
   recordVisit(url: string, title: string, favicon?: string): void
+  /** Merge history imported from another browser into this profile. */
+  importHistory(entries: ImportedVisitInfo[]): number
   /** Forget the active profile's browsing history. */
   clearHistory(): void
   /** The page the Home button goes to. */
@@ -1045,6 +1047,47 @@ export const useShellStore = create<ShellState>((set) => ({
     return added
   },
   history: loadHistory('default'),
+  importHistory: (entries) => {
+    let added = 0
+    set((state) => {
+      const known = new Set(state.history.map((h) => h.url))
+      const incoming = entries
+        .filter((e) => isHistoryUrl(e.url))
+        .map((e) => ({
+          url: e.url,
+          title: e.title || e.url,
+          visitCount: Math.max(1, e.visitCount),
+          lastVisit: e.lastVisit
+        }))
+      if (incoming.length === 0) return {}
+      added = incoming.filter((e) => !known.has(e.url)).length
+      // A page both sides know keeps the higher visit count and the more
+      // recent visit: importing twice must not double anything, and the two
+      // browsers are describing the same page.
+      const byUrl = new Map<string, HistoryEntry>()
+      const all: HistoryEntry[] = [...state.history, ...incoming]
+      for (const entry of all) {
+        const found = byUrl.get(entry.url)
+        if (!found) {
+          byUrl.set(entry.url, { ...entry })
+          continue
+        }
+        found.visitCount = Math.max(found.visitCount, entry.visitCount)
+        if (entry.lastVisit > found.lastVisit) {
+          found.lastVisit = entry.lastVisit
+          if (entry.title && entry.title !== entry.url) found.title = entry.title
+        }
+        found.favicon = found.favicon ?? entry.favicon
+      }
+      const history = [...byUrl.values()]
+        .sort((a, b) => b.lastVisit - a.lastVisit)
+        .slice(0, HISTORY_CAP)
+      saveHistory(state.activeProfileId, history)
+      return { history }
+    })
+    return added
+  },
+
   recordVisit: (url, title, favicon) =>
     set((state) => {
       if (!isHistoryUrl(url)) return {}

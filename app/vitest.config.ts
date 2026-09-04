@@ -12,6 +12,8 @@ export default defineConfig({
       '@shared': resolve(__dirname, 'src/shared')
     }
   },
+  // node:sqlite is newer than this Vite's list of Node builtins, so without
+  // this it tries to resolve it as a package and the suite fails to load.
   test: {
     environment: 'jsdom',
     include: ['src/**/*.test.ts', 'scripts/**/*.test.mjs'],

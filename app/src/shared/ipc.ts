@@ -64,6 +64,27 @@ export function searchUrlFor(engineId: string, query: string): string {
 
 export type ClearableData = 'cache' | 'cookies' | 'storage' | 'history'
 
+/** A browser on this machine whose history can be imported. */
+export interface HistorySourceInfo {
+  id: string
+  label: string
+  browser: string
+  profile: string
+  path: string
+  /** How many entries it holds, or null when it could not be opened. */
+  entries: number | null
+  error?: string
+}
+
+/** One page from an imported history. */
+export interface ImportedVisitInfo {
+  url: string
+  title: string
+  visitCount: number
+  /** Epoch milliseconds. */
+  lastVisit: number
+}
+
 /** LLM providers whose API keys the shell can store in the OS keychain. */
 export type AiProvider = 'anthropic' | 'openai' | 'gemini'
 
@@ -676,6 +697,8 @@ export const IpcChannels = {
   profilesGoogleStatus: 'profiles:google-status',
   profilesAccount: 'profiles:account',
   dropsWrite: 'drops:write',
+  historySources: 'history:sources',
+  historyImport: 'history:import',
   browserOpenLocalFile: 'browser:open-local-file',
   browserOpenDroppedFile: 'browser:open-dropped-file',
   browserGetSettingPrefs: 'browser:get-setting-prefs',
@@ -1073,6 +1096,15 @@ export interface AgwebApi {
   /** Read a bookmarks export file the user picks (HTML or JSON) as text. */
   bookmarks: {
     importFile(): Promise<{ text?: string; error?: string }>
+  }
+  history: {
+    /** Browsers on this machine with history to import. */
+    sources(): Promise<HistorySourceInfo[]>
+    /** Read one of them. */
+    importFrom(
+      id: string,
+      limit?: number
+    ): Promise<{ entries?: ImportedVisitInfo[]; error?: string }>
   }
   /** Show a folder picker and open the chosen workspace. Null if cancelled. */
   openWorkspace(): Promise<WorkspaceInfo | null>

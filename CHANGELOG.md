@@ -5,6 +5,26 @@ All notable changes to Arcwel WebDeck are recorded here. This project adheres to
 
 ## Unreleased
 
+### Added (sync service, identity, history import)
+
+- **Import browsing history from the browsers already on this machine.**
+  Settings, WebDeck, Application lists every profile it finds with a page count
+  and an Import button. Chrome, Edge, Brave, Vivaldi, Opera, Arc, Chromium,
+  Firefox and Safari. Re-importing the same browser adds nothing rather than
+  doubling what is there.
+- **A sync service that speaks Chromium's own sync protocol** (`sync/`), so two
+  WebDeck installs can share data without Google. Commit and GetUpdates, per
+  account storage, progress markers, tombstones and store birthdays, over
+  Chromium's own `.proto` files vendored from the checkout.
+- **The identity endpoints to go with it.** Token exchange, user info, token
+  info, revoke, ListAccounts and the connection check, plus a command that
+  writes the `--gaia-config` file pointing a browser at them.
+- `webdeck-sync` runs and inspects both: `serve`, `status`, `account`, `config`,
+  `reset` and `datatypes`, each with `--json` and a real exit code.
+
+  Signing in to Google remains impossible in a fork, and that is Google's
+  restriction rather than a gap here — which is why both halves are ours.
+
 ### Added (drops, profile picture, tab groups)
 
 - **Drag a PDF into the window and it previews in Chromium's PDF viewer**, with

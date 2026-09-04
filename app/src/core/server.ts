@@ -20,6 +20,7 @@ import {
 import type { EditorCommandResponse } from '../shared/ipc'
 import { registerAppSettingsRpc } from './domains/app-settings'
 import { registerDropsRpc } from './domains/drops'
+import { registerHistoryImportRpc } from './domains/history-import'
 import {
   abortPendingPrompts,
   audit,
@@ -107,6 +108,7 @@ export async function startWebdeckCore(opts: CoreServerOptions = {}): Promise<Ws
   registerVsxRpc()
   registerAppSettingsRpc()
   registerDropsRpc()
+  registerHistoryImportRpc()
   registerPolicyRpc()
   registerGitRpc()
   registerRestRpc()
