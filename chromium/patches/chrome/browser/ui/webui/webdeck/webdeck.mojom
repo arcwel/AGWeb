@@ -314,6 +314,11 @@ struct SignInInfo {
   string avatar_data_url;
   // The local profile's name, which exists whether or not anyone is signed in.
   string profile_name;
+  // Whether this build can sign in to Google at all. An unbranded Chromium is
+  // built without Google's API keys and OAuth client, so browser sign-in and
+  // Sync are inert: signing in to a Google *website* never becomes a browser
+  // account. The shell says so rather than offering a button that cannot work.
+  bool signin_supported;
 };
 
 struct TabInfo {

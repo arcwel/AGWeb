@@ -59,6 +59,7 @@ source_set("impl") {
     "//components/signin/public/identity_manager",
     "//extensions/browser",
     "//extensions/common",
+    "//google_apis",
     "//chrome/browser/webdeck:core_service",
     "//chrome/browser/webdeck:shell_host",
     "//chrome/common",

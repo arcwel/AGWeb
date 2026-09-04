@@ -68,6 +68,22 @@ All notable changes to Arcwel WebDeck are recorded here. This project adheres to
 - The About panel no longer lists an Electron version this build does not have,
   and the clear-data checkbox labelled "Auth cache" says what it clears.
 
+### Fixed (profile picture and Google sign-in)
+
+- **The profile button shows a picture again.** It only ever drew the Google
+  account image, and this build can never have one, so it drew nothing. It now
+  falls back to the local profile avatar — the picture
+  chrome://settings/manageProfile sets — and still prefers the Google image
+  where there is one.
+- **The menu says why the browser is not signed in.** Signing in to a Google
+  website does not sign in the browser: that needs Google's own API keys and
+  OAuth client, which are issued to official Chrome builds only. Without them
+  the identity manager holds no account, which is why the avatar was blank and
+  Sync never started — the profile on this machine had zero browser accounts
+  recorded despite being signed in on google.com. The browser now reports
+  whether sign-in is possible at all, and the profile menu and the Sync row in
+  settings say so instead of offering a flow that cannot complete.
+
 ### Fixed (block drop targets)
 
 - **The drop zones open while a block is in the air.** An empty zone rests as

@@ -102,7 +102,7 @@ export const BROWSER_SETTINGS: SettingSection[] = [
       {
         kind: 'link',
         label: 'Sync and Google services',
-        hint: 'Sign in, choose what syncs, and manage Google services.',
+        hint: 'Chromium’s sign-in and sync page. Browser sign-in needs Google’s own API keys, which are issued to official Chrome builds only, so Sync does not start on this build.',
         url: 'chrome://settings/syncSetup'
       },
       {

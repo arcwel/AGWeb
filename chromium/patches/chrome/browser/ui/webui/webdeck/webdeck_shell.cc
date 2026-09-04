@@ -37,6 +37,7 @@
 #include "chrome/browser/ui/views/frame/contents_container_view.h"
 #include "chrome/browser/webdeck/webdeck_shell_host.h"
 #include "base/base64.h"
+#include "google_apis/google_api_keys.h"
 #include "chrome/browser/extensions/extension_action_runner.h"
 #include "extensions/browser/extension_action_manager.h"
 #include "base/json/json_reader.h"
@@ -873,6 +874,9 @@ struct AllowedPref {
   bool writable;
 };
 
+// The profile picture the shell draws, at the size its button needs.
+constexpr int kAvatarSize = 64;
+
 constexpr AllowedPref kAllowedPrefs[] = {
     // Appearance
     {"bookmark_bar.show_on_all_tabs", base::Value::Type::BOOLEAN, false, true},
@@ -1013,7 +1017,22 @@ void WebDeckShell::GetAccountInfo(GetAccountInfoCallback callback) {
           .GetProfileAttributesWithPath(profile->GetPath());
   if (entry) {
     info->profile_name = base::UTF16ToUTF8(entry->GetName());
+    // The local profile picture — the one chrome://settings/manageProfile
+    // sets. It exists whether or not anyone is signed in to Google, which on
+    // this build is the only picture there will ever be. Overwritten below by
+    // the Google account image when there is one.
+    const gfx::Image avatar = entry->GetAvatarIcon(kAvatarSize);
+    if (!avatar.IsEmpty()) {
+      scoped_refptr<base::RefCountedMemory> png = avatar.As1xPNGBytes();
+      if (png && png->size() > 0) {
+        info->avatar_data_url = "data:image/png;base64," + base::Base64Encode(*png);
+      }
+    }
   }
+  // Without Google's API keys there is no OAuth client, so the sign-in flow
+  // has nothing to talk to and Sync never starts. Reported so the UI can stop
+  // offering it.
+  info->signin_supported = google_apis::HasOAuthClientConfigured();
   signin::IdentityManager* identity =
       IdentityManagerFactory::GetForProfile(profile);
   if (!identity) {

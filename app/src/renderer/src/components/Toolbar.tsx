@@ -633,22 +633,38 @@ function ProfileButton(): React.JSX.Element {
                 {account?.fullName || account?.profileName || 'Not signed in'}
               </span>
               <span className="block truncate text-[10.5px] text-[var(--wd-dim)]">
-                {account?.signedIn ? account.email : 'Sign in to sync and use Google services'}
+                {account?.signedIn
+                  ? account.email
+                  : account?.signinSupported === false
+                    ? 'Local profile — the browser is not signed in to Google'
+                    : 'Sign in to sync and use Google services'}
               </span>
             </span>
           </div>
 
-          {!account?.signedIn && (
-            <button
-              onClick={() => {
-                useShellStore.getState().newTab('https://accounts.google.com/')
-                setOpen(false)
-              }}
-              className="mb-1 block w-full rounded-lg bg-[var(--wd-accent)] px-3 py-1.5 text-center text-[12px] font-semibold text-[var(--wd-accent-ink)]"
-            >
-              Sign in to Google
-            </button>
-          )}
+          {!account?.signedIn &&
+            (account?.signinSupported === false ? (
+              // Saying nothing here, or offering a button that cannot work, is
+              // what made "signed in on google.com but not in the browser"
+              // look like a bug. This build has no Google OAuth client, so
+              // browser sign-in and Sync cannot start at all.
+              <p className="mb-1 rounded-lg bg-[var(--wd-well)] px-3 py-2 text-[10.5px] leading-relaxed text-[var(--wd-dim)]">
+                Signing in to Google on a website works normally and keeps you signed in there.
+                Signing in to the <em>browser</em>, and Chrome Sync with it, needs Google&rsquo;s
+                own API keys, which are issued only to official Chrome builds — so this build shows
+                your local profile picture instead.
+              </p>
+            ) : (
+              <button
+                onClick={() => {
+                  useShellStore.getState().newTab('https://accounts.google.com/')
+                  setOpen(false)
+                }}
+                className="mb-1 block w-full rounded-lg bg-[var(--wd-accent)] px-3 py-1.5 text-center text-[12px] font-semibold text-[var(--wd-accent-ink)]"
+              >
+                Sign in to Google
+              </button>
+            ))}
 
           <div className="my-1 border-t border-[var(--wd-hairline)]" />
           {/* Saved passwords, autofill, payment methods and addresses are

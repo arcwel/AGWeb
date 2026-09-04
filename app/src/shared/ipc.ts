@@ -889,9 +889,13 @@ export interface BrowserAccountInfo {
   signedIn: boolean
   email: string
   fullName: string
-  /** PNG data: URL of the account picture; empty when signed out. */
+  /** PNG data: URL of the picture the profile button shows: the Google
+   *  account image when signed in, otherwise the local profile avatar. */
   avatarDataUrl: string
   profileName: string
+  /** Whether this build can sign in to Google at all. False on an unbranded
+   *  Chromium, which is built without Google's API keys and OAuth client. */
+  signinSupported: boolean
 }
 
 /** File types the Document Studio renders as styled documents. Shared so main
