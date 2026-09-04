@@ -105,6 +105,12 @@ export function createAgwebApi(ipcRenderer: IpcLike, host: HostCapabilities): Ag
         ipcRenderer.on(IpcEvents.browserAdoptTab, handler)
         return () => ipcRenderer.removeListener(IpcEvents.browserAdoptTab, handler)
       },
+      onDocumentsDropped: (listener) => {
+        const handler = (_event: unknown, files: { path: string; auth: string }[]): void =>
+          listener(files)
+        ipcRenderer.on(IpcEvents.browserDocumentsDropped, handler)
+        return () => ipcRenderer.removeListener(IpcEvents.browserDocumentsDropped, handler)
+      },
       onCommand: (listener) => {
         const handler = (_event: unknown, command: string): void => listener(command)
         ipcRenderer.on(IpcEvents.browserCommand, handler)
@@ -154,8 +160,8 @@ export function createAgwebApi(ipcRenderer: IpcLike, host: HostCapabilities): Ag
       googleStatus: () => ipcRenderer.invoke(IpcChannels.profilesGoogleStatus),
       account: () => ipcRenderer.invoke(IpcChannels.profilesAccount)
     },
-    drops: {
-      write: (name, base64) => ipcRenderer.invoke(IpcChannels.dropsWrite, name, base64)
+    files: {
+      openSigned: (path, auth) => ipcRenderer.invoke(IpcChannels.filesOpenSigned, path, auth)
     },
     bookmarks: {
       importFile: () => ipcRenderer.invoke(IpcChannels.bookmarksImportFile)

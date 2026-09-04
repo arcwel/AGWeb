@@ -119,9 +119,10 @@ class WebDeckShell : public mojom::Shell,
   void CloseWindow(int32_t window_id) override;
   void PickPaths(int32_t mode, PickPathsCallback callback) override;
   void OpenLocalFile(int32_t tab_id, OpenLocalFileCallback callback) override;
-  void OpenDroppedFile(int32_t tab_id,
-                       const std::string& name,
-                       OpenDroppedFileCallback callback) override;
+
+  // Files were dropped on this shell's window. Called by the WebContents view
+  // delegate, which is the only place the real paths exist.
+  void OnFilesDropped(const std::vector<base::FilePath>& paths);
 
   // ui::SelectFileDialog::Listener: the PickPaths panel answered.
   void FileSelected(const ui::SelectedFileInfo& file, int index) override;
@@ -200,6 +201,10 @@ class WebDeckShell : public mojom::Shell,
   // Navigate `tab_id` to a local file the BROWSER resolved. Returns false
   // when the tab is gone or the path is not a file URL.
   bool NavigateToLocalFile(int32_t tab_id, const base::FilePath& path);
+
+  // One picked file, routed to the viewer that suits it; and the reply once a
+  // document has been copied into the staging area off the UI thread.
+  void OpenPickedFile(const base::FilePath& path);
 
   OpenLocalFileCallback open_local_file_callback_;
   int32_t open_local_file_tab_ = 0;

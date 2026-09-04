@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { docNavTarget, searchUrlFor } from '@shared/ipc'
-import { browserPrefs } from '../../../webui/shell'
-import { ensureTabView } from '@/drop-file'
+import { openFileFromPicker } from '@/open-local-file'
 import type { BrowserAccountInfo, ExtensionActionInfo } from '@shared/ipc'
 import { BLOCK_LABELS, useShellStore, type BlockType, type DeckPreset } from '@/store'
 import { asDirectUrl, type Suggestion } from '@/omnibox-rank'
@@ -1069,18 +1068,16 @@ function BrowserMenu(): React.JSX.Element {
           </button>
           {/* Chromium's viewers, reached the only safe way: the browser shows
               the panel and opens what the user picked, so no path comes from
-              this page. A PDF lands in its PDF viewer, annotation and all. */}
+              this page. A PDF lands in its PDF viewer, annotation and all; a
+              document lands in Document Studio, which Chromium has no
+              equivalent of. */}
           <button
             className={item}
             onClick={() => {
               setOpen(false)
-              const store = useShellStore.getState()
-              const tabId = store.newTab()
-              void ensureTabView(tabId)
-                .then(() => browserPrefs.openLocalFile(tabId))
-                .then((opened) => {
-                  if (!opened) store.closeTab(tabId)
-                })
+              void openFileFromPicker().then((result) => {
+                if (result.error) console.error('WebDeck: could not open that file —', result.error)
+              })
             }}
             data-testid="menu-open-file"
           >

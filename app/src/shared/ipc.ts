@@ -675,9 +675,8 @@ export const IpcChannels = {
   profilesRemove: 'profiles:remove',
   profilesGoogleStatus: 'profiles:google-status',
   profilesAccount: 'profiles:account',
-  dropsWrite: 'drops:write',
+  filesOpenSigned: 'files:open-signed',
   browserOpenLocalFile: 'browser:open-local-file',
-  browserOpenDroppedFile: 'browser:open-dropped-file',
   browserGetSettingPrefs: 'browser:get-setting-prefs',
   browserSetSettingPref: 'browser:set-setting-pref',
   extensionsActions: 'extensions:actions',
@@ -822,6 +821,7 @@ export const IpcEvents = {
   browserAdoptTab: 'event:browser-adopt-tab',
   /** A shell-owned browser command from the native menu / a key equivalent. */
   browserCommand: 'event:browser-command',
+  browserDocumentsDropped: 'event:browser-documents-dropped',
   shellSync: 'event:shell-sync',
   requestSync: 'event:request-sync',
   deckWindowClosed: 'event:deck-window-closed',
@@ -1062,13 +1062,10 @@ export interface AgwebApi {
   }
   /** Stage a file dropped onto the shell so the browser can open it. Returns
    *  the bare name the browser opens it by. */
-  drops: {
-    /** Stage a dropped file. `docPath` is set for a document Document Studio
-     *  should open; `name` for anything the browser opens itself. */
-    write(
-      name: string,
-      base64: string
-    ): Promise<{ name?: string; docPath?: string; error?: string }>
+  files: {
+    /** Open a local file the browser vouched for, at the path it lives at.
+     *  `auth` is the browser's signature; without it nothing is granted. */
+    openSigned(path: string, auth: string): Promise<{ path?: string; error?: string }>
   }
   /** Read a bookmarks export file the user picks (HTML or JSON) as text. */
   bookmarks: {
@@ -1136,6 +1133,9 @@ export interface AgwebApi {
      * 'app:toggle-deck', … (the `app:*` vocabulary of commands.ts).
      */
     onCommand(listener: (command: string) => void): () => void
+    /** Documents dropped on the window, as paths the browser signed. Anything
+     *  the browser can render itself never reaches here. */
+    onDocumentsDropped(listener: (files: { path: string; auth: string }[]) => void): () => void
     /** A `file:` navigation to a workspace doc — open it in Document Studio. */
     onOpenDoc(listener: (path: string) => void): () => void
   }

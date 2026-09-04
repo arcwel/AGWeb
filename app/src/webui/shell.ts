@@ -66,8 +66,9 @@ interface ShellRemote {
   // Who is signed in, for the profile button.
   getAccountInfo(): Promise<{ info: BrowserAccountInfo }>
   // Open a local file in a tab — the browser picks the path, never the page.
-  openLocalFile(tabId: number): Promise<{ opened: boolean }>
-  openDroppedFile(tabId: number, name: string): Promise<{ opened: boolean }>
+  openLocalFile(tabId: number): Promise<{
+    result: { navigated: boolean; document: { path: string; auth: string } | null }
+  }>
   find(tabId: number, query: string, forward: boolean): void
   stopFind(tabId: number): void
   setZoom(tabId: number, level: number): Promise<{ applied: number }>
@@ -295,6 +296,7 @@ async function bindShellClient(): Promise<void> {
         onTabClosed(tabId: number): void
         onFindResult(tabId: number, activeMatch: number, totalMatches: number): void
         onCommand(command: string): void
+        onDocumentsDropped(files: { path: string; auth: string }[]): void
       }) => ShellClientReceiver
     }
     const receiver = new mod.ShellClientReceiver({
@@ -372,6 +374,11 @@ async function bindShellClient(): Promise<void> {
       // is `app:<name>` (commands.ts runMenuCommand).
       onCommand(command) {
         emitShellBrowserEvent(IpcEvents.browserCommand, `app:${command}`)
+      },
+      // Documents dropped on the window. The browser has already opened
+      // anything it can render itself; these are the ones only WebDeck reads.
+      onDocumentsDropped(files) {
+        emitShellBrowserEvent(IpcEvents.browserDocumentsDropped, files)
       }
     })
     shell.setClient(receiver.$.bindNewPipeAndPassRemote())
@@ -645,10 +652,13 @@ export const SHELL_BROWSER: Record<string, (...args: unknown[]) => Promise<unkno
     (await getShell()).getAccountInfo().then((r) => r.info),
   // Local files. Chromium's own viewers render them — its PDF viewer, with
   // annotation, for a PDF.
+  // A document comes back as a SIGNED PATH rather than a navigation: Chromium
+  // has no reader for one, so the shell opens it in Document Studio, at the
+  // path the file actually lives at.
   [IpcChannels.browserOpenLocalFile]: async (shellId) =>
-    (await getShell()).openLocalFile(handleFor(shellId)).then((r) => r.opened),
-  [IpcChannels.browserOpenDroppedFile]: async (shellId, name) =>
-    (await getShell()).openDroppedFile(handleFor(shellId), String(name)).then((r) => r.opened),
+    (await getShell())
+      .openLocalFile(handleFor(shellId))
+      .then((r) => ({ navigated: r.result.navigated, document: r.result.document ?? null })),
   // Chromium's settings. The renderer names prefs; the browser decides which
   // it will answer for.
   [IpcChannels.browserGetSettingPrefs]: async (names) =>
@@ -721,9 +731,10 @@ export interface BrowserPrefsApi {
    *  controls it. */
   setSettingPref(name: string, value: boolean | number | string): Promise<boolean>
   /** Show the browser's open panel and load whatever the user picks. */
-  openLocalFile(tabId: string): Promise<boolean>
+  openLocalFile(
+    tabId: string
+  ): Promise<{ navigated: boolean; document: { path: string; auth: string } | null }>
   /** Open a file the core staged from a drop, by its bare name. */
-  openDroppedFile(tabId: string, name: string): Promise<boolean>
   getBlockThirdPartyCookies(): Promise<boolean>
   setBlockThirdPartyCookies(blocked: boolean): Promise<void>
   getSendDoNotTrack(): Promise<boolean>
@@ -754,9 +765,10 @@ export const browserPrefs: BrowserPrefsApi = {
       JSON.stringify(value)
     ) as Promise<boolean>,
   openLocalFile: (tabId) =>
-    SHELL_BROWSER[IpcChannels.browserOpenLocalFile](tabId) as Promise<boolean>,
-  openDroppedFile: (tabId, name) =>
-    SHELL_BROWSER[IpcChannels.browserOpenDroppedFile](tabId, name) as Promise<boolean>,
+    SHELL_BROWSER[IpcChannels.browserOpenLocalFile](tabId) as Promise<{
+      navigated: boolean
+      document: { path: string; auth: string } | null
+    }>,
   getBlockThirdPartyCookies: () =>
     SHELL_BROWSER[IpcChannels.browserGetCookieBlock]() as Promise<boolean>,
   setBlockThirdPartyCookies: async (blocked) => {

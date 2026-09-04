@@ -6,7 +6,10 @@
 #include <string>
 #include <string_view>
 
+#include "base/base64.h"
 #include "base/command_line.h"
+#include "base/containers/span.h"
+#include "base/rand_util.h"
 #include "base/environment.h"
 #include "base/files/file_util.h"
 #include "base/json/json_reader.h"
@@ -19,6 +22,7 @@
 #include "base/time/time.h"
 #include "base/values.h"
 #include "components/version_info/version_info.h"
+#include "crypto/hmac.h"
 #include "build/build_config.h"
 
 namespace webdeck {
@@ -43,6 +47,16 @@ constexpr size_t kMaxPortFileBytes = 1024;
 // The core's per-user data directory, and the environment variable that moves
 // it. Both must match the core's own defaults (see node-env.ts).
 constexpr char kUserDataEnvVar[] = "WEBDECK_USER_DATA";
+
+// The signing key, handed to the core in its environment rather than on its
+// command line: a command line is readable by every process on the machine
+// (ps), and a key everyone can read signs nothing.
+constexpr char kGrantKeyEnvVar[] = "WEBDECK_GRANT_KEY";
+constexpr size_t kGrantKeyBytes = 32;
+
+// What gets signed, so a signature for one purpose cannot be replayed as
+// another. The path follows on the next line.
+constexpr char kGrantContext[] = "webdeck-open-file\n";
 constexpr base::FilePath::CharType kUserDataDirName[] =
     FILE_PATH_LITERAL(".webdeck");
 
@@ -74,6 +88,20 @@ base::FilePath WebDeckCoreService::ResolveCorePath() const {
     return base::FilePath();
   }
   return exe.DirName().Append(kCoreBinary);
+}
+
+const std::vector<uint8_t>& WebDeckCoreService::grant_key() const {
+  return grant_key_;
+}
+
+std::string WebDeckCoreService::SignFileGrant(const base::FilePath& path) const {
+  if (grant_key_.empty() || path.empty() || !path.IsAbsolute()) {
+    return std::string();
+  }
+  const std::string message = kGrantContext + path.AsUTF8Unsafe();
+  const std::array<uint8_t, crypto::hash::kSha256Size> signature =
+      crypto::hmac::SignSha256(grant_key_, base::as_byte_span(message));
+  return base::Base64Encode(signature);
 }
 
 // static
@@ -173,8 +201,13 @@ void WebDeckCoreService::EnsureStarted() {
     command_line.AppendSwitchPath("user-data", user_data);
   }
 
+  // One key per core process: it dies with the child, so a signature cannot
+  // outlive the browser that made it.
+  grant_key_ = base::RandBytesAsVector(kGrantKeyBytes);
+
   base::LaunchOptions options;
   options.current_directory = core.DirName();
+  options.environment[kGrantKeyEnvVar] = base::Base64Encode(grant_key_);
   // Tell the core which browser it belongs to. Without this the app reports an
   // empty Chrome version, and a tester filing a bug has no way to say which
   // build they were on — which is most of what a bug report is worth. Merged

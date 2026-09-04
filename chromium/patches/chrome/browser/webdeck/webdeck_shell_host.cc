@@ -22,7 +22,37 @@ std::map<BrowserWindowInterface*, CommandForwarder>& Forwarders() {
       map;
   return *map;
 }
+
+// Keyed by the shell's own WebContents, which is what Chromium's drop path
+// has in hand when it asks.
+std::map<content::WebContents*, FilesDropForwarder>& DropForwarders() {
+  static base::NoDestructor<std::map<content::WebContents*, FilesDropForwarder>>
+      forwarders;
+  return *forwarders;
+}
 }  // namespace
+
+void SetFilesDropForwarder(content::WebContents* shell_contents,
+                           FilesDropForwarder forwarder) {
+  DropForwarders()[shell_contents] = std::move(forwarder);
+}
+
+void ClearFilesDropForwarder(content::WebContents* shell_contents) {
+  DropForwarders().erase(shell_contents);
+}
+
+bool ForwardFilesDrop(content::WebContents* contents,
+                      const std::vector<base::FilePath>& paths) {
+  if (paths.empty()) {
+    return false;
+  }
+  auto it = DropForwarders().find(contents);
+  if (it == DropForwarders().end()) {
+    return false;
+  }
+  it->second.Run(paths);
+  return true;
+}
 
 void SetCommandForwarder(BrowserWindowInterface* window,
                          CommandForwarder forwarder) {

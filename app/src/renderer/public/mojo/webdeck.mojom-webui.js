@@ -862,18 +862,6 @@ var ShellRemote = class {
       false
     );
   }
-  openDroppedFile(tabId, name) {
-    return this.proxy.sendMessage(
-      870934368,
-      Shell_OpenDroppedFile_ParamsSpec.$,
-      Shell_OpenDroppedFile_ResponseParamsSpec.$,
-      [
-        tabId,
-        name
-      ],
-      false
-    );
-  }
 };
 var ShellReceiver = class {
   helper_internal_;
@@ -1199,13 +1187,6 @@ var ShellReceiver = class {
       impl.openLocalFile.bind(impl),
       false
     );
-    this.helper_internal_.registerHandler(
-      870934368,
-      Shell_OpenDroppedFile_ParamsSpec.$,
-      Shell_OpenDroppedFile_ResponseParamsSpec.$,
-      impl.openDroppedFile.bind(impl),
-      false
-    );
     this.onConnectionError = this.helper_internal_.getConnectionErrorEventRouter();
   }
 };
@@ -1273,7 +1254,6 @@ var ShellCallbackRouter = class {
   closeWindow;
   pickPaths;
   openLocalFile;
-  openDroppedFile;
   onConnectionError;
   constructor() {
     this.helper_internal_ = new mojo.internal.interfaceSupport.InterfaceReceiverHelperInternal(
@@ -1866,19 +1846,6 @@ var ShellCallbackRouter = class {
       ),
       false
     );
-    this.openDroppedFile = new mojo.internal.interfaceSupport.InterfaceCallbackReceiver(
-      this.router_
-    );
-    this.helper_internal_.registerHandler(
-      870934368,
-      Shell_OpenDroppedFile_ParamsSpec.$,
-      Shell_OpenDroppedFile_ResponseParamsSpec.$,
-      this.openDroppedFile.createReceiverHandler(
-        true
-        /* expectsResponse */
-      ),
-      false
-    );
     this.onConnectionError = this.helper_internal_.getConnectionErrorEventRouter();
   }
   /**
@@ -1914,9 +1881,20 @@ var ShellClientRemote = class {
     this.$ = new mojo.internal.interfaceSupport.InterfaceRemoteBaseWrapper(this.proxy);
     this.onConnectionError = this.proxy.getConnectionErrorEventRouter();
   }
-  onTabsChanged(tabs, activeTabId) {
+  onDocumentsDropped(files) {
     this.proxy.sendMessage(
       1435046940,
+      ShellClient_OnDocumentsDropped_ParamsSpec.$,
+      null,
+      [
+        files
+      ],
+      false
+    );
+  }
+  onTabsChanged(tabs, activeTabId) {
+    this.proxy.sendMessage(
+      2124763888,
       ShellClient_OnTabsChanged_ParamsSpec.$,
       null,
       [
@@ -1928,7 +1906,7 @@ var ShellClientRemote = class {
   }
   onTabNavigationStateChanged(info) {
     this.proxy.sendMessage(
-      2124763888,
+      859980247,
       ShellClient_OnTabNavigationStateChanged_ParamsSpec.$,
       null,
       [
@@ -1939,7 +1917,7 @@ var ShellClientRemote = class {
   }
   onTabClosed(tabId) {
     this.proxy.sendMessage(
-      859980247,
+      1044292798,
       ShellClient_OnTabClosed_ParamsSpec.$,
       null,
       [
@@ -1950,7 +1928,7 @@ var ShellClientRemote = class {
   }
   onFindResult(tabId, activeMatch, totalMatches) {
     this.proxy.sendMessage(
-      1044292798,
+      1394744468,
       ShellClient_OnFindResult_ParamsSpec.$,
       null,
       [
@@ -1963,7 +1941,7 @@ var ShellClientRemote = class {
   }
   onCommand(command) {
     this.proxy.sendMessage(
-      1394744468,
+      138491081,
       ShellClient_OnCommand_ParamsSpec.$,
       null,
       [
@@ -1984,34 +1962,41 @@ var ShellClientReceiver = class {
     this.$ = new mojo.internal.interfaceSupport.InterfaceReceiverHelper(this.helper_internal_);
     this.helper_internal_.registerHandler(
       1435046940,
+      ShellClient_OnDocumentsDropped_ParamsSpec.$,
+      null,
+      impl.onDocumentsDropped.bind(impl),
+      false
+    );
+    this.helper_internal_.registerHandler(
+      2124763888,
       ShellClient_OnTabsChanged_ParamsSpec.$,
       null,
       impl.onTabsChanged.bind(impl),
       false
     );
     this.helper_internal_.registerHandler(
-      2124763888,
+      859980247,
       ShellClient_OnTabNavigationStateChanged_ParamsSpec.$,
       null,
       impl.onTabNavigationStateChanged.bind(impl),
       false
     );
     this.helper_internal_.registerHandler(
-      859980247,
+      1044292798,
       ShellClient_OnTabClosed_ParamsSpec.$,
       null,
       impl.onTabClosed.bind(impl),
       false
     );
     this.helper_internal_.registerHandler(
-      1044292798,
+      1394744468,
       ShellClient_OnFindResult_ParamsSpec.$,
       null,
       impl.onFindResult.bind(impl),
       false
     );
     this.helper_internal_.registerHandler(
-      1394744468,
+      138491081,
       ShellClient_OnCommand_ParamsSpec.$,
       null,
       impl.onCommand.bind(impl),
@@ -2039,6 +2024,7 @@ var ShellClientCallbackRouter = class {
   helper_internal_;
   $;
   router_;
+  onDocumentsDropped;
   onTabsChanged;
   onTabNavigationStateChanged;
   onTabClosed;
@@ -2051,11 +2037,24 @@ var ShellClientCallbackRouter = class {
     );
     this.$ = new mojo.internal.interfaceSupport.InterfaceReceiverHelper(this.helper_internal_);
     this.router_ = new mojo.internal.interfaceSupport.CallbackRouter();
-    this.onTabsChanged = new mojo.internal.interfaceSupport.InterfaceCallbackReceiver(
+    this.onDocumentsDropped = new mojo.internal.interfaceSupport.InterfaceCallbackReceiver(
       this.router_
     );
     this.helper_internal_.registerHandler(
       1435046940,
+      ShellClient_OnDocumentsDropped_ParamsSpec.$,
+      null,
+      this.onDocumentsDropped.createReceiverHandler(
+        false
+        /* expectsResponse */
+      ),
+      false
+    );
+    this.onTabsChanged = new mojo.internal.interfaceSupport.InterfaceCallbackReceiver(
+      this.router_
+    );
+    this.helper_internal_.registerHandler(
+      2124763888,
       ShellClient_OnTabsChanged_ParamsSpec.$,
       null,
       this.onTabsChanged.createReceiverHandler(
@@ -2068,7 +2067,7 @@ var ShellClientCallbackRouter = class {
       this.router_
     );
     this.helper_internal_.registerHandler(
-      2124763888,
+      859980247,
       ShellClient_OnTabNavigationStateChanged_ParamsSpec.$,
       null,
       this.onTabNavigationStateChanged.createReceiverHandler(
@@ -2081,7 +2080,7 @@ var ShellClientCallbackRouter = class {
       this.router_
     );
     this.helper_internal_.registerHandler(
-      859980247,
+      1044292798,
       ShellClient_OnTabClosed_ParamsSpec.$,
       null,
       this.onTabClosed.createReceiverHandler(
@@ -2094,7 +2093,7 @@ var ShellClientCallbackRouter = class {
       this.router_
     );
     this.helper_internal_.registerHandler(
-      1044292798,
+      1394744468,
       ShellClient_OnFindResult_ParamsSpec.$,
       null,
       this.onFindResult.createReceiverHandler(
@@ -2107,7 +2106,7 @@ var ShellClientCallbackRouter = class {
       this.router_
     );
     this.helper_internal_.registerHandler(
-      1394744468,
+      138491081,
       ShellClient_OnCommand_ParamsSpec.$,
       null,
       this.onCommand.createReceiverHandler(
@@ -2126,6 +2125,8 @@ var ShellClientCallbackRouter = class {
     return this.router_.removeListener(id);
   }
 };
+var SignedFileSpec = { $: {} };
+var LocalFileOpenedSpec = { $: {} };
 var SettingPrefSpec = { $: {} };
 var ExtensionActionInfoSpec = { $: {} };
 var SignInInfoSpec = { $: {} };
@@ -2204,13 +2205,70 @@ var Shell_PickPaths_ParamsSpec = { $: {} };
 var Shell_PickPaths_ResponseParamsSpec = { $: {} };
 var Shell_OpenLocalFile_ParamsSpec = { $: {} };
 var Shell_OpenLocalFile_ResponseParamsSpec = { $: {} };
-var Shell_OpenDroppedFile_ParamsSpec = { $: {} };
-var Shell_OpenDroppedFile_ResponseParamsSpec = { $: {} };
+var ShellClient_OnDocumentsDropped_ParamsSpec = { $: {} };
 var ShellClient_OnTabsChanged_ParamsSpec = { $: {} };
 var ShellClient_OnTabNavigationStateChanged_ParamsSpec = { $: {} };
 var ShellClient_OnTabClosed_ParamsSpec = { $: {} };
 var ShellClient_OnFindResult_ParamsSpec = { $: {} };
 var ShellClient_OnCommand_ParamsSpec = { $: {} };
+mojo.internal.Struct(
+  SignedFileSpec.$,
+  "SignedFile",
+  [
+    mojo.internal.StructField(
+      "path",
+      0,
+      0,
+      mojo.internal.String,
+      null,
+      false,
+      0,
+      void 0,
+      void 0
+    ),
+    mojo.internal.StructField(
+      "auth",
+      8,
+      0,
+      mojo.internal.String,
+      null,
+      false,
+      0,
+      void 0,
+      void 0
+    )
+  ],
+  [[0, 24]]
+);
+mojo.internal.Struct(
+  LocalFileOpenedSpec.$,
+  "LocalFileOpened",
+  [
+    mojo.internal.StructField(
+      "navigated",
+      0,
+      0,
+      mojo.internal.Bool,
+      false,
+      false,
+      0,
+      void 0,
+      void 0
+    ),
+    mojo.internal.StructField(
+      "document",
+      8,
+      0,
+      SignedFileSpec.$,
+      null,
+      true,
+      0,
+      void 0,
+      void 0
+    )
+  ],
+  [[0, 24]]
+);
 mojo.internal.Struct(
   SettingPrefSpec.$,
   "SettingPref",
@@ -3855,11 +3913,11 @@ mojo.internal.Struct(
   "Shell_OpenLocalFile_ResponseParams",
   [
     mojo.internal.StructField(
-      "opened",
+      "result",
       0,
       0,
-      mojo.internal.Bool,
-      false,
+      LocalFileOpenedSpec.$,
+      null,
       false,
       0,
       void 0,
@@ -3869,44 +3927,15 @@ mojo.internal.Struct(
   [[0, 16]]
 );
 mojo.internal.Struct(
-  Shell_OpenDroppedFile_ParamsSpec.$,
-  "Shell_OpenDroppedFile_Params",
+  ShellClient_OnDocumentsDropped_ParamsSpec.$,
+  "ShellClient_OnDocumentsDropped_Params",
   [
     mojo.internal.StructField(
-      "tabId",
+      "files",
       0,
       0,
-      mojo.internal.Int32,
-      0,
-      false,
-      0,
-      void 0,
-      void 0
-    ),
-    mojo.internal.StructField(
-      "name",
-      8,
-      0,
-      mojo.internal.String,
+      mojo.internal.Array(SignedFileSpec.$, false),
       null,
-      false,
-      0,
-      void 0,
-      void 0
-    )
-  ],
-  [[0, 24]]
-);
-mojo.internal.Struct(
-  Shell_OpenDroppedFile_ResponseParamsSpec.$,
-  "Shell_OpenDroppedFile_ResponseParams",
-  [
-    mojo.internal.StructField(
-      "opened",
-      0,
-      0,
-      mojo.internal.Bool,
-      false,
       false,
       0,
       void 0,
@@ -4059,6 +4088,7 @@ export {
   AgentTabs_SendCommand_ResponseParamsSpec,
   AgentTabs_SetClient_ParamsSpec,
   ExtensionActionInfoSpec,
+  LocalFileOpenedSpec,
   SettingPrefSpec,
   Shell,
   ShellCallbackRouter,
@@ -4068,6 +4098,7 @@ export {
   ShellClientReceiver,
   ShellClientRemote,
   ShellClient_OnCommand_ParamsSpec,
+  ShellClient_OnDocumentsDropped_ParamsSpec,
   ShellClient_OnFindResult_ParamsSpec,
   ShellClient_OnTabClosed_ParamsSpec,
   ShellClient_OnTabNavigationStateChanged_ParamsSpec,
@@ -4109,8 +4140,6 @@ export {
   Shell_GoForward_ParamsSpec,
   Shell_Navigate_ParamsSpec,
   Shell_OpenDevTools_ParamsSpec,
-  Shell_OpenDroppedFile_ParamsSpec,
-  Shell_OpenDroppedFile_ResponseParamsSpec,
   Shell_OpenLocalFile_ParamsSpec,
   Shell_OpenLocalFile_ResponseParamsSpec,
   Shell_OpenWindow_ParamsSpec,
@@ -4143,5 +4172,6 @@ export {
   Shell_Stop_ParamsSpec,
   Shell_TogglePictureInPicture_ParamsSpec,
   SignInInfoSpec,
+  SignedFileSpec,
   TabInfoSpec
 };

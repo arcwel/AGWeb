@@ -250,24 +250,50 @@ interface Shell {
   // pick is already open. The panel is sheeted on this shell's window.
   PickPaths(int32 mode) => (array<string> paths);
 
-  // Open a local file in `tab_id` — a PDF, an image, a text file — using
-  // Chromium's own viewers.
+  // Show the browser's own open panel and open what the USER picked.
   //
   // `file:` is refused by the shell's navigation gate on purpose: the page can
   // read a tab back (GetPageText), so a renderer able to name a local path
-  // could read any file on the machine. These two never take a path from the
-  // page. OpenLocalFile shows the browser's own open panel and navigates to
-  // whatever the USER picked. OpenDroppedFile takes a bare file name and
-  // resolves it inside one directory the core writes dropped files into,
-  // rejecting anything with a path separator — so the worst a compromised
-  // renderer can do is reopen a file the user already dropped in.
-  OpenLocalFile(int32 tab_id) => (bool opened);
-  OpenDroppedFile(int32 tab_id, string name) => (bool opened);
+  // could read any file on the machine. This never takes a path from the page
+  // — it hands one back, for a file the user chose here.
+  //
+  // Anything Chromium can render is navigated to in `tab_id`. A DOCUMENT
+  // (markdown, JSON, YAML, CSV and the like) comes back as a signed path
+  // instead: Chromium has no reader for those, and WebDeck's does not want a
+  // copy, it wants the file where it lives.
+  OpenLocalFile(int32 tab_id) => (LocalFileOpened result);
+};
+
+// A local file the browser is vouching for, because the user chose it.
+//
+// The path is the file's own; nothing is copied. `auth` is the browser's
+// signature over it, made with a key only the browser and the core hold — so
+// the core can tell "the user picked this" from "the page asked for this",
+// which is the whole reason the page is allowed to carry the path at all.
+struct SignedFile {
+  string path;
+  string auth;
+};
+
+// What OpenLocalFile did with the file the user picked.
+struct LocalFileOpened {
+  // The browser navigated the tab to it, using its own viewer.
+  bool navigated;
+  // Set INSTEAD for a document, which the shell opens in Document Studio.
+  SignedFile? document;
 };
 
 // Browser -> renderer(shell): navigation/tab state, so the shell's tab strip and
 // toolbar can render without owning the tabs.
 interface ShellClient {
+  // Files were dropped on the shell's window.
+  //
+  // The browser knows their real paths; the page never does, and a File object
+  // in the page carries bytes rather than a location. So the browser signs
+  // what it saw and pushes it here. Documents only: everything else the
+  // browser has a viewer for it opens itself, without involving the page.
+  OnDocumentsDropped(array<SignedFile> files);
+
   // Full snapshot on attach and whenever the tab set / active tab changes.
   OnTabsChanged(array<TabInfo> tabs, int32 active_tab_id);
   // Per-tab navigation state (fires on each WebContents state change).

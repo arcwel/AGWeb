@@ -10,9 +10,11 @@
 #ifndef CHROME_BROWSER_WEBDECK_WEBDECK_CORE_SERVICE_H_
 #define CHROME_BROWSER_WEBDECK_WEBDECK_CORE_SERVICE_H_
 
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include "base/files/file_path.h"
 #include "base/no_destructor.h"
@@ -60,6 +62,20 @@ class WebDeckCoreService {
   // moves for an existing install.
   static base::FilePath UserDataDir();
 
+  // The key the browser signs file grants with, shared only with the core.
+  //
+  // The shell may name any path it likes to the core; the core opens one only
+  // when the browser has vouched for it, because the user picked it in the
+  // browser's own panel or dropped it on the window. That signature is what
+  // separates "the user chose this file" from "the page asked for this file",
+  // and it works only as long as the page never holds the key — so this is
+  // passed to the core in its environment and never reaches a renderer.
+  const std::vector<uint8_t>& grant_key() const;
+
+  // Sign one absolute path for the core to accept, base64. Empty if the core
+  // is not up, which is also the only state in which nothing can be granted.
+  std::string SignFileGrant(const base::FilePath& path) const;
+
   // Reads `{"port":N,"token":"..."}` as written by the core. Returns nullopt
   // unless BOTH are present and well-formed: a handoff missing its token would
   // mean a core whose socket accepts anyone, and connecting to it anyway would
@@ -77,6 +93,7 @@ class WebDeckCoreService {
 
   base::Process process_;
   std::string token_;
+  std::vector<uint8_t> grant_key_;
   // Holds the port file; removed on shutdown.
   base::FilePath runtime_dir_;
   int port_ = 0;

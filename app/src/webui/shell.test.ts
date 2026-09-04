@@ -53,7 +53,6 @@ const SECONDARY = [
   IpcChannels.extensionsRunAction,
   IpcChannels.profilesAccount,
   IpcChannels.browserOpenLocalFile,
-  IpcChannels.browserOpenDroppedFile,
   IpcChannels.browserGetSettingPrefs,
   IpcChannels.browserSetSettingPref,
   // Browser-preferences panel (privacy, cookies, default browser)

@@ -3,6 +3,9 @@
 #ifndef CHROME_BROWSER_WEBDECK_WEBDECK_SHELL_HOST_H_
 #define CHROME_BROWSER_WEBDECK_WEBDECK_SHELL_HOST_H_
 
+#include <vector>
+
+#include "base/files/file_path.h"
 #include "base/functional/callback.h"
 #include "base/memory/raw_ptr.h"
 #include "content/public/browser/web_contents_user_data.h"
@@ -54,6 +57,23 @@ void ClearCommandForwarder(BrowserWindowInterface* window);
 bool OwnsCommand(BrowserWindowInterface* window, int command_id);
 // Sends `command_id` to the shell if it owns it; true if it did.
 bool ForwardCommand(BrowserWindowInterface* window, int command_id);
+
+// Files dropped on a WebDeck shell's WebContents.
+//
+// The page is handed bytes and a name by the drag machinery, never a location,
+// so a shell that wants to open a dropped file where it lives has to be told
+// by the browser. Chromium's own drop path (HandleOnPerformingDrop) asks here
+// first; a WebContents with no shell behind it forwards nothing, so ordinary
+// windows and ordinary pages drop exactly as they did.
+using FilesDropForwarder =
+    base::RepeatingCallback<void(const std::vector<base::FilePath>&)>;
+void SetFilesDropForwarder(content::WebContents* shell_contents,
+                           FilesDropForwarder forwarder);
+void ClearFilesDropForwarder(content::WebContents* shell_contents);
+// Hands `paths` to the shell behind `contents`. True if a shell took them, in
+// which case the drop must NOT also reach the page.
+bool ForwardFilesDrop(content::WebContents* contents,
+                      const std::vector<base::FilePath>& paths);
 
 class WebDeckShellHost : public content::WebContentsUserData<WebDeckShellHost> {
  public:

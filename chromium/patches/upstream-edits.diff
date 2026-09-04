@@ -57104,6 +57104,65 @@ index 332a48ebee92f..ab7dc6bc8e3e4 100644
    SessionRestore::BehaviorBitmask restore_options =
        restore_tabbed_browser ? SessionRestore::RESTORE_BROWSER : 0;
    if (behavior == BrowserOpenBehavior::SYNCHRONOUS_RESTORE) {
+diff --git a/chrome/browser/ui/tab_contents/chrome_web_contents_view_handle_drop.cc b/chrome/browser/ui/tab_contents/chrome_web_contents_view_handle_drop.cc
+index 371dda0a45c77..1ff5c7b336040 100644
+--- a/chrome/browser/ui/tab_contents/chrome_web_contents_view_handle_drop.cc
++++ b/chrome/browser/ui/tab_contents/chrome_web_contents_view_handle_drop.cc
+@@ -8,6 +8,7 @@
+ #include <optional>
+ 
+ #include "base/containers/flat_map.h"
++#include "base/files/file_path.h"
+ #include "base/feature_list.h"
+ #include "base/files/file_enumerator.h"
+ #include "base/memory/weak_ptr.h"
+@@ -17,6 +18,7 @@
+ #include "chrome/browser/glic/host/glic_drag_and_drop_util.h"
+ #include "chrome/browser/glic/host/guest_util.h"
+ #include "chrome/browser/profiles/profile.h"
++#include "chrome/browser/webdeck/webdeck_shell_host.h"
+ #include "chrome/common/webui_url_constants.h"
+ #include "components/enterprise/buildflags/buildflags.h"
+ #include "components/enterprise/common/files_scan_data.h"
+@@ -240,10 +242,38 @@ class HandleDropScanData : public content::WebContentsObserver {
+ #endif  // BUILDFLAG(ENTERPRISE_CLOUD_CONTENT_ANALYSIS) &&
+         // BUILDFLAG(SAFE_BROWSING_AVAILABLE)
+ 
++namespace {
++
++// WebDeck: a drop on the shell's own page is the browser's to route.
++//
++// The page is handed bytes and a name, never a location, so a shell that wants
++// to open a dropped file where it lives has to be told by the browser. A
++// WebContents that is not a WebDeck shell forwards nothing and falls through
++// to Chromium's own handling below.
++
++bool WebDeckTookTheDrop(content::WebContents* web_contents,
++                        const content::DropData& drop_data) {
++  std::vector<base::FilePath> paths;
++  paths.reserve(drop_data.filenames.size());
++  for (const ui::FileInfo& file : drop_data.filenames) {
++    paths.push_back(file.path);
++  }
++  return webdeck::ForwardFilesDrop(web_contents, paths);
++}
++
++}  // namespace
++
+ void HandleOnPerformingDrop(
+     content::WebContents* web_contents,
+     content::DropData drop_data,
+     content::WebContentsViewDelegate::DropCompletionCallback callback) {
++  // WebDeck's shell page takes file drops itself; aborting here stops the
++  // files also reaching the page, which would open them twice.
++  if (WebDeckTookTheDrop(web_contents, drop_data)) {
++    std::move(callback).Run(std::nullopt);
++    return;
++  }
++
+   CHECK(callback);
+ 
+   content::WebContents* scan_target =
 diff --git a/chrome/browser/ui/views/frame/browser_native_widget_mac.mm b/chrome/browser/ui/views/frame/browser_native_widget_mac.mm
 index fd63fdec82640..7a404a288e863 100644
 --- a/chrome/browser/ui/views/frame/browser_native_widget_mac.mm

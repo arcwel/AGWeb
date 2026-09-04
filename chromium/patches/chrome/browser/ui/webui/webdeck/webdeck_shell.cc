@@ -12,7 +12,11 @@
 #include "base/memory/scoped_refptr.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "base/notimplemented.h"
+#include "base/files/file_util.h"
 #include "base/strings/string_split.h"
+#include "base/strings/string_util.h"
+#include "base/task/thread_pool.h"
+#include "base/unguessable_token.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
 #include "base/values.h"
@@ -182,6 +186,9 @@ WebDeckShell::WebDeckShell(content::WebContents* shell_contents,
       receiver_(this, std::move(receiver)) {}
 
 WebDeckShell::~WebDeckShell() {
+  if (shell_contents_) {
+    webdeck::ClearFilesDropForwarder(shell_contents_);
+  }
   if (forwarding_window_) {
     webdeck::ClearCommandForwarder(forwarding_window_);
     forwarding_window_ = nullptr;
@@ -1095,6 +1102,19 @@ void WebDeckShell::SetClient(mojo::PendingRemote<mojom::ShellClient> client) {
             },
             weak_factory_.GetWeakPtr()));
   }
+  // Dropped files, for the same reason: only the browser knows where they are.
+  if (shell_contents_) {
+    webdeck::SetFilesDropForwarder(
+        shell_contents_,
+        base::BindRepeating(
+            [](base::WeakPtr<WebDeckShell> shell,
+               const std::vector<base::FilePath>& paths) {
+              if (shell) {
+                shell->OnFilesDropped(paths);
+              }
+            },
+            weak_factory_.GetWeakPtr()));
+  }
 }
 
 // Chromium's command ids the shell owns in a WebDeck window, by stable name.
@@ -1464,10 +1484,39 @@ void WebDeckShell::PickPaths(int32_t mode, PickPathsCallback callback) {
                                   base::FilePath::StringType(), owner);
 }
 
-// The directory the core writes dropped files into. Both sides agree on this
-// path; nothing outside it can be opened by name.
-constexpr base::FilePath::CharType kDropDirName[] =
-    FILE_PATH_LITERAL("WebDeck Drops");
+namespace {
+
+// The formats Chromium cannot render but Document Studio can. Mirrors
+// DOC_EXTENSIONS in app/src/shared/ipc.ts; the two lists are the same decision
+// made on either side of the pipe, so they move together.
+bool IsDocumentFile(const base::FilePath& path) {
+  static constexpr const char* kExtensions[] = {
+      ".md", ".markdown", ".json", ".yaml", ".yml",
+      ".toml", ".csv", ".tsv", ".xml", ".svg"};
+  const std::string extension = base::ToLowerASCII(path.FinalExtension());
+  for (const char* candidate : kExtensions) {
+    if (extension == candidate) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// A path the core will accept, because this browser signed it. Null when the
+// core is not up, which is also when nothing can be granted anyway.
+mojom::SignedFilePtr SignForShell(const base::FilePath& path) {
+  const std::string auth =
+      WebDeckCoreService::GetInstance()->SignFileGrant(path);
+  if (auth.empty()) {
+    return nullptr;
+  }
+  mojom::SignedFilePtr file = mojom::SignedFile::New();
+  file->path = path.AsUTF8Unsafe();
+  file->auth = auth;
+  return file;
+}
+
+}  // namespace
 
 bool WebDeckShell::NavigateToLocalFile(int32_t tab_id,
                                        const base::FilePath& path) {
@@ -1487,10 +1536,17 @@ bool WebDeckShell::NavigateToLocalFile(int32_t tab_id,
   return true;
 }
 
+// Nothing happened: neither navigated nor staged.
+static mojom::LocalFileOpenedPtr NoLocalFile() {
+  mojom::LocalFileOpenedPtr result = mojom::LocalFileOpened::New();
+  result->navigated = false;
+  return result;
+}
+
 void WebDeckShell::OpenLocalFile(int32_t tab_id,
                                  OpenLocalFileCallback callback) {
   if (select_file_dialog_) {
-    std::move(callback).Run(false);
+    std::move(callback).Run(NoLocalFile());
     return;
   }
   BrowserWindowInterface* window = GetWindow();
@@ -1508,47 +1564,11 @@ void WebDeckShell::OpenLocalFile(int32_t tab_id,
                                   0, base::FilePath::StringType(), owner);
 }
 
-void WebDeckShell::OpenDroppedFile(int32_t tab_id,
-                                   const std::string& name,
-                                   OpenDroppedFileCallback callback) {
-  // The core wrote the file under ITS data directory, not the Chromium
-  // profile. Those are different places, and resolving against the profile is
-  // why a dropped PDF opened an error page instead of the PDF viewer.
-  const base::FilePath user_data = WebDeckCoreService::UserDataDir();
-  if (user_data.empty()) {
-    std::move(callback).Run(false);
-    return;
-  }
-  // "<stage>/<file>" and nothing else. Each drop gets its own stage directory
-  // so the file keeps the name the user dropped, which is the name the PDF
-  // viewer shows. Both segments are re-validated here rather than trusted:
-  // this string reaches us from the page, and the whole point of opening by
-  // name is that the page cannot choose a path.
-  const std::vector<std::string> segments = base::SplitString(
-      name, "/", base::TRIM_WHITESPACE, base::SPLIT_WANT_ALL);
-  if (segments.size() != 2) {
-    std::move(callback).Run(false);
-    return;
-  }
-  base::FilePath path = user_data.Append(kDropDirName);
-  for (const std::string& segment : segments) {
-    const base::FilePath candidate = base::FilePath::FromUTF8Unsafe(segment);
-    if (segment.empty() || candidate.IsAbsolute() ||
-        candidate.ReferencesParent() || candidate != candidate.BaseName()) {
-      std::move(callback).Run(false);
-      return;
-    }
-    path = path.Append(candidate);
-  }
-  std::move(callback).Run(NavigateToLocalFile(tab_id, path));
-}
 
 void WebDeckShell::FileSelected(const ui::SelectedFileInfo& file, int index) {
   select_file_dialog_ = nullptr;
   if (open_local_file_callback_) {
-    const bool opened =
-        NavigateToLocalFile(open_local_file_tab_, file.file_path);
-    std::move(open_local_file_callback_).Run(opened);
+    OpenPickedFile(file.file_path);
     return;
   }
   if (pick_paths_callback_) {
@@ -1560,10 +1580,11 @@ void WebDeckShell::MultiFilesSelected(
     const std::vector<ui::SelectedFileInfo>& files) {
   select_file_dialog_ = nullptr;
   if (open_local_file_callback_) {
-    const bool opened =
-        !files.empty() &&
-        NavigateToLocalFile(open_local_file_tab_, files.front().file_path);
-    std::move(open_local_file_callback_).Run(opened);
+    if (files.empty()) {
+      std::move(open_local_file_callback_).Run(NoLocalFile());
+    } else {
+      OpenPickedFile(files.front().file_path);
+    }
     return;
   }
   std::vector<std::string> paths;
@@ -1576,10 +1597,62 @@ void WebDeckShell::MultiFilesSelected(
   }
 }
 
+// Files dropped on the shell's window.
+//
+// The page cannot do this itself: a File object handed to JavaScript carries
+// bytes and a name, never a location, which is why the first version of this
+// posted the whole file through the core as base64 and wrote a copy. The
+// browser has the real paths, so it splits them here — documents go to the
+// shell as signed paths for Document Studio, and everything the browser can
+// render it opens itself, in a tab of its own, without the page in the middle.
+void WebDeckShell::OnFilesDropped(const std::vector<base::FilePath>& paths) {
+  std::vector<mojom::SignedFilePtr> documents;
+  for (const base::FilePath& path : paths) {
+    if (IsDocumentFile(path)) {
+      if (mojom::SignedFilePtr signed_file = SignForShell(path)) {
+        documents.push_back(std::move(signed_file));
+      }
+      continue;
+    }
+    // A viewer Chromium already has. Give it its own tab rather than replacing
+    // what the user was reading.
+    Profile* profile = GetProfile();
+    const GURL url = net::FilePathToFileURL(path);
+    if (!profile || !url.is_valid()) {
+      continue;
+    }
+    NavigateParams params(profile, url, ui::PAGE_TRANSITION_AUTO_TOPLEVEL);
+    params.disposition = WindowOpenDisposition::NEW_FOREGROUND_TAB;
+    // Qualified: WebDeckShell has its own Navigate(tab_id, url).
+    ::Navigate(&params);
+  }
+  if (!documents.empty() && client_) {
+    client_->OnDocumentsDropped(std::move(documents));
+  }
+}
+
+// One picked file, opened the way its kind deserves.
+//
+// A document is handed back as a signed path, because Chromium would show it
+// as raw text or download it and WebDeck has a reader for it. Everything else
+// navigates, which is what Chromium's viewers are for. Nothing is copied: the
+// file opens where the user keeps it.
+void WebDeckShell::OpenPickedFile(const base::FilePath& path) {
+  mojom::LocalFileOpenedPtr result = mojom::LocalFileOpened::New();
+  if (IsDocumentFile(path)) {
+    result->document = SignForShell(path);
+  }
+  // Not a document, or the core is not up to grant it: show what Chromium can.
+  if (!result->document) {
+    result->navigated = NavigateToLocalFile(open_local_file_tab_, path);
+  }
+  std::move(open_local_file_callback_).Run(std::move(result));
+}
+
 void WebDeckShell::FileSelectionCanceled() {
   select_file_dialog_ = nullptr;
   if (open_local_file_callback_) {
-    std::move(open_local_file_callback_).Run(false);
+    std::move(open_local_file_callback_).Run(NoLocalFile());
     return;
   }
   if (pick_paths_callback_) {
