@@ -249,6 +249,20 @@ interface Shell {
   // 1 = one folder, 2 = image files. Empty when cancelled, or while another
   // pick is already open. The panel is sheeted on this shell's window.
   PickPaths(int32 mode) => (array<string> paths);
+
+  // Open a local file in `tab_id` — a PDF, an image, a text file — using
+  // Chromium's own viewers.
+  //
+  // `file:` is refused by the shell's navigation gate on purpose: the page can
+  // read a tab back (GetPageText), so a renderer able to name a local path
+  // could read any file on the machine. These two never take a path from the
+  // page. OpenLocalFile shows the browser's own open panel and navigates to
+  // whatever the USER picked. OpenDroppedFile takes a bare file name and
+  // resolves it inside one directory the core writes dropped files into,
+  // rejecting anything with a path separator — so the worst a compromised
+  // renderer can do is reopen a file the user already dropped in.
+  OpenLocalFile(int32 tab_id) => (bool opened);
+  OpenDroppedFile(int32 tab_id, string name) => (bool opened);
 };
 
 // Browser -> renderer(shell): navigation/tab state, so the shell's tab strip and

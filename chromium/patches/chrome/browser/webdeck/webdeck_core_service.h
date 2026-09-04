@@ -50,6 +50,16 @@ class WebDeckCoreService {
     std::string token;
   };
 
+  // Where the core keeps its per-user data — settings, secrets, staged file
+  // drops. The browser resolves this rather than letting the core fall back to
+  // its own default, because both processes need the SAME answer: a dropped
+  // file is written by the core and then opened by the browser, and two
+  // independent guesses at "the user data directory" is exactly how that drop
+  // ended up pointing at a file that was never there. Honours
+  // $WEBDECK_USER_DATA, else ~/.webdeck — the core's own default, so nothing
+  // moves for an existing install.
+  static base::FilePath UserDataDir();
+
   // Reads `{"port":N,"token":"..."}` as written by the core. Returns nullopt
   // unless BOTH are present and well-formed: a handoff missing its token would
   // mean a core whose socket accepts anyone, and connecting to it anyway would

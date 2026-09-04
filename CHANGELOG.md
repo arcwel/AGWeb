@@ -5,6 +5,58 @@ All notable changes to Arcwel WebDeck are recorded here. This project adheres to
 
 ## Unreleased
 
+### Added (drops, profile picture, tab groups)
+
+- **Drag a PDF into the window and it previews in Chromium's PDF viewer**, with
+  its annotation, text and print tools. A dropped file is staged in its own
+  folder under the core's data directory and opened there by name, so the file
+  keeps the name you dropped and the page never learns a path.
+- **Pick your own profile picture.** Any image, centre-cropped and stored as a
+  128px PNG in the app settings. This build cannot sign in to Google, so a
+  photo was never going to arrive on its own.
+- **Tab groups can be renamed, and a group can be given new tabs.** The group
+  menu now offers Rename, "New tab in this group", a colour row and Ungroup,
+  and it floats above the strip instead of being clipped by it.
+- Roadmap: building our own sync service against Chromium's sync protocol and
+  pointing the browser at it (B2b).
+
+### Changed (documents open in Document Studio)
+
+- **A dropped document opens in Document Studio, not in the browser.** Chromium
+  has no reader for these: markdown and JSON came out as raw text in a `<pre>`,
+  and CSV and YAML were not displayed at all, they were downloaded. Markdown,
+  JSON, YAML, TOML, CSV, TSV, XML and SVG now open in the reader that was
+  already there, with its styled view, source toggle, themes, conversion and
+  export. PDF, images, HTML and plain text still go to Chromium, which renders
+  them properly.
+- A dropped document is granted to the file layer one file at a time, so the
+  reader can open it with no project open. Grants last the session and are
+  re-established at startup for documents still staged.
+- The styled reader shows list markers again. Tailwind's preflight strips them
+  from every list, which is right for the app's menus and wrong for a rendered
+  document.
+- Dropping a document no longer leaves an empty tab behind. The tab is minted
+  once the file's kind is known, rather than before.
+
+### Fixed (drops, blank tabs)
+
+- **A dropped file opened an error page instead of the file.** The core staged
+  it under its own data directory while the browser looked for it under the
+  Chromium profile — two different places. The browser now resolves that
+  directory once and hands the same path to the core, so both agree.
+- **Blank tabs are dropped on restore**, and the window no longer gains an
+  extra "about:blank" tab every time a session is restored. A restored session
+  opens a page the moment the strip is rebuilt, which used to beat the
+  browser's first tab push: the window's seed tab was missed, a second real
+  tab was opened, and the seed was adopted as a phantom. A tab creation now
+  waits to learn what tabs the window already has.
+- A failed drop no longer strands its tab. The tab is opened before the browser
+  is asked to load into it, and a browser that cannot be reached throws — which
+  escaped the cleanup and left an empty tab with no explanation.
+- The shell says so in the console when the browser does not push its tab list
+  in time, instead of silently opening the extra blank tab that wait exists to
+  prevent.
+
 ### Fixed (RC1 review)
 
 - App icon: the bundle's asset catalog (Assets.car) is now WebDeck's, so Finder
@@ -211,10 +263,10 @@ All notable changes to Arcwel WebDeck are recorded here. This project adheres to
   `--notary-profile`: it signs every Mach-O in the bundle inside-out with the
   hardened runtime and a secure timestamp, notarizes and staples the app,
   builds the disk image around the stapled app, then signs, notarizes and
-  staples the image, and finally asserts that Gatekeeper says *accepted,
-  source=Notarized Developer ID* and that the ticket survives on the app inside
+  staples the image, and finally asserts that Gatekeeper says _accepted,
+  source=Notarized Developer ID_ and that the ticket survives on the app inside
   the volume. `npm run release:dmg` is the whole release; `npm run
-  release:preflight` reports which of the three Apple credentials is missing
+release:preflight` reports which of the three Apple credentials is missing
   and the exact command that obtains it. The credential itself is never read by
   anything here — `notarytool` gets a keychain profile name.
 - **The development keychain can no longer ship.** Packaging a build with
@@ -284,7 +336,7 @@ All notable changes to Arcwel WebDeck are recorded here. This project adheres to
 ## v0.1.0 — 2026-09-01
 
 First tagged release. Arcwel WebDeck is an agent-first universal IDE and browser
-built as a **forked Chromium (M153)**: the browser *is* WebDeck — a React shell
+built as a **forked Chromium (M153)**: the browser _is_ WebDeck — a React shell
 at `chrome://webdeck` draws the browser chrome while real pages render in a
 positioned stage, and an IDE + agent runtime (`webdeck-core`) runs alongside.
 

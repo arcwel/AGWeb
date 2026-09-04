@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { docNavTarget, searchUrlFor } from '@shared/ipc'
+import { browserPrefs } from '../../../webui/shell'
+import { ensureTabView } from '@/drop-file'
 import type { BrowserAccountInfo, ExtensionActionInfo } from '@shared/ipc'
 import { BLOCK_LABELS, useShellStore, type BlockType, type DeckPreset } from '@/store'
 import { asDirectUrl, type Suggestion } from '@/omnibox-rank'
@@ -526,6 +528,8 @@ function ProfileButton(): React.JSX.Element {
   } | null>(null)
   const [google, setGoogle] = useState<Record<string, boolean>>({})
   const [account, setAccount] = useState<BrowserAccountInfo | null>(null)
+  // The user's own picture wins over anything the browser knows: they chose it.
+  const [chosenImage, setChosenImage] = useState('')
   const [adding, setAdding] = useState('')
   const activeUrl = useShellStore((s) => s.browserStates[s.activeTabId]?.url ?? '')
   const ref = usePopover(
@@ -546,6 +550,21 @@ function ProfileButton(): React.JSX.Element {
   // never updated at all. Signing in navigates, so the picture appears as soon
   // as it exists; the image itself is fetched asynchronously by the browser,
   // which is the other reason a single read at startup is not enough.
+  useEffect(() => {
+    let cancelled = false
+    void window.agweb.appSettings
+      .read()
+      .then((s) => {
+        if (!cancelled) setChosenImage(s.profileImage ?? '')
+      })
+      .catch(() => {
+        // No settings, no custom picture; the browser's avatar still shows.
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [open])
+
   useEffect(() => {
     if (!window.agweb.host.ownsBrowserFeatures) return
     let cancelled = false
@@ -582,9 +601,9 @@ function ProfileButton(): React.JSX.Element {
         aria-label="Profiles"
         data-testid="profile-button"
       >
-        {account?.avatarDataUrl ? (
+        {chosenImage || account?.avatarDataUrl ? (
           <img
-            src={account.avatarDataUrl}
+            src={chosenImage || account?.avatarDataUrl}
             alt=""
             width={18}
             height={18}
@@ -615,13 +634,13 @@ function ProfileButton(): React.JSX.Element {
           {/* Who is signed in, said plainly at the top — the menu used to open
               with four links and never name the account it belonged to. */}
           <div className="flex items-center gap-2.5 px-3 pb-2 pt-2">
-            {account?.avatarDataUrl ? (
+            {chosenImage || account?.avatarDataUrl ? (
               <img
-                src={account.avatarDataUrl}
+                src={chosenImage || account?.avatarDataUrl}
                 alt=""
                 width={32}
                 height={32}
-                className="h-8 w-8 flex-none rounded-full"
+                className="h-8 w-8 flex-none rounded-full object-cover"
               />
             ) : (
               <span className="flex h-8 w-8 flex-none items-center justify-center rounded-full bg-[var(--wd-field)] text-[13px] font-bold text-[var(--wd-dim)]">
@@ -1047,6 +1066,25 @@ function BrowserMenu(): React.JSX.Element {
             }}
           >
             <span className="w-4 text-[var(--wd-dim)]">+</span> New tab
+          </button>
+          {/* Chromium's viewers, reached the only safe way: the browser shows
+              the panel and opens what the user picked, so no path comes from
+              this page. A PDF lands in its PDF viewer, annotation and all. */}
+          <button
+            className={item}
+            onClick={() => {
+              setOpen(false)
+              const store = useShellStore.getState()
+              const tabId = store.newTab()
+              void ensureTabView(tabId)
+                .then(() => browserPrefs.openLocalFile(tabId))
+                .then((opened) => {
+                  if (!opened) store.closeTab(tabId)
+                })
+            }}
+            data-testid="menu-open-file"
+          >
+            <span className="w-4 text-[var(--wd-dim)]">↥</span> Open file…
           </button>
           <button
             className={item}

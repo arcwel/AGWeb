@@ -363,11 +363,17 @@ function GroupChip({
   const renameTabGroup = useShellStore((s) => s.renameTabGroup)
   const setTabGroupColor = useShellStore((s) => s.setTabGroupColor)
   const removeTabGroup = useShellStore((s) => s.removeTabGroup)
+  const newTab = useShellStore((s) => s.newTab)
+  const addTabToGroup = useShellStore((s) => s.addTabToGroup)
   const [open, setOpen] = useState(false)
   const [renaming, setRenaming] = useState<string | null>(null)
+  // Portalled: the horizontal strip is overflow-y-hidden, so a menu positioned
+  // inside it was clipped to a sliver — Rename was there and unreachable.
+  const panelRef = useRef<HTMLDivElement>(null)
   const ref = usePopover(
     open,
-    useCallback(() => setOpen(false), [])
+    useCallback(() => setOpen(false), []),
+    panelRef
   )
   const colors = TAB_GROUP_COLORS[group.color]
   const vertical = orientation === 'vertical'
@@ -427,15 +433,37 @@ function GroupChip({
       </button>
 
       {open && (
-        <div className="absolute left-0 top-7 z-50 w-44 overflow-hidden rounded-lg border border-slate-200 bg-white py-1 text-[11px] shadow-xl dark:border-slate-700 dark:bg-[#0e1420]">
+        <AnchoredPopover
+          anchorRef={ref}
+          panelRef={panelRef}
+          placement="below"
+          align="start"
+          width={188}
+          className="rounded-lg border border-slate-200 bg-white py-1 text-[11px] shadow-xl dark:border-slate-700 dark:bg-[#0e1420]"
+          data-testid="tab-group-menu"
+          role="menu"
+        >
           <button
             onClick={() => {
               setOpen(false)
               setRenaming(group.name)
             }}
             className="block w-full px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-slate-800"
+            data-testid="tab-group-rename"
           >
             Rename
+          </button>
+          {/* Chrome's "New tab in group". Without it a group could only ever
+              grow by dragging an existing tab into it. */}
+          <button
+            onClick={() => {
+              setOpen(false)
+              addTabToGroup(newTab(), group.id)
+            }}
+            className="block w-full px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-slate-800"
+            data-testid="tab-group-new-tab"
+          >
+            New tab in this group
           </button>
           <div className="flex gap-1 px-3 py-1.5">
             {(Object.keys(TAB_GROUP_COLORS) as TabGroupColor[]).map((color) => (
@@ -458,7 +486,7 @@ function GroupChip({
           >
             Ungroup all
           </button>
-        </div>
+        </AnchoredPopover>
       )}
     </div>
   )

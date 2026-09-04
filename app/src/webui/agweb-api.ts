@@ -154,6 +154,9 @@ export function createAgwebApi(ipcRenderer: IpcLike, host: HostCapabilities): Ag
       googleStatus: () => ipcRenderer.invoke(IpcChannels.profilesGoogleStatus),
       account: () => ipcRenderer.invoke(IpcChannels.profilesAccount)
     },
+    drops: {
+      write: (name, base64) => ipcRenderer.invoke(IpcChannels.dropsWrite, name, base64)
+    },
     bookmarks: {
       importFile: () => ipcRenderer.invoke(IpcChannels.bookmarksImportFile)
     },

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { SEARCH_ENGINES, type AppInfo, type AppSettings, type ClearableData } from '@shared/ipc'
 import { useShellStore } from '@/store'
+import { pickProfileImage } from '@/profile-image'
 
 /**
  * The Electron application settings — the ones that configure the app itself
@@ -155,6 +156,10 @@ export function ApplicationSettings(): React.JSX.Element {
             ))}
           </select>
         </div>
+      </Section>
+
+      <Section title="Profile picture">
+        <ProfilePicture settings={settings} onChange={setSettings} />
       </Section>
 
       <Section title="Downloads">
@@ -345,5 +350,65 @@ function Section({
       </h3>
       {children}
     </section>
+  )
+}
+
+/** Pick or clear the picture the profile button shows. */
+function ProfilePicture({
+  settings,
+  onChange
+}: {
+  settings: AppSettings
+  onChange: (next: AppSettings) => void
+}): React.JSX.Element {
+  const [error, setError] = useState<string | null>(null)
+  const image = settings.profileImage
+  return (
+    <div className="flex items-center gap-3 px-2 py-1.5">
+      {image ? (
+        <img
+          src={image}
+          alt=""
+          className="h-10 w-10 flex-none rounded-full object-cover"
+          data-testid="profile-image-preview"
+        />
+      ) : (
+        <span className="flex h-10 w-10 flex-none items-center justify-center rounded-full bg-[var(--wd-field)] text-[15px] text-[var(--wd-dim)]">
+          ?
+        </span>
+      )}
+      <span className="min-w-0 flex-1 text-[11px] leading-relaxed text-[var(--wd-dim)]">
+        Shown on the profile button. Any image works; it is cropped square and stored at 128px.
+      </span>
+      <button
+        onClick={() => {
+          void pickProfileImage().then((picked) => {
+            if (!picked) return
+            void window.agweb.appSettings
+              .write({ profileImage: picked })
+              .then(onChange)
+              .catch((err) => setError(String(err)))
+          })
+        }}
+        className="flex-none rounded-md border border-[var(--wd-glass-border)] px-2 py-1 text-[11px] text-[var(--wd-muted)] hover:bg-[var(--wd-hover)]"
+        data-testid="profile-image-choose"
+      >
+        Choose image…
+      </button>
+      {image && (
+        <button
+          onClick={() => {
+            void window.agweb.appSettings
+              .write({ profileImage: '' })
+              .then(onChange)
+              .catch((err) => setError(String(err)))
+          }}
+          className="flex-none rounded-md px-2 py-1 text-[11px] text-[var(--wd-dim)] hover:text-rose-500"
+        >
+          Remove
+        </button>
+      )}
+      {error && <span className="text-[10.5px] text-rose-500">{error}</span>}
+    </div>
   )
 }

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { TabStrip } from '@/components/TabStrip'
 import { AssistantPanel } from '@/components/AssistantPanel'
 import { AskButton } from '@/components/AskButton'
+import { openDroppedFile } from '@/drop-file'
 import { UtilitiesBar } from '@/components/UtilitiesBar'
 import { Toolbar } from '@/components/Toolbar'
 import { Stage } from '@/components/Stage'
@@ -224,8 +225,35 @@ export default function App(): React.JSX.Element {
   const assistantOpen = useShellStore((s) => s.assistantOpen)
   const blockDragging = useShellStore((s) => s.blockDragging)
 
+  // A file dropped anywhere on the shell opens in a tab. The start page and
+  // the Deck are chrome://webdeck, which refuses a file drop on its own, so a
+  // PDF dragged in simply vanished; Chromium's viewers render it once the
+  // browser is the one opening it.
+  const onWindowDrop = useCallback((event: React.DragEvent): void => {
+    const file = event.dataTransfer?.files?.[0]
+    if (!file) return
+    event.preventDefault()
+    // Never replace what is on screen: a dropped file gets its own tab, minted
+    // by openDroppedFile once it knows whether it needs a browser tab or a
+    // Document Studio one. It cleans up its own tab on failure; log the reason
+    // rather than letting a rejection go nowhere.
+    void openDroppedFile(file)
+      .then((result) => {
+        if (!result.ok) console.error('WebDeck: could not open the dropped file —', result.error)
+      })
+      .catch((error) => console.error('WebDeck: could not open the dropped file —', error))
+  }, [])
+
   return (
-    <div className="wd-shell flex h-full flex-col">
+    <div
+      className="wd-shell flex h-full flex-col"
+      onDragOver={(e) => {
+        // Only claim the drop when files are actually being carried; block and
+        // tab drags must keep reaching their own targets.
+        if (e.dataTransfer?.types?.includes('Files')) e.preventDefault()
+      }}
+      onDrop={onWindowDrop}
+    >
       {/* Chrome is flush with the top of the window and shares its ground, so
           there is no seam between the app and its title bar. Tabs occupy the
           title-bar row itself, inline with the traffic lights. */}

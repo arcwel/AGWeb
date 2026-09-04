@@ -33,8 +33,8 @@ let extraRoots: WorkspaceInfo[] = []
  *
  * A narrower grant than a root: attaching one file from the Desktop should not
  * hand the agent the Desktop. Like roots these last one session and are never
- * persisted, and like roots the only way to add one is a native dialog the
- * user drove.
+ * persisted, and like roots the only way to add one is a gesture the user
+ * drove — a native dialog, or dropping the file onto the window.
  */
 const grantedFiles = new Set<string>()
 

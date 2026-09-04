@@ -50,6 +50,8 @@ const HOST_OWNED: Record<string, string> = {
   'extensions:actions': 'Chromium owns extensions and what is pinned to the toolbar',
   'extensions:run-action': 'Chromium owns extensions and what is pinned to the toolbar',
   'profiles:account': 'Chromium owns Google sign-in and the account picture',
+  'browser:open-local-file': 'Chromium opens local files in its own viewers',
+  'browser:open-dropped-file': 'Chromium opens local files in its own viewers',
   'browser:get-setting-prefs': "Chromium's own PrefService — there is no profile behind the socket",
   'browser:set-setting-pref': "Chromium's own PrefService — there is no profile behind the socket",
   'browser:find': 'Chromium owns the find bar',

@@ -49,7 +49,8 @@ const FALLBACK_SETTINGS: AppSettings = {
   downloadPath: '',
   askWhereToSave: false,
   searchEngine: 'duckduckgo',
-  showAskButton: true
+  showAskButton: true,
+  profileImage: ''
 }
 
 /**

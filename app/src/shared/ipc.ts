@@ -34,6 +34,11 @@ export interface AppSettings {
   /** Show the Ask button in the title bar. On by default; some people want the
    *  title bar to hold tabs and nothing else. */
   showAskButton: boolean
+  /** A picture the user chose for the profile button, as a small square PNG
+   *  data URL. Empty means fall back to the browser's own avatar. Kept here
+   *  rather than in Chromium's profile because Chromium only offers its own
+   *  set of illustrations, and only a signed-in account brings a photo. */
+  profileImage: string
 }
 
 /** The search engines the address bar can use. `%s` is the query slot. */
@@ -670,6 +675,9 @@ export const IpcChannels = {
   profilesRemove: 'profiles:remove',
   profilesGoogleStatus: 'profiles:google-status',
   profilesAccount: 'profiles:account',
+  dropsWrite: 'drops:write',
+  browserOpenLocalFile: 'browser:open-local-file',
+  browserOpenDroppedFile: 'browser:open-dropped-file',
   browserGetSettingPrefs: 'browser:get-setting-prefs',
   browserSetSettingPref: 'browser:set-setting-pref',
   extensionsActions: 'extensions:actions',
@@ -1051,6 +1059,16 @@ export interface AgwebApi {
     /** The signed-in Google account behind the profile button, from the
      *  browser itself. Only meaningful on the fork. */
     account(): Promise<BrowserAccountInfo>
+  }
+  /** Stage a file dropped onto the shell so the browser can open it. Returns
+   *  the bare name the browser opens it by. */
+  drops: {
+    /** Stage a dropped file. `docPath` is set for a document Document Studio
+     *  should open; `name` for anything the browser opens itself. */
+    write(
+      name: string,
+      base64: string
+    ): Promise<{ name?: string; docPath?: string; error?: string }>
   }
   /** Read a bookmarks export file the user picks (HTML or JSON) as text. */
   bookmarks: {

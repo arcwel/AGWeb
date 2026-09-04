@@ -54,15 +54,19 @@ function resolveInWorkspace(rel: string, root?: string | null): string | null {
   }
 
   const roots = workspaceRoots()
-  if (roots.length === 0) return null
 
   if (isAbsolute(rel)) {
     const full = resolve(rel)
     if (roots.some((candidate) => isInside(full, candidate.path))) return full
-    // A single file the user attached through a picker. Narrower than a root:
-    // attaching one file from the Desktop does not hand over the Desktop.
+    // A single file the user attached through a picker, or dropped onto the
+    // window. Narrower than a root: attaching one file from the Desktop does
+    // not hand over the Desktop. Checked before the "no workspace" refusal
+    // below, because a granted file is granted whether or not a project is
+    // open — dropping a document into an empty window has to work.
     return isGrantedFile(full) ? full : null
   }
+
+  if (roots.length === 0) return null
 
   const base = roots[0].path
   const full = resolve(base, rel)

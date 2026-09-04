@@ -7,6 +7,7 @@
 #include <string_view>
 
 #include "base/command_line.h"
+#include "base/environment.h"
 #include "base/files/file_util.h"
 #include "base/json/json_reader.h"
 #include "base/logging.h"
@@ -39,6 +40,12 @@ constexpr base::TimeDelta kPollInterval = base::Milliseconds(50);
 // The port file holds one small JSON object; anything larger is not ours.
 constexpr size_t kMaxPortFileBytes = 1024;
 
+// The core's per-user data directory, and the environment variable that moves
+// it. Both must match the core's own defaults (see node-env.ts).
+constexpr char kUserDataEnvVar[] = "WEBDECK_USER_DATA";
+constexpr base::FilePath::CharType kUserDataDirName[] =
+    FILE_PATH_LITERAL(".webdeck");
+
 }  // namespace
 
 // static
@@ -67,6 +74,20 @@ base::FilePath WebDeckCoreService::ResolveCorePath() const {
     return base::FilePath();
   }
   return exe.DirName().Append(kCoreBinary);
+}
+
+// static
+base::FilePath WebDeckCoreService::UserDataDir() {
+  std::unique_ptr<base::Environment> env = base::Environment::Create();
+  if (std::optional<std::string> override = env->GetVar(kUserDataEnvVar);
+      override && !override->empty()) {
+    return base::FilePath::FromUTF8Unsafe(*override);
+  }
+  base::FilePath home;
+  if (!base::PathService::Get(base::DIR_HOME, &home)) {
+    return base::FilePath();
+  }
+  return home.Append(kUserDataDirName);
 }
 
 // static
@@ -144,6 +165,13 @@ void WebDeckCoreService::EnsureStarted() {
   // with anything else on the machine.
   command_line.AppendSwitchASCII("port", "0");
   command_line.AppendSwitchPath("port-file", port_file);
+  // Say the data directory out loud instead of letting the core default to it,
+  // so the browser and the core cannot disagree about where a staged file
+  // drop lives. UserDataDir() returns the core's own default, so this changes
+  // nothing for an existing profile.
+  if (const base::FilePath user_data = UserDataDir(); !user_data.empty()) {
+    command_line.AppendSwitchPath("user-data", user_data);
+  }
 
   base::LaunchOptions options;
   options.current_directory = core.DirName();

@@ -451,10 +451,26 @@ function serializeTabSession(state: {
 /** Rebuild a saved tab strip with fresh ids; pages lazy-load on activation.
  *  Pure: the localStorage read and the "restore tabs" gate live in the callers,
  *  so named snapshots reuse this exact re-minting path. */
+function isBlankSavedTab(tab: TabSessionSnapshot['tabs'][number]): boolean {
+  if (tab.kind === 'doc') return false
+  const url = (tab.url ?? '').trim()
+  return url === '' || url === 'about:blank' || url === 'chrome://newtab/'
+}
+
 function rebuildTabSession(
   snap: TabSessionSnapshot
 ): { tabs: BrowserTab[]; activeTabId: string; tabGroups: Record<string, TabGroup> } | null {
   if (!Array.isArray(snap.tabs) || snap.tabs.length === 0) return null
+  // A blank tab is not worth restoring: it carries nothing, and a session that
+  // accumulated five of them reopens as five empty tabs to close by hand. The
+  // window always opens with one anyway.
+  const kept = snap.tabs.filter((t) => !isBlankSavedTab(t))
+  if (kept.length === 0) return null
+  snap = {
+    ...snap,
+    tabs: kept,
+    activeIndex: Math.min(Math.max(0, snap.activeIndex ?? 0), kept.length - 1)
+  }
   // Remint group ids so a restored group never shares an id with one minted
   // this session; carry the old→new mapping to re-tag the rebuilt tabs.
   const groupIdMap = new Map<string, string>()

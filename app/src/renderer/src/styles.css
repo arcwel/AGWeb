@@ -573,6 +573,25 @@ body,
 .doc-md ol {
   padding-left: 1.6em;
 }
+/* Tailwind's preflight strips list markers from every ul/ol. That is right for
+   the app's own menus and wrong for a rendered document, where a bullet list
+   without bullets reads as loose lines. Put them back inside the reader only. */
+.doc-md ul {
+  list-style: disc outside;
+}
+.doc-md ol {
+  list-style: decimal outside;
+}
+.doc-md ul ul {
+  list-style: circle outside;
+}
+.doc-md ol ol {
+  list-style: lower-alpha outside;
+}
+/* A GitHub task list carries its own checkboxes; a marker beside them is noise. */
+.doc-md li.task-list-item {
+  list-style: none;
+}
 .doc-md li {
   margin: 0.25em 0;
 }

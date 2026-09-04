@@ -12,6 +12,7 @@
 #include "base/memory/scoped_refptr.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "base/notimplemented.h"
+#include "base/strings/string_split.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
 #include "base/values.h"
@@ -25,6 +26,7 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/shell_integration.h"
 #include "chrome/browser/ui/browser_commands.h"
+#include "chrome/browser/webdeck/webdeck_core_service.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface_iterator.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
@@ -38,6 +40,7 @@
 #include "chrome/browser/webdeck/webdeck_shell_host.h"
 #include "base/base64.h"
 #include "google_apis/google_api_keys.h"
+#include "net/base/filename_util.h"
 #include "chrome/browser/extensions/extension_action_runner.h"
 #include "extensions/browser/extension_action_manager.h"
 #include "base/json/json_reader.h"
@@ -1461,8 +1464,93 @@ void WebDeckShell::PickPaths(int32_t mode, PickPathsCallback callback) {
                                   base::FilePath::StringType(), owner);
 }
 
+// The directory the core writes dropped files into. Both sides agree on this
+// path; nothing outside it can be opened by name.
+constexpr base::FilePath::CharType kDropDirName[] =
+    FILE_PATH_LITERAL("WebDeck Drops");
+
+bool WebDeckShell::NavigateToLocalFile(int32_t tab_id,
+                                       const base::FilePath& path) {
+  content::WebContents* contents = GetTabById(tab_id);
+  if (!contents || path.empty()) {
+    return false;
+  }
+  const GURL url = net::FilePathToFileURL(path);
+  if (!url.is_valid()) {
+    return false;
+  }
+  // Deliberately not through IsAllowedShellUrl: that gate exists to stop the
+  // PAGE naming a local path, and neither caller here took one from the page.
+  contents->GetController().LoadURL(url, content::Referrer(),
+                                    ui::PAGE_TRANSITION_AUTO_TOPLEVEL,
+                                    std::string());
+  return true;
+}
+
+void WebDeckShell::OpenLocalFile(int32_t tab_id,
+                                 OpenLocalFileCallback callback) {
+  if (select_file_dialog_) {
+    std::move(callback).Run(false);
+    return;
+  }
+  BrowserWindowInterface* window = GetWindow();
+  gfx::NativeWindow owner =
+      window ? window->GetWindow()->GetNativeWindow() : gfx::NativeWindow();
+  ui::SelectFileDialog::FileTypeInfo file_types;
+  file_types.allowed_paths = ui::SelectFileDialog::FileTypeInfo::NATIVE_PATH;
+  file_types.include_all_files = true;
+  open_local_file_callback_ = std::move(callback);
+  open_local_file_tab_ = tab_id;
+  select_file_dialog_ = ui::SelectFileDialog::Create(
+      this, std::make_unique<ChromeSelectFilePolicy>(shell_contents_));
+  select_file_dialog_->SelectFile(ui::SelectFileDialog::SELECT_OPEN_FILE,
+                                  u"Open File", base::FilePath(), &file_types,
+                                  0, base::FilePath::StringType(), owner);
+}
+
+void WebDeckShell::OpenDroppedFile(int32_t tab_id,
+                                   const std::string& name,
+                                   OpenDroppedFileCallback callback) {
+  // The core wrote the file under ITS data directory, not the Chromium
+  // profile. Those are different places, and resolving against the profile is
+  // why a dropped PDF opened an error page instead of the PDF viewer.
+  const base::FilePath user_data = WebDeckCoreService::UserDataDir();
+  if (user_data.empty()) {
+    std::move(callback).Run(false);
+    return;
+  }
+  // "<stage>/<file>" and nothing else. Each drop gets its own stage directory
+  // so the file keeps the name the user dropped, which is the name the PDF
+  // viewer shows. Both segments are re-validated here rather than trusted:
+  // this string reaches us from the page, and the whole point of opening by
+  // name is that the page cannot choose a path.
+  const std::vector<std::string> segments = base::SplitString(
+      name, "/", base::TRIM_WHITESPACE, base::SPLIT_WANT_ALL);
+  if (segments.size() != 2) {
+    std::move(callback).Run(false);
+    return;
+  }
+  base::FilePath path = user_data.Append(kDropDirName);
+  for (const std::string& segment : segments) {
+    const base::FilePath candidate = base::FilePath::FromUTF8Unsafe(segment);
+    if (segment.empty() || candidate.IsAbsolute() ||
+        candidate.ReferencesParent() || candidate != candidate.BaseName()) {
+      std::move(callback).Run(false);
+      return;
+    }
+    path = path.Append(candidate);
+  }
+  std::move(callback).Run(NavigateToLocalFile(tab_id, path));
+}
+
 void WebDeckShell::FileSelected(const ui::SelectedFileInfo& file, int index) {
   select_file_dialog_ = nullptr;
+  if (open_local_file_callback_) {
+    const bool opened =
+        NavigateToLocalFile(open_local_file_tab_, file.file_path);
+    std::move(open_local_file_callback_).Run(opened);
+    return;
+  }
   if (pick_paths_callback_) {
     std::move(pick_paths_callback_).Run({file.file_path.value()});
   }
@@ -1471,6 +1559,13 @@ void WebDeckShell::FileSelected(const ui::SelectedFileInfo& file, int index) {
 void WebDeckShell::MultiFilesSelected(
     const std::vector<ui::SelectedFileInfo>& files) {
   select_file_dialog_ = nullptr;
+  if (open_local_file_callback_) {
+    const bool opened =
+        !files.empty() &&
+        NavigateToLocalFile(open_local_file_tab_, files.front().file_path);
+    std::move(open_local_file_callback_).Run(opened);
+    return;
+  }
   std::vector<std::string> paths;
   paths.reserve(files.size());
   for (const ui::SelectedFileInfo& file : files) {
@@ -1483,6 +1578,10 @@ void WebDeckShell::MultiFilesSelected(
 
 void WebDeckShell::FileSelectionCanceled() {
   select_file_dialog_ = nullptr;
+  if (open_local_file_callback_) {
+    std::move(open_local_file_callback_).Run(false);
+    return;
+  }
   if (pick_paths_callback_) {
     std::move(pick_paths_callback_).Run({});
   }

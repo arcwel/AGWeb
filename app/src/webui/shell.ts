@@ -65,6 +65,9 @@ interface ShellRemote {
   setSettingPref(name: string, jsonValue: string): Promise<{ ok: boolean }>
   // Who is signed in, for the profile button.
   getAccountInfo(): Promise<{ info: BrowserAccountInfo }>
+  // Open a local file in a tab — the browser picks the path, never the page.
+  openLocalFile(tabId: number): Promise<{ opened: boolean }>
+  openDroppedFile(tabId: number, name: string): Promise<{ opened: boolean }>
   find(tabId: number, query: string, forward: boolean): void
   stopFind(tabId: number): void
   setZoom(tabId: number, level: number): Promise<{ applied: number }>
@@ -244,17 +247,38 @@ interface ShellClientReceiver {
   $: { bindNewPipeAndPassRemote(): unknown }
 }
 
-let clientBound = false
+let shellClientPromise: Promise<void> | null = null
+
+/**
+ * Resolved once the browser has pushed its first tab set (SetClient triggers
+ * that push). Callers that must know the window's existing tabs before acting
+ * wait on it — see `browserCreate` and the seed tab.
+ */
+let markFirstTabSnapshot: (() => void) | null = null
+const firstTabSnapshot = new Promise<void>((resolve) => {
+  markFirstTabSnapshot = resolve
+})
+
+/** How long a caller waits for that first push before giving up on it. Off the
+ *  fork nothing ever pushes, and the shell must not stall on a browser that is
+ *  not there. */
+const FIRST_SNAPSHOT_TIMEOUT_MS = 1500
 
 /**
  * Register a ShellClient with the browser so it pushes navigation state back
  * (url/title/back-forward/loading). Bound once. If Mojo is unavailable the shell
  * simply gets no live state — the address bar still reflects what the user
  * typed — rather than throwing.
+ *
+ * Resolves only once the browser's first tab set has been processed, so a
+ * caller that awaits this knows what tabs the window already has.
  */
-async function ensureShellClient(): Promise<void> {
-  if (clientBound) return
-  clientBound = true
+function ensureShellClient(): Promise<void> {
+  if (!shellClientPromise) shellClientPromise = bindShellClient()
+  return shellClientPromise
+}
+
+async function bindShellClient(): Promise<void> {
   try {
     const shell = await getShell()
     const mod = (await import(/* @vite-ignore */ BINDINGS_URL)) as {
@@ -315,6 +339,9 @@ async function ensureShellClient(): Promise<void> {
           if (shellId !== undefined) unmapTab(shellId)
         }
         if (seedHandle !== null && !seen.has(seedHandle)) seedHandle = null
+        // The window's tab set is now known; anyone waiting to act on it can go.
+        markFirstTabSnapshot?.()
+        markFirstTabSnapshot = null
       },
       onTabNavigationStateChanged(info) {
         const state: BrowserTabState = {
@@ -348,6 +375,23 @@ async function ensureShellClient(): Promise<void> {
       }
     })
     shell.setClient(receiver.$.bindNewPipeAndPassRemote())
+    // SetClient makes the browser push its tab list. Wait for it, so a caller
+    // learns the window's seed tab before deciding to open another one.
+    //
+    // Losing this race is not fatal but it is not free either: the seed tab
+    // goes unrecognised, a second real tab is opened, and the seed comes back
+    // as a phantom "about:blank". That degradation is invisible from the
+    // outside, so say it out loud rather than leaving someone to rediscover it.
+    const timedOut = await Promise.race([
+      firstTabSnapshot.then(() => false),
+      new Promise<boolean>((resolve) => setTimeout(() => resolve(true), FIRST_SNAPSHOT_TIMEOUT_MS))
+    ])
+    if (timedOut) {
+      console.warn(
+        `WebDeck shell: the browser did not push its tab list within ${FIRST_SNAPSHOT_TIMEOUT_MS}ms; ` +
+          'a blank tab may appear beside the first one.'
+      )
+    }
   } catch (err) {
     // No live browser state on a non-fork host; leave clientBound set so we do
     // not retry a failure the user cannot act on. Off-fork the reason is the
@@ -436,10 +480,15 @@ export const SHELL_BROWSER: Record<string, (...args: unknown[]) => Promise<unkno
   // Open a real tab and remember the shell id -> handle mapping.
   [IpcChannels.browserCreate]: async (shellId) => {
     const id = String(shellId)
+    // Learn the window's tabs FIRST. A create issued before the browser's
+    // first push — which is what a restored session does, because it opens a
+    // page the moment the strip is rebuilt — used to miss the seed tab, open a
+    // second real tab, and leave the seed to be adopted as a phantom
+    // "about:blank". That is the blank tab that came back on every restore.
+    await ensureShellClient()
     // The first shell tab to need a real tab takes the window's seed tab
     // (already open, already active) instead of opening a second one.
     if (seedHandle !== null && !seedClaimed) {
-      await ensureShellClient()
       seedClaimed = true
       mapTab(id, seedHandle)
       return
@@ -594,6 +643,12 @@ export const SHELL_BROWSER: Record<string, (...args: unknown[]) => Promise<unkno
       .then((r) => r.showedPopup),
   [IpcChannels.profilesAccount]: async () =>
     (await getShell()).getAccountInfo().then((r) => r.info),
+  // Local files. Chromium's own viewers render them — its PDF viewer, with
+  // annotation, for a PDF.
+  [IpcChannels.browserOpenLocalFile]: async (shellId) =>
+    (await getShell()).openLocalFile(handleFor(shellId)).then((r) => r.opened),
+  [IpcChannels.browserOpenDroppedFile]: async (shellId, name) =>
+    (await getShell()).openDroppedFile(handleFor(shellId), String(name)).then((r) => r.opened),
   // Chromium's settings. The renderer names prefs; the browser decides which
   // it will answer for.
   [IpcChannels.browserGetSettingPrefs]: async (names) =>
@@ -665,6 +720,10 @@ export interface BrowserPrefsApi {
   /** Write one. False when the name is refused, the type is wrong, or policy
    *  controls it. */
   setSettingPref(name: string, value: boolean | number | string): Promise<boolean>
+  /** Show the browser's open panel and load whatever the user picks. */
+  openLocalFile(tabId: string): Promise<boolean>
+  /** Open a file the core staged from a drop, by its bare name. */
+  openDroppedFile(tabId: string, name: string): Promise<boolean>
   getBlockThirdPartyCookies(): Promise<boolean>
   setBlockThirdPartyCookies(blocked: boolean): Promise<void>
   getSendDoNotTrack(): Promise<boolean>
@@ -694,6 +753,10 @@ export const browserPrefs: BrowserPrefsApi = {
       name,
       JSON.stringify(value)
     ) as Promise<boolean>,
+  openLocalFile: (tabId) =>
+    SHELL_BROWSER[IpcChannels.browserOpenLocalFile](tabId) as Promise<boolean>,
+  openDroppedFile: (tabId, name) =>
+    SHELL_BROWSER[IpcChannels.browserOpenDroppedFile](tabId, name) as Promise<boolean>,
   getBlockThirdPartyCookies: () =>
     SHELL_BROWSER[IpcChannels.browserGetCookieBlock]() as Promise<boolean>,
   setBlockThirdPartyCookies: async (blocked) => {

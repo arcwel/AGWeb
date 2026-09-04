@@ -118,6 +118,10 @@ class WebDeckShell : public mojom::Shell,
   void FocusWindow(int32_t window_id) override;
   void CloseWindow(int32_t window_id) override;
   void PickPaths(int32_t mode, PickPathsCallback callback) override;
+  void OpenLocalFile(int32_t tab_id, OpenLocalFileCallback callback) override;
+  void OpenDroppedFile(int32_t tab_id,
+                       const std::string& name,
+                       OpenDroppedFileCallback callback) override;
 
   // ui::SelectFileDialog::Listener: the PickPaths panel answered.
   void FileSelected(const ui::SelectedFileInfo& file, int index) override;
@@ -190,6 +194,15 @@ class WebDeckShell : public mojom::Shell,
   // The open PickPaths panel and the reply it owes. One at a time: a second
   // PickPaths while this is set answers empty at once.
   scoped_refptr<ui::SelectFileDialog> select_file_dialog_;
+  // Set while the open panel is being used to open a file in a tab rather than
+  // to return paths to the page. The two share one dialog, so the completion
+  // handlers branch on which of these is pending.
+  // Navigate `tab_id` to a local file the BROWSER resolved. Returns false
+  // when the tab is gone or the path is not a file URL.
+  bool NavigateToLocalFile(int32_t tab_id, const base::FilePath& path);
+
+  OpenLocalFileCallback open_local_file_callback_;
+  int32_t open_local_file_tab_ = 0;
   PickPathsCallback pick_paths_callback_;
   // The window this registered a command forwarder with, so the destructor
   // clears exactly that registration.

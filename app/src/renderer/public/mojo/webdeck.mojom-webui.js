@@ -1,6 +1,6 @@
-// GENERATED from out/webdeck by scripts/gen-mojo-bindings.mjs — do not edit.
+// GENERATED from out/webdeck-release by scripts/gen-mojo-bindings.mjs — do not edit.
 
-// ../../../../../Volumes/BG_Dev/webdeck-chromium/chromium/src/out/webdeck/gen/chrome/browser/ui/webui/webdeck/webdeck.mojom-webui.ts
+// ../../../../../Volumes/BG_Dev/webdeck-chromium/chromium/src/out/webdeck-release/gen/chrome/browser/ui/webui/webdeck/webdeck.mojom-webui.ts
 import { mojo } from "//resources/mojo/mojo/public/js/bindings.js";
 import {
   RectSpec as gfx_mojom_RectSpec
@@ -32,7 +32,7 @@ var AgentTabsRemote = class {
   }
   openTab(url) {
     return this.proxy.sendMessage(
-      0,
+      102408508,
       AgentTabs_OpenTab_ParamsSpec.$,
       AgentTabs_OpenTab_ResponseParamsSpec.$,
       [
@@ -43,7 +43,7 @@ var AgentTabsRemote = class {
   }
   sendCommand(tabId, method, paramsJson) {
     return this.proxy.sendMessage(
-      1,
+      2140779076,
       AgentTabs_SendCommand_ParamsSpec.$,
       AgentTabs_SendCommand_ResponseParamsSpec.$,
       [
@@ -56,7 +56,7 @@ var AgentTabsRemote = class {
   }
   closeTab(tabId) {
     return this.proxy.sendMessage(
-      2,
+      845785937,
       AgentTabs_CloseTab_ParamsSpec.$,
       AgentTabs_CloseTab_ResponseParamsSpec.$,
       [
@@ -67,7 +67,7 @@ var AgentTabsRemote = class {
   }
   setClient(client) {
     this.proxy.sendMessage(
-      3,
+      777262655,
       AgentTabs_SetClient_ParamsSpec.$,
       null,
       [
@@ -87,28 +87,28 @@ var AgentTabsReceiver = class {
     );
     this.$ = new mojo.internal.interfaceSupport.InterfaceReceiverHelper(this.helper_internal_);
     this.helper_internal_.registerHandler(
-      0,
+      102408508,
       AgentTabs_OpenTab_ParamsSpec.$,
       AgentTabs_OpenTab_ResponseParamsSpec.$,
       impl.openTab.bind(impl),
       false
     );
     this.helper_internal_.registerHandler(
-      1,
+      2140779076,
       AgentTabs_SendCommand_ParamsSpec.$,
       AgentTabs_SendCommand_ResponseParamsSpec.$,
       impl.sendCommand.bind(impl),
       false
     );
     this.helper_internal_.registerHandler(
-      2,
+      845785937,
       AgentTabs_CloseTab_ParamsSpec.$,
       AgentTabs_CloseTab_ResponseParamsSpec.$,
       impl.closeTab.bind(impl),
       false
     );
     this.helper_internal_.registerHandler(
-      3,
+      777262655,
       AgentTabs_SetClient_ParamsSpec.$,
       null,
       impl.setClient.bind(impl),
@@ -151,7 +151,7 @@ var AgentTabsCallbackRouter = class {
       this.router_
     );
     this.helper_internal_.registerHandler(
-      0,
+      102408508,
       AgentTabs_OpenTab_ParamsSpec.$,
       AgentTabs_OpenTab_ResponseParamsSpec.$,
       this.openTab.createReceiverHandler(
@@ -164,7 +164,7 @@ var AgentTabsCallbackRouter = class {
       this.router_
     );
     this.helper_internal_.registerHandler(
-      1,
+      2140779076,
       AgentTabs_SendCommand_ParamsSpec.$,
       AgentTabs_SendCommand_ResponseParamsSpec.$,
       this.sendCommand.createReceiverHandler(
@@ -177,7 +177,7 @@ var AgentTabsCallbackRouter = class {
       this.router_
     );
     this.helper_internal_.registerHandler(
-      2,
+      845785937,
       AgentTabs_CloseTab_ParamsSpec.$,
       AgentTabs_CloseTab_ResponseParamsSpec.$,
       this.closeTab.createReceiverHandler(
@@ -190,7 +190,7 @@ var AgentTabsCallbackRouter = class {
       this.router_
     );
     this.helper_internal_.registerHandler(
-      3,
+      777262655,
       AgentTabs_SetClient_ParamsSpec.$,
       null,
       this.setClient.createReceiverHandler(
@@ -236,7 +236,7 @@ var AgentTabsClientRemote = class {
   }
   onEvent(tabId, method, paramsJson) {
     this.proxy.sendMessage(
-      0,
+      1095332924,
       AgentTabsClient_OnEvent_ParamsSpec.$,
       null,
       [
@@ -249,7 +249,7 @@ var AgentTabsClientRemote = class {
   }
   onDetached(tabId) {
     this.proxy.sendMessage(
-      1,
+      1471586999,
       AgentTabsClient_OnDetached_ParamsSpec.$,
       null,
       [
@@ -269,14 +269,14 @@ var AgentTabsClientReceiver = class {
     );
     this.$ = new mojo.internal.interfaceSupport.InterfaceReceiverHelper(this.helper_internal_);
     this.helper_internal_.registerHandler(
-      0,
+      1095332924,
       AgentTabsClient_OnEvent_ParamsSpec.$,
       null,
       impl.onEvent.bind(impl),
       false
     );
     this.helper_internal_.registerHandler(
-      1,
+      1471586999,
       AgentTabsClient_OnDetached_ParamsSpec.$,
       null,
       impl.onDetached.bind(impl),
@@ -317,7 +317,7 @@ var AgentTabsClientCallbackRouter = class {
       this.router_
     );
     this.helper_internal_.registerHandler(
-      0,
+      1095332924,
       AgentTabsClient_OnEvent_ParamsSpec.$,
       null,
       this.onEvent.createReceiverHandler(
@@ -330,7 +330,7 @@ var AgentTabsClientCallbackRouter = class {
       this.router_
     );
     this.helper_internal_.registerHandler(
-      1,
+      1471586999,
       AgentTabsClient_OnDetached_ParamsSpec.$,
       null,
       this.onDetached.createReceiverHandler(
@@ -376,7 +376,7 @@ var ShellRemote = class {
   }
   setStageBounds(stage) {
     this.proxy.sendMessage(
-      0,
+      502218115,
       Shell_SetStageBounds_ParamsSpec.$,
       null,
       [
@@ -387,7 +387,7 @@ var ShellRemote = class {
   }
   setSplit(enabled, primaryTabId, secondaryTabId) {
     this.proxy.sendMessage(
-      1,
+      978132734,
       Shell_SetSplit_ParamsSpec.$,
       null,
       [
@@ -400,7 +400,7 @@ var ShellRemote = class {
   }
   setSecondaryStageBounds(stage) {
     this.proxy.sendMessage(
-      2,
+      139034168,
       Shell_SetSecondaryStageBounds_ParamsSpec.$,
       null,
       [
@@ -411,7 +411,7 @@ var ShellRemote = class {
   }
   createTab(url) {
     return this.proxy.sendMessage(
-      3,
+      1687051038,
       Shell_CreateTab_ParamsSpec.$,
       Shell_CreateTab_ResponseParamsSpec.$,
       [
@@ -422,7 +422,7 @@ var ShellRemote = class {
   }
   selectTab(tabId) {
     this.proxy.sendMessage(
-      4,
+      925686128,
       Shell_SelectTab_ParamsSpec.$,
       null,
       [
@@ -433,7 +433,7 @@ var ShellRemote = class {
   }
   closeTab(tabId) {
     this.proxy.sendMessage(
-      5,
+      1797287965,
       Shell_CloseTab_ParamsSpec.$,
       null,
       [
@@ -444,7 +444,7 @@ var ShellRemote = class {
   }
   navigate(tabId, url) {
     this.proxy.sendMessage(
-      6,
+      1473720033,
       Shell_Navigate_ParamsSpec.$,
       null,
       [
@@ -456,7 +456,7 @@ var ShellRemote = class {
   }
   reload(tabId) {
     this.proxy.sendMessage(
-      7,
+      1826718318,
       Shell_Reload_ParamsSpec.$,
       null,
       [
@@ -467,7 +467,7 @@ var ShellRemote = class {
   }
   goBack(tabId) {
     this.proxy.sendMessage(
-      8,
+      1595636669,
       Shell_GoBack_ParamsSpec.$,
       null,
       [
@@ -478,7 +478,7 @@ var ShellRemote = class {
   }
   goForward(tabId) {
     this.proxy.sendMessage(
-      9,
+      479597812,
       Shell_GoForward_ParamsSpec.$,
       null,
       [
@@ -489,7 +489,7 @@ var ShellRemote = class {
   }
   stop(tabId) {
     this.proxy.sendMessage(
-      10,
+      2106477657,
       Shell_Stop_ParamsSpec.$,
       null,
       [
@@ -500,7 +500,7 @@ var ShellRemote = class {
   }
   setStageCornerRadius(radius) {
     this.proxy.sendMessage(
-      11,
+      1320450855,
       Shell_SetStageCornerRadius_ParamsSpec.$,
       null,
       [
@@ -511,7 +511,7 @@ var ShellRemote = class {
   }
   find(tabId, query, forward) {
     this.proxy.sendMessage(
-      12,
+      631760253,
       Shell_Find_ParamsSpec.$,
       null,
       [
@@ -524,7 +524,7 @@ var ShellRemote = class {
   }
   stopFind(tabId) {
     this.proxy.sendMessage(
-      13,
+      511445982,
       Shell_StopFind_ParamsSpec.$,
       null,
       [
@@ -535,7 +535,7 @@ var ShellRemote = class {
   }
   setZoom(tabId, level) {
     return this.proxy.sendMessage(
-      14,
+      252080144,
       Shell_SetZoom_ParamsSpec.$,
       Shell_SetZoom_ResponseParamsSpec.$,
       [
@@ -547,7 +547,7 @@ var ShellRemote = class {
   }
   print(tabId) {
     this.proxy.sendMessage(
-      15,
+      713335880,
       Shell_Print_ParamsSpec.$,
       null,
       [
@@ -558,7 +558,7 @@ var ShellRemote = class {
   }
   openDevTools(tabId) {
     this.proxy.sendMessage(
-      16,
+      216270657,
       Shell_OpenDevTools_ParamsSpec.$,
       null,
       [
@@ -569,7 +569,7 @@ var ShellRemote = class {
   }
   togglePictureInPicture(tabId) {
     this.proxy.sendMessage(
-      17,
+      494096774,
       Shell_TogglePictureInPicture_ParamsSpec.$,
       null,
       [
@@ -580,7 +580,7 @@ var ShellRemote = class {
   }
   getPageText(tabId) {
     return this.proxy.sendMessage(
-      18,
+      790647368,
       Shell_GetPageText_ParamsSpec.$,
       Shell_GetPageText_ResponseParamsSpec.$,
       [
@@ -591,7 +591,7 @@ var ShellRemote = class {
   }
   getBlockThirdPartyCookies() {
     return this.proxy.sendMessage(
-      19,
+      1813493965,
       Shell_GetBlockThirdPartyCookies_ParamsSpec.$,
       Shell_GetBlockThirdPartyCookies_ResponseParamsSpec.$,
       [],
@@ -600,7 +600,7 @@ var ShellRemote = class {
   }
   setBlockThirdPartyCookies(blocked) {
     this.proxy.sendMessage(
-      20,
+      1427666857,
       Shell_SetBlockThirdPartyCookies_ParamsSpec.$,
       null,
       [
@@ -611,7 +611,7 @@ var ShellRemote = class {
   }
   getSendDoNotTrack() {
     return this.proxy.sendMessage(
-      21,
+      278838813,
       Shell_GetSendDoNotTrack_ParamsSpec.$,
       Shell_GetSendDoNotTrack_ResponseParamsSpec.$,
       [],
@@ -620,7 +620,7 @@ var ShellRemote = class {
   }
   setSendDoNotTrack(enabled) {
     this.proxy.sendMessage(
-      22,
+      285803864,
       Shell_SetSendDoNotTrack_ParamsSpec.$,
       null,
       [
@@ -631,7 +631,7 @@ var ShellRemote = class {
   }
   getHttpsOnlyMode() {
     return this.proxy.sendMessage(
-      23,
+      2102454249,
       Shell_GetHttpsOnlyMode_ParamsSpec.$,
       Shell_GetHttpsOnlyMode_ResponseParamsSpec.$,
       [],
@@ -640,7 +640,7 @@ var ShellRemote = class {
   }
   setHttpsOnlyMode(enabled) {
     this.proxy.sendMessage(
-      24,
+      836490945,
       Shell_SetHttpsOnlyMode_ParamsSpec.$,
       null,
       [
@@ -651,7 +651,7 @@ var ShellRemote = class {
   }
   getPreloadPages() {
     return this.proxy.sendMessage(
-      25,
+      1673103613,
       Shell_GetPreloadPages_ParamsSpec.$,
       Shell_GetPreloadPages_ResponseParamsSpec.$,
       [],
@@ -660,7 +660,7 @@ var ShellRemote = class {
   }
   setPreloadPages(enabled) {
     this.proxy.sendMessage(
-      26,
+      1374262588,
       Shell_SetPreloadPages_ParamsSpec.$,
       null,
       [
@@ -671,7 +671,7 @@ var ShellRemote = class {
   }
   getAdblockEnabled() {
     return this.proxy.sendMessage(
-      27,
+      723369275,
       Shell_GetAdblockEnabled_ParamsSpec.$,
       Shell_GetAdblockEnabled_ResponseParamsSpec.$,
       [],
@@ -680,7 +680,7 @@ var ShellRemote = class {
   }
   setAdblockEnabled(enabled) {
     this.proxy.sendMessage(
-      28,
+      32241856,
       Shell_SetAdblockEnabled_ParamsSpec.$,
       null,
       [
@@ -691,7 +691,7 @@ var ShellRemote = class {
   }
   getAdblockBlockedCount() {
     return this.proxy.sendMessage(
-      29,
+      821112473,
       Shell_GetAdblockBlockedCount_ParamsSpec.$,
       Shell_GetAdblockBlockedCount_ResponseParamsSpec.$,
       [],
@@ -700,7 +700,7 @@ var ShellRemote = class {
   }
   clearBrowsingData(cookies, cache, history, timeRange) {
     return this.proxy.sendMessage(
-      30,
+      73501288,
       Shell_ClearBrowsingData_ParamsSpec.$,
       Shell_ClearBrowsingData_ResponseParamsSpec.$,
       [
@@ -714,7 +714,7 @@ var ShellRemote = class {
   }
   getDefaultBrowserState() {
     return this.proxy.sendMessage(
-      31,
+      1839527027,
       Shell_GetDefaultBrowserState_ParamsSpec.$,
       Shell_GetDefaultBrowserState_ResponseParamsSpec.$,
       [],
@@ -723,16 +723,71 @@ var ShellRemote = class {
   }
   setAsDefaultBrowser() {
     return this.proxy.sendMessage(
-      32,
+      1142821493,
       Shell_SetAsDefaultBrowser_ParamsSpec.$,
       Shell_SetAsDefaultBrowser_ResponseParamsSpec.$,
       [],
       false
     );
   }
+  getExtensionActions(tabId) {
+    return this.proxy.sendMessage(
+      1150953122,
+      Shell_GetExtensionActions_ParamsSpec.$,
+      Shell_GetExtensionActions_ResponseParamsSpec.$,
+      [
+        tabId
+      ],
+      false
+    );
+  }
+  runExtensionAction(tabId, extensionId) {
+    return this.proxy.sendMessage(
+      980272239,
+      Shell_RunExtensionAction_ParamsSpec.$,
+      Shell_RunExtensionAction_ResponseParamsSpec.$,
+      [
+        tabId,
+        extensionId
+      ],
+      false
+    );
+  }
+  getSettingPrefs(names) {
+    return this.proxy.sendMessage(
+      1113325693,
+      Shell_GetSettingPrefs_ParamsSpec.$,
+      Shell_GetSettingPrefs_ResponseParamsSpec.$,
+      [
+        names
+      ],
+      false
+    );
+  }
+  setSettingPref(name, jsonValue) {
+    return this.proxy.sendMessage(
+      1612867135,
+      Shell_SetSettingPref_ParamsSpec.$,
+      Shell_SetSettingPref_ResponseParamsSpec.$,
+      [
+        name,
+        jsonValue
+      ],
+      false
+    );
+  }
+  getAccountInfo() {
+    return this.proxy.sendMessage(
+      2034579838,
+      Shell_GetAccountInfo_ParamsSpec.$,
+      Shell_GetAccountInfo_ResponseParamsSpec.$,
+      [],
+      false
+    );
+  }
   setClient(client) {
     this.proxy.sendMessage(
-      33,
+      115845584,
       Shell_SetClient_ParamsSpec.$,
       null,
       [
@@ -743,7 +798,7 @@ var ShellRemote = class {
   }
   setStageVisible(visible) {
     this.proxy.sendMessage(
-      34,
+      1393567653,
       Shell_SetStageVisible_ParamsSpec.$,
       null,
       [
@@ -754,7 +809,7 @@ var ShellRemote = class {
   }
   openWindow(url) {
     return this.proxy.sendMessage(
-      35,
+      1025856066,
       Shell_OpenWindow_ParamsSpec.$,
       Shell_OpenWindow_ResponseParamsSpec.$,
       [
@@ -765,7 +820,7 @@ var ShellRemote = class {
   }
   focusWindow(windowId) {
     this.proxy.sendMessage(
-      36,
+      97704177,
       Shell_FocusWindow_ParamsSpec.$,
       null,
       [
@@ -776,7 +831,7 @@ var ShellRemote = class {
   }
   closeWindow(windowId) {
     this.proxy.sendMessage(
-      37,
+      1509102986,
       Shell_CloseWindow_ParamsSpec.$,
       null,
       [
@@ -787,11 +842,34 @@ var ShellRemote = class {
   }
   pickPaths(mode) {
     return this.proxy.sendMessage(
-      38,
+      1820560745,
       Shell_PickPaths_ParamsSpec.$,
       Shell_PickPaths_ResponseParamsSpec.$,
       [
         mode
+      ],
+      false
+    );
+  }
+  openLocalFile(tabId) {
+    return this.proxy.sendMessage(
+      991120878,
+      Shell_OpenLocalFile_ParamsSpec.$,
+      Shell_OpenLocalFile_ResponseParamsSpec.$,
+      [
+        tabId
+      ],
+      false
+    );
+  }
+  openDroppedFile(tabId, name) {
+    return this.proxy.sendMessage(
+      870934368,
+      Shell_OpenDroppedFile_ParamsSpec.$,
+      Shell_OpenDroppedFile_ResponseParamsSpec.$,
+      [
+        tabId,
+        name
       ],
       false
     );
@@ -807,276 +885,325 @@ var ShellReceiver = class {
     );
     this.$ = new mojo.internal.interfaceSupport.InterfaceReceiverHelper(this.helper_internal_);
     this.helper_internal_.registerHandler(
-      0,
+      502218115,
       Shell_SetStageBounds_ParamsSpec.$,
       null,
       impl.setStageBounds.bind(impl),
       false
     );
     this.helper_internal_.registerHandler(
-      1,
+      978132734,
       Shell_SetSplit_ParamsSpec.$,
       null,
       impl.setSplit.bind(impl),
       false
     );
     this.helper_internal_.registerHandler(
-      2,
+      139034168,
       Shell_SetSecondaryStageBounds_ParamsSpec.$,
       null,
       impl.setSecondaryStageBounds.bind(impl),
       false
     );
     this.helper_internal_.registerHandler(
-      3,
+      1687051038,
       Shell_CreateTab_ParamsSpec.$,
       Shell_CreateTab_ResponseParamsSpec.$,
       impl.createTab.bind(impl),
       false
     );
     this.helper_internal_.registerHandler(
-      4,
+      925686128,
       Shell_SelectTab_ParamsSpec.$,
       null,
       impl.selectTab.bind(impl),
       false
     );
     this.helper_internal_.registerHandler(
-      5,
+      1797287965,
       Shell_CloseTab_ParamsSpec.$,
       null,
       impl.closeTab.bind(impl),
       false
     );
     this.helper_internal_.registerHandler(
-      6,
+      1473720033,
       Shell_Navigate_ParamsSpec.$,
       null,
       impl.navigate.bind(impl),
       false
     );
     this.helper_internal_.registerHandler(
-      7,
+      1826718318,
       Shell_Reload_ParamsSpec.$,
       null,
       impl.reload.bind(impl),
       false
     );
     this.helper_internal_.registerHandler(
-      8,
+      1595636669,
       Shell_GoBack_ParamsSpec.$,
       null,
       impl.goBack.bind(impl),
       false
     );
     this.helper_internal_.registerHandler(
-      9,
+      479597812,
       Shell_GoForward_ParamsSpec.$,
       null,
       impl.goForward.bind(impl),
       false
     );
     this.helper_internal_.registerHandler(
-      10,
+      2106477657,
       Shell_Stop_ParamsSpec.$,
       null,
       impl.stop.bind(impl),
       false
     );
     this.helper_internal_.registerHandler(
-      11,
+      1320450855,
       Shell_SetStageCornerRadius_ParamsSpec.$,
       null,
       impl.setStageCornerRadius.bind(impl),
       false
     );
     this.helper_internal_.registerHandler(
-      12,
+      631760253,
       Shell_Find_ParamsSpec.$,
       null,
       impl.find.bind(impl),
       false
     );
     this.helper_internal_.registerHandler(
-      13,
+      511445982,
       Shell_StopFind_ParamsSpec.$,
       null,
       impl.stopFind.bind(impl),
       false
     );
     this.helper_internal_.registerHandler(
-      14,
+      252080144,
       Shell_SetZoom_ParamsSpec.$,
       Shell_SetZoom_ResponseParamsSpec.$,
       impl.setZoom.bind(impl),
       false
     );
     this.helper_internal_.registerHandler(
-      15,
+      713335880,
       Shell_Print_ParamsSpec.$,
       null,
       impl.print.bind(impl),
       false
     );
     this.helper_internal_.registerHandler(
-      16,
+      216270657,
       Shell_OpenDevTools_ParamsSpec.$,
       null,
       impl.openDevTools.bind(impl),
       false
     );
     this.helper_internal_.registerHandler(
-      17,
+      494096774,
       Shell_TogglePictureInPicture_ParamsSpec.$,
       null,
       impl.togglePictureInPicture.bind(impl),
       false
     );
     this.helper_internal_.registerHandler(
-      18,
+      790647368,
       Shell_GetPageText_ParamsSpec.$,
       Shell_GetPageText_ResponseParamsSpec.$,
       impl.getPageText.bind(impl),
       false
     );
     this.helper_internal_.registerHandler(
-      19,
+      1813493965,
       Shell_GetBlockThirdPartyCookies_ParamsSpec.$,
       Shell_GetBlockThirdPartyCookies_ResponseParamsSpec.$,
       impl.getBlockThirdPartyCookies.bind(impl),
       false
     );
     this.helper_internal_.registerHandler(
-      20,
+      1427666857,
       Shell_SetBlockThirdPartyCookies_ParamsSpec.$,
       null,
       impl.setBlockThirdPartyCookies.bind(impl),
       false
     );
     this.helper_internal_.registerHandler(
-      21,
+      278838813,
       Shell_GetSendDoNotTrack_ParamsSpec.$,
       Shell_GetSendDoNotTrack_ResponseParamsSpec.$,
       impl.getSendDoNotTrack.bind(impl),
       false
     );
     this.helper_internal_.registerHandler(
-      22,
+      285803864,
       Shell_SetSendDoNotTrack_ParamsSpec.$,
       null,
       impl.setSendDoNotTrack.bind(impl),
       false
     );
     this.helper_internal_.registerHandler(
-      23,
+      2102454249,
       Shell_GetHttpsOnlyMode_ParamsSpec.$,
       Shell_GetHttpsOnlyMode_ResponseParamsSpec.$,
       impl.getHttpsOnlyMode.bind(impl),
       false
     );
     this.helper_internal_.registerHandler(
-      24,
+      836490945,
       Shell_SetHttpsOnlyMode_ParamsSpec.$,
       null,
       impl.setHttpsOnlyMode.bind(impl),
       false
     );
     this.helper_internal_.registerHandler(
-      25,
+      1673103613,
       Shell_GetPreloadPages_ParamsSpec.$,
       Shell_GetPreloadPages_ResponseParamsSpec.$,
       impl.getPreloadPages.bind(impl),
       false
     );
     this.helper_internal_.registerHandler(
-      26,
+      1374262588,
       Shell_SetPreloadPages_ParamsSpec.$,
       null,
       impl.setPreloadPages.bind(impl),
       false
     );
     this.helper_internal_.registerHandler(
-      27,
+      723369275,
       Shell_GetAdblockEnabled_ParamsSpec.$,
       Shell_GetAdblockEnabled_ResponseParamsSpec.$,
       impl.getAdblockEnabled.bind(impl),
       false
     );
     this.helper_internal_.registerHandler(
-      28,
+      32241856,
       Shell_SetAdblockEnabled_ParamsSpec.$,
       null,
       impl.setAdblockEnabled.bind(impl),
       false
     );
     this.helper_internal_.registerHandler(
-      29,
+      821112473,
       Shell_GetAdblockBlockedCount_ParamsSpec.$,
       Shell_GetAdblockBlockedCount_ResponseParamsSpec.$,
       impl.getAdblockBlockedCount.bind(impl),
       false
     );
     this.helper_internal_.registerHandler(
-      30,
+      73501288,
       Shell_ClearBrowsingData_ParamsSpec.$,
       Shell_ClearBrowsingData_ResponseParamsSpec.$,
       impl.clearBrowsingData.bind(impl),
       false
     );
     this.helper_internal_.registerHandler(
-      31,
+      1839527027,
       Shell_GetDefaultBrowserState_ParamsSpec.$,
       Shell_GetDefaultBrowserState_ResponseParamsSpec.$,
       impl.getDefaultBrowserState.bind(impl),
       false
     );
     this.helper_internal_.registerHandler(
-      32,
+      1142821493,
       Shell_SetAsDefaultBrowser_ParamsSpec.$,
       Shell_SetAsDefaultBrowser_ResponseParamsSpec.$,
       impl.setAsDefaultBrowser.bind(impl),
       false
     );
     this.helper_internal_.registerHandler(
-      33,
+      1150953122,
+      Shell_GetExtensionActions_ParamsSpec.$,
+      Shell_GetExtensionActions_ResponseParamsSpec.$,
+      impl.getExtensionActions.bind(impl),
+      false
+    );
+    this.helper_internal_.registerHandler(
+      980272239,
+      Shell_RunExtensionAction_ParamsSpec.$,
+      Shell_RunExtensionAction_ResponseParamsSpec.$,
+      impl.runExtensionAction.bind(impl),
+      false
+    );
+    this.helper_internal_.registerHandler(
+      1113325693,
+      Shell_GetSettingPrefs_ParamsSpec.$,
+      Shell_GetSettingPrefs_ResponseParamsSpec.$,
+      impl.getSettingPrefs.bind(impl),
+      false
+    );
+    this.helper_internal_.registerHandler(
+      1612867135,
+      Shell_SetSettingPref_ParamsSpec.$,
+      Shell_SetSettingPref_ResponseParamsSpec.$,
+      impl.setSettingPref.bind(impl),
+      false
+    );
+    this.helper_internal_.registerHandler(
+      2034579838,
+      Shell_GetAccountInfo_ParamsSpec.$,
+      Shell_GetAccountInfo_ResponseParamsSpec.$,
+      impl.getAccountInfo.bind(impl),
+      false
+    );
+    this.helper_internal_.registerHandler(
+      115845584,
       Shell_SetClient_ParamsSpec.$,
       null,
       impl.setClient.bind(impl),
       false
     );
     this.helper_internal_.registerHandler(
-      34,
+      1393567653,
       Shell_SetStageVisible_ParamsSpec.$,
       null,
       impl.setStageVisible.bind(impl),
       false
     );
     this.helper_internal_.registerHandler(
-      35,
+      1025856066,
       Shell_OpenWindow_ParamsSpec.$,
       Shell_OpenWindow_ResponseParamsSpec.$,
       impl.openWindow.bind(impl),
       false
     );
     this.helper_internal_.registerHandler(
-      36,
+      97704177,
       Shell_FocusWindow_ParamsSpec.$,
       null,
       impl.focusWindow.bind(impl),
       false
     );
     this.helper_internal_.registerHandler(
-      37,
+      1509102986,
       Shell_CloseWindow_ParamsSpec.$,
       null,
       impl.closeWindow.bind(impl),
       false
     );
     this.helper_internal_.registerHandler(
-      38,
+      1820560745,
       Shell_PickPaths_ParamsSpec.$,
       Shell_PickPaths_ResponseParamsSpec.$,
       impl.pickPaths.bind(impl),
+      false
+    );
+    this.helper_internal_.registerHandler(
+      991120878,
+      Shell_OpenLocalFile_ParamsSpec.$,
+      Shell_OpenLocalFile_ResponseParamsSpec.$,
+      impl.openLocalFile.bind(impl),
+      false
+    );
+    this.helper_internal_.registerHandler(
+      870934368,
+      Shell_OpenDroppedFile_ParamsSpec.$,
+      Shell_OpenDroppedFile_ResponseParamsSpec.$,
+      impl.openDroppedFile.bind(impl),
       false
     );
     this.onConnectionError = this.helper_internal_.getConnectionErrorEventRouter();
@@ -1134,12 +1261,19 @@ var ShellCallbackRouter = class {
   clearBrowsingData;
   getDefaultBrowserState;
   setAsDefaultBrowser;
+  getExtensionActions;
+  runExtensionAction;
+  getSettingPrefs;
+  setSettingPref;
+  getAccountInfo;
   setClient;
   setStageVisible;
   openWindow;
   focusWindow;
   closeWindow;
   pickPaths;
+  openLocalFile;
+  openDroppedFile;
   onConnectionError;
   constructor() {
     this.helper_internal_ = new mojo.internal.interfaceSupport.InterfaceReceiverHelperInternal(
@@ -1151,7 +1285,7 @@ var ShellCallbackRouter = class {
       this.router_
     );
     this.helper_internal_.registerHandler(
-      0,
+      502218115,
       Shell_SetStageBounds_ParamsSpec.$,
       null,
       this.setStageBounds.createReceiverHandler(
@@ -1164,7 +1298,7 @@ var ShellCallbackRouter = class {
       this.router_
     );
     this.helper_internal_.registerHandler(
-      1,
+      978132734,
       Shell_SetSplit_ParamsSpec.$,
       null,
       this.setSplit.createReceiverHandler(
@@ -1177,7 +1311,7 @@ var ShellCallbackRouter = class {
       this.router_
     );
     this.helper_internal_.registerHandler(
-      2,
+      139034168,
       Shell_SetSecondaryStageBounds_ParamsSpec.$,
       null,
       this.setSecondaryStageBounds.createReceiverHandler(
@@ -1190,7 +1324,7 @@ var ShellCallbackRouter = class {
       this.router_
     );
     this.helper_internal_.registerHandler(
-      3,
+      1687051038,
       Shell_CreateTab_ParamsSpec.$,
       Shell_CreateTab_ResponseParamsSpec.$,
       this.createTab.createReceiverHandler(
@@ -1203,7 +1337,7 @@ var ShellCallbackRouter = class {
       this.router_
     );
     this.helper_internal_.registerHandler(
-      4,
+      925686128,
       Shell_SelectTab_ParamsSpec.$,
       null,
       this.selectTab.createReceiverHandler(
@@ -1216,7 +1350,7 @@ var ShellCallbackRouter = class {
       this.router_
     );
     this.helper_internal_.registerHandler(
-      5,
+      1797287965,
       Shell_CloseTab_ParamsSpec.$,
       null,
       this.closeTab.createReceiverHandler(
@@ -1229,7 +1363,7 @@ var ShellCallbackRouter = class {
       this.router_
     );
     this.helper_internal_.registerHandler(
-      6,
+      1473720033,
       Shell_Navigate_ParamsSpec.$,
       null,
       this.navigate.createReceiverHandler(
@@ -1242,7 +1376,7 @@ var ShellCallbackRouter = class {
       this.router_
     );
     this.helper_internal_.registerHandler(
-      7,
+      1826718318,
       Shell_Reload_ParamsSpec.$,
       null,
       this.reload.createReceiverHandler(
@@ -1255,7 +1389,7 @@ var ShellCallbackRouter = class {
       this.router_
     );
     this.helper_internal_.registerHandler(
-      8,
+      1595636669,
       Shell_GoBack_ParamsSpec.$,
       null,
       this.goBack.createReceiverHandler(
@@ -1268,7 +1402,7 @@ var ShellCallbackRouter = class {
       this.router_
     );
     this.helper_internal_.registerHandler(
-      9,
+      479597812,
       Shell_GoForward_ParamsSpec.$,
       null,
       this.goForward.createReceiverHandler(
@@ -1281,7 +1415,7 @@ var ShellCallbackRouter = class {
       this.router_
     );
     this.helper_internal_.registerHandler(
-      10,
+      2106477657,
       Shell_Stop_ParamsSpec.$,
       null,
       this.stop.createReceiverHandler(
@@ -1294,7 +1428,7 @@ var ShellCallbackRouter = class {
       this.router_
     );
     this.helper_internal_.registerHandler(
-      11,
+      1320450855,
       Shell_SetStageCornerRadius_ParamsSpec.$,
       null,
       this.setStageCornerRadius.createReceiverHandler(
@@ -1307,7 +1441,7 @@ var ShellCallbackRouter = class {
       this.router_
     );
     this.helper_internal_.registerHandler(
-      12,
+      631760253,
       Shell_Find_ParamsSpec.$,
       null,
       this.find.createReceiverHandler(
@@ -1320,7 +1454,7 @@ var ShellCallbackRouter = class {
       this.router_
     );
     this.helper_internal_.registerHandler(
-      13,
+      511445982,
       Shell_StopFind_ParamsSpec.$,
       null,
       this.stopFind.createReceiverHandler(
@@ -1333,7 +1467,7 @@ var ShellCallbackRouter = class {
       this.router_
     );
     this.helper_internal_.registerHandler(
-      14,
+      252080144,
       Shell_SetZoom_ParamsSpec.$,
       Shell_SetZoom_ResponseParamsSpec.$,
       this.setZoom.createReceiverHandler(
@@ -1346,7 +1480,7 @@ var ShellCallbackRouter = class {
       this.router_
     );
     this.helper_internal_.registerHandler(
-      15,
+      713335880,
       Shell_Print_ParamsSpec.$,
       null,
       this.print.createReceiverHandler(
@@ -1359,7 +1493,7 @@ var ShellCallbackRouter = class {
       this.router_
     );
     this.helper_internal_.registerHandler(
-      16,
+      216270657,
       Shell_OpenDevTools_ParamsSpec.$,
       null,
       this.openDevTools.createReceiverHandler(
@@ -1372,7 +1506,7 @@ var ShellCallbackRouter = class {
       this.router_
     );
     this.helper_internal_.registerHandler(
-      17,
+      494096774,
       Shell_TogglePictureInPicture_ParamsSpec.$,
       null,
       this.togglePictureInPicture.createReceiverHandler(
@@ -1385,7 +1519,7 @@ var ShellCallbackRouter = class {
       this.router_
     );
     this.helper_internal_.registerHandler(
-      18,
+      790647368,
       Shell_GetPageText_ParamsSpec.$,
       Shell_GetPageText_ResponseParamsSpec.$,
       this.getPageText.createReceiverHandler(
@@ -1398,7 +1532,7 @@ var ShellCallbackRouter = class {
       this.router_
     );
     this.helper_internal_.registerHandler(
-      19,
+      1813493965,
       Shell_GetBlockThirdPartyCookies_ParamsSpec.$,
       Shell_GetBlockThirdPartyCookies_ResponseParamsSpec.$,
       this.getBlockThirdPartyCookies.createReceiverHandler(
@@ -1411,7 +1545,7 @@ var ShellCallbackRouter = class {
       this.router_
     );
     this.helper_internal_.registerHandler(
-      20,
+      1427666857,
       Shell_SetBlockThirdPartyCookies_ParamsSpec.$,
       null,
       this.setBlockThirdPartyCookies.createReceiverHandler(
@@ -1424,7 +1558,7 @@ var ShellCallbackRouter = class {
       this.router_
     );
     this.helper_internal_.registerHandler(
-      21,
+      278838813,
       Shell_GetSendDoNotTrack_ParamsSpec.$,
       Shell_GetSendDoNotTrack_ResponseParamsSpec.$,
       this.getSendDoNotTrack.createReceiverHandler(
@@ -1437,7 +1571,7 @@ var ShellCallbackRouter = class {
       this.router_
     );
     this.helper_internal_.registerHandler(
-      22,
+      285803864,
       Shell_SetSendDoNotTrack_ParamsSpec.$,
       null,
       this.setSendDoNotTrack.createReceiverHandler(
@@ -1450,7 +1584,7 @@ var ShellCallbackRouter = class {
       this.router_
     );
     this.helper_internal_.registerHandler(
-      23,
+      2102454249,
       Shell_GetHttpsOnlyMode_ParamsSpec.$,
       Shell_GetHttpsOnlyMode_ResponseParamsSpec.$,
       this.getHttpsOnlyMode.createReceiverHandler(
@@ -1463,7 +1597,7 @@ var ShellCallbackRouter = class {
       this.router_
     );
     this.helper_internal_.registerHandler(
-      24,
+      836490945,
       Shell_SetHttpsOnlyMode_ParamsSpec.$,
       null,
       this.setHttpsOnlyMode.createReceiverHandler(
@@ -1476,7 +1610,7 @@ var ShellCallbackRouter = class {
       this.router_
     );
     this.helper_internal_.registerHandler(
-      25,
+      1673103613,
       Shell_GetPreloadPages_ParamsSpec.$,
       Shell_GetPreloadPages_ResponseParamsSpec.$,
       this.getPreloadPages.createReceiverHandler(
@@ -1489,7 +1623,7 @@ var ShellCallbackRouter = class {
       this.router_
     );
     this.helper_internal_.registerHandler(
-      26,
+      1374262588,
       Shell_SetPreloadPages_ParamsSpec.$,
       null,
       this.setPreloadPages.createReceiverHandler(
@@ -1502,7 +1636,7 @@ var ShellCallbackRouter = class {
       this.router_
     );
     this.helper_internal_.registerHandler(
-      27,
+      723369275,
       Shell_GetAdblockEnabled_ParamsSpec.$,
       Shell_GetAdblockEnabled_ResponseParamsSpec.$,
       this.getAdblockEnabled.createReceiverHandler(
@@ -1515,7 +1649,7 @@ var ShellCallbackRouter = class {
       this.router_
     );
     this.helper_internal_.registerHandler(
-      28,
+      32241856,
       Shell_SetAdblockEnabled_ParamsSpec.$,
       null,
       this.setAdblockEnabled.createReceiverHandler(
@@ -1528,7 +1662,7 @@ var ShellCallbackRouter = class {
       this.router_
     );
     this.helper_internal_.registerHandler(
-      29,
+      821112473,
       Shell_GetAdblockBlockedCount_ParamsSpec.$,
       Shell_GetAdblockBlockedCount_ResponseParamsSpec.$,
       this.getAdblockBlockedCount.createReceiverHandler(
@@ -1541,7 +1675,7 @@ var ShellCallbackRouter = class {
       this.router_
     );
     this.helper_internal_.registerHandler(
-      30,
+      73501288,
       Shell_ClearBrowsingData_ParamsSpec.$,
       Shell_ClearBrowsingData_ResponseParamsSpec.$,
       this.clearBrowsingData.createReceiverHandler(
@@ -1554,7 +1688,7 @@ var ShellCallbackRouter = class {
       this.router_
     );
     this.helper_internal_.registerHandler(
-      31,
+      1839527027,
       Shell_GetDefaultBrowserState_ParamsSpec.$,
       Shell_GetDefaultBrowserState_ResponseParamsSpec.$,
       this.getDefaultBrowserState.createReceiverHandler(
@@ -1567,10 +1701,75 @@ var ShellCallbackRouter = class {
       this.router_
     );
     this.helper_internal_.registerHandler(
-      32,
+      1142821493,
       Shell_SetAsDefaultBrowser_ParamsSpec.$,
       Shell_SetAsDefaultBrowser_ResponseParamsSpec.$,
       this.setAsDefaultBrowser.createReceiverHandler(
+        true
+        /* expectsResponse */
+      ),
+      false
+    );
+    this.getExtensionActions = new mojo.internal.interfaceSupport.InterfaceCallbackReceiver(
+      this.router_
+    );
+    this.helper_internal_.registerHandler(
+      1150953122,
+      Shell_GetExtensionActions_ParamsSpec.$,
+      Shell_GetExtensionActions_ResponseParamsSpec.$,
+      this.getExtensionActions.createReceiverHandler(
+        true
+        /* expectsResponse */
+      ),
+      false
+    );
+    this.runExtensionAction = new mojo.internal.interfaceSupport.InterfaceCallbackReceiver(
+      this.router_
+    );
+    this.helper_internal_.registerHandler(
+      980272239,
+      Shell_RunExtensionAction_ParamsSpec.$,
+      Shell_RunExtensionAction_ResponseParamsSpec.$,
+      this.runExtensionAction.createReceiverHandler(
+        true
+        /* expectsResponse */
+      ),
+      false
+    );
+    this.getSettingPrefs = new mojo.internal.interfaceSupport.InterfaceCallbackReceiver(
+      this.router_
+    );
+    this.helper_internal_.registerHandler(
+      1113325693,
+      Shell_GetSettingPrefs_ParamsSpec.$,
+      Shell_GetSettingPrefs_ResponseParamsSpec.$,
+      this.getSettingPrefs.createReceiverHandler(
+        true
+        /* expectsResponse */
+      ),
+      false
+    );
+    this.setSettingPref = new mojo.internal.interfaceSupport.InterfaceCallbackReceiver(
+      this.router_
+    );
+    this.helper_internal_.registerHandler(
+      1612867135,
+      Shell_SetSettingPref_ParamsSpec.$,
+      Shell_SetSettingPref_ResponseParamsSpec.$,
+      this.setSettingPref.createReceiverHandler(
+        true
+        /* expectsResponse */
+      ),
+      false
+    );
+    this.getAccountInfo = new mojo.internal.interfaceSupport.InterfaceCallbackReceiver(
+      this.router_
+    );
+    this.helper_internal_.registerHandler(
+      2034579838,
+      Shell_GetAccountInfo_ParamsSpec.$,
+      Shell_GetAccountInfo_ResponseParamsSpec.$,
+      this.getAccountInfo.createReceiverHandler(
         true
         /* expectsResponse */
       ),
@@ -1580,7 +1779,7 @@ var ShellCallbackRouter = class {
       this.router_
     );
     this.helper_internal_.registerHandler(
-      33,
+      115845584,
       Shell_SetClient_ParamsSpec.$,
       null,
       this.setClient.createReceiverHandler(
@@ -1593,7 +1792,7 @@ var ShellCallbackRouter = class {
       this.router_
     );
     this.helper_internal_.registerHandler(
-      34,
+      1393567653,
       Shell_SetStageVisible_ParamsSpec.$,
       null,
       this.setStageVisible.createReceiverHandler(
@@ -1606,7 +1805,7 @@ var ShellCallbackRouter = class {
       this.router_
     );
     this.helper_internal_.registerHandler(
-      35,
+      1025856066,
       Shell_OpenWindow_ParamsSpec.$,
       Shell_OpenWindow_ResponseParamsSpec.$,
       this.openWindow.createReceiverHandler(
@@ -1619,7 +1818,7 @@ var ShellCallbackRouter = class {
       this.router_
     );
     this.helper_internal_.registerHandler(
-      36,
+      97704177,
       Shell_FocusWindow_ParamsSpec.$,
       null,
       this.focusWindow.createReceiverHandler(
@@ -1632,7 +1831,7 @@ var ShellCallbackRouter = class {
       this.router_
     );
     this.helper_internal_.registerHandler(
-      37,
+      1509102986,
       Shell_CloseWindow_ParamsSpec.$,
       null,
       this.closeWindow.createReceiverHandler(
@@ -1645,10 +1844,36 @@ var ShellCallbackRouter = class {
       this.router_
     );
     this.helper_internal_.registerHandler(
-      38,
+      1820560745,
       Shell_PickPaths_ParamsSpec.$,
       Shell_PickPaths_ResponseParamsSpec.$,
       this.pickPaths.createReceiverHandler(
+        true
+        /* expectsResponse */
+      ),
+      false
+    );
+    this.openLocalFile = new mojo.internal.interfaceSupport.InterfaceCallbackReceiver(
+      this.router_
+    );
+    this.helper_internal_.registerHandler(
+      991120878,
+      Shell_OpenLocalFile_ParamsSpec.$,
+      Shell_OpenLocalFile_ResponseParamsSpec.$,
+      this.openLocalFile.createReceiverHandler(
+        true
+        /* expectsResponse */
+      ),
+      false
+    );
+    this.openDroppedFile = new mojo.internal.interfaceSupport.InterfaceCallbackReceiver(
+      this.router_
+    );
+    this.helper_internal_.registerHandler(
+      870934368,
+      Shell_OpenDroppedFile_ParamsSpec.$,
+      Shell_OpenDroppedFile_ResponseParamsSpec.$,
+      this.openDroppedFile.createReceiverHandler(
         true
         /* expectsResponse */
       ),
@@ -1691,7 +1916,7 @@ var ShellClientRemote = class {
   }
   onTabsChanged(tabs, activeTabId) {
     this.proxy.sendMessage(
-      0,
+      1435046940,
       ShellClient_OnTabsChanged_ParamsSpec.$,
       null,
       [
@@ -1703,7 +1928,7 @@ var ShellClientRemote = class {
   }
   onTabNavigationStateChanged(info) {
     this.proxy.sendMessage(
-      1,
+      2124763888,
       ShellClient_OnTabNavigationStateChanged_ParamsSpec.$,
       null,
       [
@@ -1714,7 +1939,7 @@ var ShellClientRemote = class {
   }
   onTabClosed(tabId) {
     this.proxy.sendMessage(
-      2,
+      859980247,
       ShellClient_OnTabClosed_ParamsSpec.$,
       null,
       [
@@ -1725,13 +1950,24 @@ var ShellClientRemote = class {
   }
   onFindResult(tabId, activeMatch, totalMatches) {
     this.proxy.sendMessage(
-      3,
+      1044292798,
       ShellClient_OnFindResult_ParamsSpec.$,
       null,
       [
         tabId,
         activeMatch,
         totalMatches
+      ],
+      false
+    );
+  }
+  onCommand(command) {
+    this.proxy.sendMessage(
+      1394744468,
+      ShellClient_OnCommand_ParamsSpec.$,
+      null,
+      [
+        command
       ],
       false
     );
@@ -1747,31 +1983,38 @@ var ShellClientReceiver = class {
     );
     this.$ = new mojo.internal.interfaceSupport.InterfaceReceiverHelper(this.helper_internal_);
     this.helper_internal_.registerHandler(
-      0,
+      1435046940,
       ShellClient_OnTabsChanged_ParamsSpec.$,
       null,
       impl.onTabsChanged.bind(impl),
       false
     );
     this.helper_internal_.registerHandler(
-      1,
+      2124763888,
       ShellClient_OnTabNavigationStateChanged_ParamsSpec.$,
       null,
       impl.onTabNavigationStateChanged.bind(impl),
       false
     );
     this.helper_internal_.registerHandler(
-      2,
+      859980247,
       ShellClient_OnTabClosed_ParamsSpec.$,
       null,
       impl.onTabClosed.bind(impl),
       false
     );
     this.helper_internal_.registerHandler(
-      3,
+      1044292798,
       ShellClient_OnFindResult_ParamsSpec.$,
       null,
       impl.onFindResult.bind(impl),
+      false
+    );
+    this.helper_internal_.registerHandler(
+      1394744468,
+      ShellClient_OnCommand_ParamsSpec.$,
+      null,
+      impl.onCommand.bind(impl),
       false
     );
     this.onConnectionError = this.helper_internal_.getConnectionErrorEventRouter();
@@ -1800,6 +2043,7 @@ var ShellClientCallbackRouter = class {
   onTabNavigationStateChanged;
   onTabClosed;
   onFindResult;
+  onCommand;
   onConnectionError;
   constructor() {
     this.helper_internal_ = new mojo.internal.interfaceSupport.InterfaceReceiverHelperInternal(
@@ -1811,7 +2055,7 @@ var ShellClientCallbackRouter = class {
       this.router_
     );
     this.helper_internal_.registerHandler(
-      0,
+      1435046940,
       ShellClient_OnTabsChanged_ParamsSpec.$,
       null,
       this.onTabsChanged.createReceiverHandler(
@@ -1824,7 +2068,7 @@ var ShellClientCallbackRouter = class {
       this.router_
     );
     this.helper_internal_.registerHandler(
-      1,
+      2124763888,
       ShellClient_OnTabNavigationStateChanged_ParamsSpec.$,
       null,
       this.onTabNavigationStateChanged.createReceiverHandler(
@@ -1837,7 +2081,7 @@ var ShellClientCallbackRouter = class {
       this.router_
     );
     this.helper_internal_.registerHandler(
-      2,
+      859980247,
       ShellClient_OnTabClosed_ParamsSpec.$,
       null,
       this.onTabClosed.createReceiverHandler(
@@ -1850,10 +2094,23 @@ var ShellClientCallbackRouter = class {
       this.router_
     );
     this.helper_internal_.registerHandler(
-      3,
+      1044292798,
       ShellClient_OnFindResult_ParamsSpec.$,
       null,
       this.onFindResult.createReceiverHandler(
+        false
+        /* expectsResponse */
+      ),
+      false
+    );
+    this.onCommand = new mojo.internal.interfaceSupport.InterfaceCallbackReceiver(
+      this.router_
+    );
+    this.helper_internal_.registerHandler(
+      1394744468,
+      ShellClient_OnCommand_ParamsSpec.$,
+      null,
+      this.onCommand.createReceiverHandler(
         false
         /* expectsResponse */
       ),
@@ -1869,6 +2126,9 @@ var ShellClientCallbackRouter = class {
     return this.router_.removeListener(id);
   }
 };
+var SettingPrefSpec = { $: {} };
+var ExtensionActionInfoSpec = { $: {} };
+var SignInInfoSpec = { $: {} };
 var TabInfoSpec = { $: {} };
 var AgentTabs_OpenTab_ParamsSpec = { $: {} };
 var AgentTabs_OpenTab_ResponseParamsSpec = { $: {} };
@@ -1924,6 +2184,16 @@ var Shell_GetDefaultBrowserState_ParamsSpec = { $: {} };
 var Shell_GetDefaultBrowserState_ResponseParamsSpec = { $: {} };
 var Shell_SetAsDefaultBrowser_ParamsSpec = { $: {} };
 var Shell_SetAsDefaultBrowser_ResponseParamsSpec = { $: {} };
+var Shell_GetExtensionActions_ParamsSpec = { $: {} };
+var Shell_GetExtensionActions_ResponseParamsSpec = { $: {} };
+var Shell_RunExtensionAction_ParamsSpec = { $: {} };
+var Shell_RunExtensionAction_ResponseParamsSpec = { $: {} };
+var Shell_GetSettingPrefs_ParamsSpec = { $: {} };
+var Shell_GetSettingPrefs_ResponseParamsSpec = { $: {} };
+var Shell_SetSettingPref_ParamsSpec = { $: {} };
+var Shell_SetSettingPref_ResponseParamsSpec = { $: {} };
+var Shell_GetAccountInfo_ParamsSpec = { $: {} };
+var Shell_GetAccountInfo_ResponseParamsSpec = { $: {} };
 var Shell_SetClient_ParamsSpec = { $: {} };
 var Shell_SetStageVisible_ParamsSpec = { $: {} };
 var Shell_OpenWindow_ParamsSpec = { $: {} };
@@ -1932,10 +2202,212 @@ var Shell_FocusWindow_ParamsSpec = { $: {} };
 var Shell_CloseWindow_ParamsSpec = { $: {} };
 var Shell_PickPaths_ParamsSpec = { $: {} };
 var Shell_PickPaths_ResponseParamsSpec = { $: {} };
+var Shell_OpenLocalFile_ParamsSpec = { $: {} };
+var Shell_OpenLocalFile_ResponseParamsSpec = { $: {} };
+var Shell_OpenDroppedFile_ParamsSpec = { $: {} };
+var Shell_OpenDroppedFile_ResponseParamsSpec = { $: {} };
 var ShellClient_OnTabsChanged_ParamsSpec = { $: {} };
 var ShellClient_OnTabNavigationStateChanged_ParamsSpec = { $: {} };
 var ShellClient_OnTabClosed_ParamsSpec = { $: {} };
 var ShellClient_OnFindResult_ParamsSpec = { $: {} };
+var ShellClient_OnCommand_ParamsSpec = { $: {} };
+mojo.internal.Struct(
+  SettingPrefSpec.$,
+  "SettingPref",
+  [
+    mojo.internal.StructField(
+      "name",
+      0,
+      0,
+      mojo.internal.String,
+      null,
+      false,
+      0,
+      void 0,
+      void 0
+    ),
+    mojo.internal.StructField(
+      "jsonValue",
+      8,
+      0,
+      mojo.internal.String,
+      null,
+      false,
+      0,
+      void 0,
+      void 0
+    ),
+    mojo.internal.StructField(
+      "managed",
+      16,
+      0,
+      mojo.internal.Bool,
+      false,
+      false,
+      0,
+      void 0,
+      void 0
+    ),
+    mojo.internal.StructField(
+      "unavailable",
+      16,
+      1,
+      mojo.internal.Bool,
+      false,
+      false,
+      0,
+      void 0,
+      void 0
+    )
+  ],
+  [[0, 32]]
+);
+mojo.internal.Struct(
+  ExtensionActionInfoSpec.$,
+  "ExtensionActionInfo",
+  [
+    mojo.internal.StructField(
+      "id",
+      0,
+      0,
+      mojo.internal.String,
+      null,
+      false,
+      0,
+      void 0,
+      void 0
+    ),
+    mojo.internal.StructField(
+      "name",
+      8,
+      0,
+      mojo.internal.String,
+      null,
+      false,
+      0,
+      void 0,
+      void 0
+    ),
+    mojo.internal.StructField(
+      "title",
+      16,
+      0,
+      mojo.internal.String,
+      null,
+      false,
+      0,
+      void 0,
+      void 0
+    ),
+    mojo.internal.StructField(
+      "badgeText",
+      24,
+      0,
+      mojo.internal.String,
+      null,
+      false,
+      0,
+      void 0,
+      void 0
+    ),
+    mojo.internal.StructField(
+      "enabled",
+      32,
+      0,
+      mojo.internal.Bool,
+      false,
+      false,
+      0,
+      void 0,
+      void 0
+    ),
+    mojo.internal.StructField(
+      "hasPopup",
+      32,
+      1,
+      mojo.internal.Bool,
+      false,
+      false,
+      0,
+      void 0,
+      void 0
+    )
+  ],
+  [[0, 48]]
+);
+mojo.internal.Struct(
+  SignInInfoSpec.$,
+  "SignInInfo",
+  [
+    mojo.internal.StructField(
+      "signedIn",
+      0,
+      0,
+      mojo.internal.Bool,
+      false,
+      false,
+      0,
+      void 0,
+      void 0
+    ),
+    mojo.internal.StructField(
+      "email",
+      8,
+      0,
+      mojo.internal.String,
+      null,
+      false,
+      0,
+      void 0,
+      void 0
+    ),
+    mojo.internal.StructField(
+      "fullName",
+      16,
+      0,
+      mojo.internal.String,
+      null,
+      false,
+      0,
+      void 0,
+      void 0
+    ),
+    mojo.internal.StructField(
+      "avatarDataUrl",
+      24,
+      0,
+      mojo.internal.String,
+      null,
+      false,
+      0,
+      void 0,
+      void 0
+    ),
+    mojo.internal.StructField(
+      "profileName",
+      32,
+      0,
+      mojo.internal.String,
+      null,
+      false,
+      0,
+      void 0,
+      void 0
+    ),
+    mojo.internal.StructField(
+      "signinSupported",
+      0,
+      1,
+      mojo.internal.Bool,
+      false,
+      false,
+      0,
+      void 0,
+      void 0
+    )
+  ],
+  [[0, 48]]
+);
 mojo.internal.Struct(
   TabInfoSpec.$,
   "TabInfo",
@@ -3027,6 +3499,196 @@ mojo.internal.Struct(
   [[0, 16]]
 );
 mojo.internal.Struct(
+  Shell_GetExtensionActions_ParamsSpec.$,
+  "Shell_GetExtensionActions_Params",
+  [
+    mojo.internal.StructField(
+      "tabId",
+      0,
+      0,
+      mojo.internal.Int32,
+      0,
+      false,
+      0,
+      void 0,
+      void 0
+    )
+  ],
+  [[0, 16]]
+);
+mojo.internal.Struct(
+  Shell_GetExtensionActions_ResponseParamsSpec.$,
+  "Shell_GetExtensionActions_ResponseParams",
+  [
+    mojo.internal.StructField(
+      "actions",
+      0,
+      0,
+      mojo.internal.Array(ExtensionActionInfoSpec.$, false),
+      null,
+      false,
+      0,
+      void 0,
+      void 0
+    )
+  ],
+  [[0, 16]]
+);
+mojo.internal.Struct(
+  Shell_RunExtensionAction_ParamsSpec.$,
+  "Shell_RunExtensionAction_Params",
+  [
+    mojo.internal.StructField(
+      "tabId",
+      0,
+      0,
+      mojo.internal.Int32,
+      0,
+      false,
+      0,
+      void 0,
+      void 0
+    ),
+    mojo.internal.StructField(
+      "extensionId",
+      8,
+      0,
+      mojo.internal.String,
+      null,
+      false,
+      0,
+      void 0,
+      void 0
+    )
+  ],
+  [[0, 24]]
+);
+mojo.internal.Struct(
+  Shell_RunExtensionAction_ResponseParamsSpec.$,
+  "Shell_RunExtensionAction_ResponseParams",
+  [
+    mojo.internal.StructField(
+      "showedPopup",
+      0,
+      0,
+      mojo.internal.Bool,
+      false,
+      false,
+      0,
+      void 0,
+      void 0
+    )
+  ],
+  [[0, 16]]
+);
+mojo.internal.Struct(
+  Shell_GetSettingPrefs_ParamsSpec.$,
+  "Shell_GetSettingPrefs_Params",
+  [
+    mojo.internal.StructField(
+      "names",
+      0,
+      0,
+      mojo.internal.Array(mojo.internal.String, false),
+      null,
+      false,
+      0,
+      void 0,
+      void 0
+    )
+  ],
+  [[0, 16]]
+);
+mojo.internal.Struct(
+  Shell_GetSettingPrefs_ResponseParamsSpec.$,
+  "Shell_GetSettingPrefs_ResponseParams",
+  [
+    mojo.internal.StructField(
+      "prefs",
+      0,
+      0,
+      mojo.internal.Array(SettingPrefSpec.$, false),
+      null,
+      false,
+      0,
+      void 0,
+      void 0
+    )
+  ],
+  [[0, 16]]
+);
+mojo.internal.Struct(
+  Shell_SetSettingPref_ParamsSpec.$,
+  "Shell_SetSettingPref_Params",
+  [
+    mojo.internal.StructField(
+      "name",
+      0,
+      0,
+      mojo.internal.String,
+      null,
+      false,
+      0,
+      void 0,
+      void 0
+    ),
+    mojo.internal.StructField(
+      "jsonValue",
+      8,
+      0,
+      mojo.internal.String,
+      null,
+      false,
+      0,
+      void 0,
+      void 0
+    )
+  ],
+  [[0, 24]]
+);
+mojo.internal.Struct(
+  Shell_SetSettingPref_ResponseParamsSpec.$,
+  "Shell_SetSettingPref_ResponseParams",
+  [
+    mojo.internal.StructField(
+      "ok",
+      0,
+      0,
+      mojo.internal.Bool,
+      false,
+      false,
+      0,
+      void 0,
+      void 0
+    )
+  ],
+  [[0, 16]]
+);
+mojo.internal.Struct(
+  Shell_GetAccountInfo_ParamsSpec.$,
+  "Shell_GetAccountInfo_Params",
+  [],
+  [[0, 8]]
+);
+mojo.internal.Struct(
+  Shell_GetAccountInfo_ResponseParamsSpec.$,
+  "Shell_GetAccountInfo_ResponseParams",
+  [
+    mojo.internal.StructField(
+      "info",
+      0,
+      0,
+      SignInInfoSpec.$,
+      null,
+      false,
+      0,
+      void 0,
+      void 0
+    )
+  ],
+  [[0, 16]]
+);
+mojo.internal.Struct(
   Shell_SetClient_ParamsSpec.$,
   "Shell_SetClient_Params",
   [
@@ -3171,6 +3833,89 @@ mojo.internal.Struct(
   [[0, 16]]
 );
 mojo.internal.Struct(
+  Shell_OpenLocalFile_ParamsSpec.$,
+  "Shell_OpenLocalFile_Params",
+  [
+    mojo.internal.StructField(
+      "tabId",
+      0,
+      0,
+      mojo.internal.Int32,
+      0,
+      false,
+      0,
+      void 0,
+      void 0
+    )
+  ],
+  [[0, 16]]
+);
+mojo.internal.Struct(
+  Shell_OpenLocalFile_ResponseParamsSpec.$,
+  "Shell_OpenLocalFile_ResponseParams",
+  [
+    mojo.internal.StructField(
+      "opened",
+      0,
+      0,
+      mojo.internal.Bool,
+      false,
+      false,
+      0,
+      void 0,
+      void 0
+    )
+  ],
+  [[0, 16]]
+);
+mojo.internal.Struct(
+  Shell_OpenDroppedFile_ParamsSpec.$,
+  "Shell_OpenDroppedFile_Params",
+  [
+    mojo.internal.StructField(
+      "tabId",
+      0,
+      0,
+      mojo.internal.Int32,
+      0,
+      false,
+      0,
+      void 0,
+      void 0
+    ),
+    mojo.internal.StructField(
+      "name",
+      8,
+      0,
+      mojo.internal.String,
+      null,
+      false,
+      0,
+      void 0,
+      void 0
+    )
+  ],
+  [[0, 24]]
+);
+mojo.internal.Struct(
+  Shell_OpenDroppedFile_ResponseParamsSpec.$,
+  "Shell_OpenDroppedFile_ResponseParams",
+  [
+    mojo.internal.StructField(
+      "opened",
+      0,
+      0,
+      mojo.internal.Bool,
+      false,
+      false,
+      0,
+      void 0,
+      void 0
+    )
+  ],
+  [[0, 16]]
+);
+mojo.internal.Struct(
   ShellClient_OnTabsChanged_ParamsSpec.$,
   "ShellClient_OnTabsChanged_Params",
   [
@@ -3275,6 +4020,24 @@ mojo.internal.Struct(
   ],
   [[0, 24]]
 );
+mojo.internal.Struct(
+  ShellClient_OnCommand_ParamsSpec.$,
+  "ShellClient_OnCommand_Params",
+  [
+    mojo.internal.StructField(
+      "command",
+      0,
+      0,
+      mojo.internal.String,
+      null,
+      false,
+      0,
+      void 0,
+      void 0
+    )
+  ],
+  [[0, 16]]
+);
 export {
   AgentTabs,
   AgentTabsCallbackRouter,
@@ -3295,6 +4058,8 @@ export {
   AgentTabs_SendCommand_ParamsSpec,
   AgentTabs_SendCommand_ResponseParamsSpec,
   AgentTabs_SetClient_ParamsSpec,
+  ExtensionActionInfoSpec,
+  SettingPrefSpec,
   Shell,
   ShellCallbackRouter,
   ShellClient,
@@ -3302,6 +4067,7 @@ export {
   ShellClientPendingReceiver,
   ShellClientReceiver,
   ShellClientRemote,
+  ShellClient_OnCommand_ParamsSpec,
   ShellClient_OnFindResult_ParamsSpec,
   ShellClient_OnTabClosed_ParamsSpec,
   ShellClient_OnTabNavigationStateChanged_ParamsSpec,
@@ -3317,6 +4083,8 @@ export {
   Shell_CreateTab_ResponseParamsSpec,
   Shell_Find_ParamsSpec,
   Shell_FocusWindow_ParamsSpec,
+  Shell_GetAccountInfo_ParamsSpec,
+  Shell_GetAccountInfo_ResponseParamsSpec,
   Shell_GetAdblockBlockedCount_ParamsSpec,
   Shell_GetAdblockBlockedCount_ResponseParamsSpec,
   Shell_GetAdblockEnabled_ParamsSpec,
@@ -3325,6 +4093,8 @@ export {
   Shell_GetBlockThirdPartyCookies_ResponseParamsSpec,
   Shell_GetDefaultBrowserState_ParamsSpec,
   Shell_GetDefaultBrowserState_ResponseParamsSpec,
+  Shell_GetExtensionActions_ParamsSpec,
+  Shell_GetExtensionActions_ResponseParamsSpec,
   Shell_GetHttpsOnlyMode_ParamsSpec,
   Shell_GetHttpsOnlyMode_ResponseParamsSpec,
   Shell_GetPageText_ParamsSpec,
@@ -3333,16 +4103,24 @@ export {
   Shell_GetPreloadPages_ResponseParamsSpec,
   Shell_GetSendDoNotTrack_ParamsSpec,
   Shell_GetSendDoNotTrack_ResponseParamsSpec,
+  Shell_GetSettingPrefs_ParamsSpec,
+  Shell_GetSettingPrefs_ResponseParamsSpec,
   Shell_GoBack_ParamsSpec,
   Shell_GoForward_ParamsSpec,
   Shell_Navigate_ParamsSpec,
   Shell_OpenDevTools_ParamsSpec,
+  Shell_OpenDroppedFile_ParamsSpec,
+  Shell_OpenDroppedFile_ResponseParamsSpec,
+  Shell_OpenLocalFile_ParamsSpec,
+  Shell_OpenLocalFile_ResponseParamsSpec,
   Shell_OpenWindow_ParamsSpec,
   Shell_OpenWindow_ResponseParamsSpec,
   Shell_PickPaths_ParamsSpec,
   Shell_PickPaths_ResponseParamsSpec,
   Shell_Print_ParamsSpec,
   Shell_Reload_ParamsSpec,
+  Shell_RunExtensionAction_ParamsSpec,
+  Shell_RunExtensionAction_ResponseParamsSpec,
   Shell_SelectTab_ParamsSpec,
   Shell_SetAdblockEnabled_ParamsSpec,
   Shell_SetAsDefaultBrowser_ParamsSpec,
@@ -3353,6 +4131,8 @@ export {
   Shell_SetPreloadPages_ParamsSpec,
   Shell_SetSecondaryStageBounds_ParamsSpec,
   Shell_SetSendDoNotTrack_ParamsSpec,
+  Shell_SetSettingPref_ParamsSpec,
+  Shell_SetSettingPref_ResponseParamsSpec,
   Shell_SetSplit_ParamsSpec,
   Shell_SetStageBounds_ParamsSpec,
   Shell_SetStageCornerRadius_ParamsSpec,
@@ -3362,5 +4142,6 @@ export {
   Shell_StopFind_ParamsSpec,
   Shell_Stop_ParamsSpec,
   Shell_TogglePictureInPicture_ParamsSpec,
+  SignInInfoSpec,
   TabInfoSpec
 };

@@ -69,6 +69,25 @@ Sync tabs, bookmarks, history, settings, and workspace layouts across machines.
 - **Tasks:** define the sync schema + conflict resolution; end-to-end encryption (keys in the secrets vault); a backend (self-hostable) or a provider; per-surface opt-in.
 - **Risks:** E2E-crypto correctness; backend cost/ops. Start with bookmarks+settings, add tabs/history.
 
+### B2b. Our own sync service  — effort: XL
+
+Chrome Sync is closed to forks: browser sign-in and the sync endpoints need
+Google's API keys and OAuth client, which are issued to official Chrome builds
+only. A build without them holds no browser account at all, which is why the
+profile picture and Sync both looked broken until the shell started saying so.
+
+The way through is to stop asking Google. Chromium's sync engine talks a
+documented protocol (`components/sync/protocol/sync.proto`) to whatever server
+`--sync-url` names, so the work is a server that speaks it — commit and
+GetUpdates over the sync entity model, per-datatype progress markers, and the
+client-side keystore encryption Chromium already implements — plus our own
+account model in place of a Google account. Tabs, bookmarks, history and
+passwords then sync between machines under keys we never hold.
+
+Sizeable, and the only route to real cross-device sync that does not depend on
+a vendor who has no reason to grant it. Related: B2 below, which is the
+file-based settings sync we ship today.
+
 ### B3. Remote / SSH workspaces  — effort: XL
 Open a folder on a remote host and run the IDE against it (VS Code Remote-style).
 - **Builds on:** the `webdeck-core` service model (already a detachable backend), terminal, fs, lsp, debug domains.

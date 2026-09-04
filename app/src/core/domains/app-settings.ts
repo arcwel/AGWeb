@@ -38,6 +38,7 @@ export interface AppSettings {
   /** Search-engine id used for address-bar queries. */
   searchEngine: string
   showAskButton: boolean
+  profileImage: string
 }
 
 const DEFAULTS: AppSettings = {
@@ -50,7 +51,8 @@ const DEFAULTS: AppSettings = {
   downloadPath: '',
   askWhereToSave: false,
   searchEngine: 'duckduckgo',
-  showAskButton: true
+  showAskButton: true,
+  profileImage: ''
 }
 
 function file(): string {
@@ -80,6 +82,10 @@ export function readAppSettings(): AppSettings {
  * or wrong-typed values (e.g. a non-array `spellcheckLanguages`, which would
  * later be handed to `session.setSpellCheckerLanguages`) into persisted state.
  */
+/** Room for a 128px PNG with margin, and far short of anything that would
+ *  make the settings read slow. */
+const MAX_PROFILE_IMAGE_CHARS = 256 * 1024
+
 export function sanitizePatch(patch: Partial<AppSettings>): Partial<AppSettings> {
   const clean: Partial<AppSettings> = {}
   const bool = (v: unknown): v is boolean => typeof v === 'boolean'
@@ -92,6 +98,15 @@ export function sanitizePatch(patch: Partial<AppSettings>): Partial<AppSettings>
   if (bool(patch.askWhereToSave)) clean.askWhereToSave = patch.askWhereToSave
   if (typeof patch.searchEngine === 'string') clean.searchEngine = patch.searchEngine
   if (bool(patch.showAskButton)) clean.showAskButton = patch.showAskButton
+  // A square PNG data URL and nothing else. The cap is what keeps a settings
+  // file that is read on every boot from carrying a megapixel photo.
+  if (typeof patch.profileImage === 'string') {
+    const image = patch.profileImage
+    const ok =
+      image === '' ||
+      (image.startsWith('data:image/png;base64,') && image.length <= MAX_PROFILE_IMAGE_CHARS)
+    if (ok) clean.profileImage = image
+  }
   if (Array.isArray(patch.spellcheckLanguages)) {
     clean.spellcheckLanguages = patch.spellcheckLanguages.filter((l) => typeof l === 'string')
   }
