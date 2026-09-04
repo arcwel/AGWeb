@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { AgentLogEntry, AgentSessionInfo, AgentStatus } from '@shared/agents'
 import { monaco } from '@/monaco'
 import { useMonacoReady } from '@/monaco-ready'
-import { useShellStore } from '@/store'
+import { useShellStore, type ComposerSurface } from '@/store'
 import { usePopover } from '@/popover'
 import { CloseIcon } from '@/components/icons'
 import { PermissionPopover, usePolicyStatus } from '@/components/PermissionPopover'
@@ -55,7 +55,9 @@ const PLAN_KIND_GLYPHS: Record<string, string> = {
   other: '·'
 }
 
-export function AgentsBlock(): React.JSX.Element {
+export function AgentsBlock({
+  surface = 'deck'
+}: { surface?: ComposerSurface } = {}): React.JSX.Element {
   const agentSessions = useShellStore((s) => s.agentSessions)
   const [diffEntry, setDiffEntry] = useState<AgentLogEntry | null>(null)
   // The shield: the same permission popover the composer's pill opens, kept
@@ -178,7 +180,7 @@ export function AgentsBlock(): React.JSX.Element {
           <SessionCard key={session.id} session={session} onShowDiff={setDiffEntry} />
         ))}
       </div>
-      <Composer />
+      <Composer surface={surface} />
       {diffEntry && <EditDiffModal entry={diffEntry} onClose={() => setDiffEntry(null)} />}
     </div>
   )

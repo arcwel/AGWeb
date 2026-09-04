@@ -663,7 +663,6 @@ function ProfileButton(): React.JSX.Element {
               ['Payment methods', 'chrome://settings/payments'],
               ['Sync and Google services', 'chrome://settings/syncSetup'],
               ['Profiles & account settings', 'chrome://settings/people'],
-              ['Browser settings', 'chrome://settings/'],
               ['Extensions', 'chrome://extensions/']
             ] as const
           ).map(([label, url]) => (
@@ -678,6 +677,18 @@ function ProfileButton(): React.JSX.Element {
               {label}
             </button>
           ))}
+          {/* Generic settings has one home: the sheet, whose Browser side is
+              Chromium's settings. A second entry that opened a chrome:// tab
+              is what made "settings" ambiguous. */}
+          <button
+            onClick={() => {
+              useShellStore.getState().setSettingsOpen(true)
+              setOpen(false)
+            }}
+            className="block w-full rounded-lg px-3 py-1.5 text-left text-[12px] text-[var(--wd-text)] hover:bg-[var(--wd-hover)]"
+          >
+            All settings…
+          </button>
         </div>
       )}
       {open && !window.agweb.host.ownsBrowserFeatures && state && (

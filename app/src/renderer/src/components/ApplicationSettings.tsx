@@ -22,6 +22,11 @@ const TOGGLES: Array<{ key: keyof AppSettings; label: string; hint: string; rest
   },
   { key: 'restoreTabs', label: 'Restore tabs on launch', hint: 'Reopen the last session’s tabs.' },
   {
+    key: 'showAskButton',
+    label: 'Show the Ask button',
+    hint: 'The button in the title bar that asks the agent about the page you are on.'
+  },
+  {
     key: 'askForPermissions',
     label: 'Ask before granting page permissions',
     hint: 'Camera, microphone, location, notifications.'

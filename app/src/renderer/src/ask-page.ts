@@ -8,9 +8,13 @@ import { pageText } from '../../webui/shell'
  * Chrome's equivalent is its Gemini side panel, which is compiled out of an
  * unbranded Chromium and loads a Google-hosted client, so it is not something
  * this browser can carry. This does the same job with our own agent: it takes a
- * snapshot of the active tab's visible text, brings the Agents block forward,
- * and pre-attaches the page so the agent reads it first. From then on the block
- * is the ordinary agent — every tool, the same permissions, the same transcript.
+ * snapshot of the active tab's visible text, opens the assistant panel beside
+ * the page, and pre-attaches the page so the agent reads it first. From then on
+ * it is the ordinary agent — every tool, the same permissions, the same
+ * transcript.
+ *
+ * The panel is its own layout, not the Dev Deck: asking about a page should not
+ * drag the editor, terminal and file tree on screen with it.
  *
  * The snapshot is taken here, in the renderer, because the core has no view of
  * the user's tabs except through the browser; the text is data for the model to
@@ -39,6 +43,6 @@ export async function askAboutPage(): Promise<void> {
       ? [{ path: url, kind: 'page', title, excerpt: excerpt.slice(0, 12_000) }]
       : []
 
-  store.revealAgents()
-  store.loadDraft('', attachments)
+  store.openAssistant()
+  store.loadDraft('', attachments, { reveal: false, target: 'assistant' })
 }

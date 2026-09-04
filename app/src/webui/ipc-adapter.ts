@@ -48,7 +48,8 @@ const FALLBACK_SETTINGS: AppSettings = {
   restoreTabs: true,
   downloadPath: '',
   askWhereToSave: false,
-  searchEngine: 'duckduckgo'
+  searchEngine: 'duckduckgo',
+  showAskButton: true
 }
 
 /**

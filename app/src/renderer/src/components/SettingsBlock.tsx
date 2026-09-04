@@ -58,6 +58,20 @@ const TABS: Array<{ scope: Scope; label: string; hint: string }> = [
   }
 ]
 
+/**
+ * Two settings surfaces, one entry point.
+ *
+ * "Browser" is Chromium's own settings, laid out as chrome://settings lays
+ * them. "WebDeck" is the application's: provider keys, the editor, keybindings,
+ * colours, sync. They were separate windows reached from separate menus, which
+ * is why closing one left the other behind and nobody could say which was
+ * which. One sheet, one switch.
+ */
+const BROWSER_SCOPES: readonly Scope[] = ['browser']
+function isBrowserScope(scope: Scope): boolean {
+  return (BROWSER_SCOPES as readonly string[]).includes(scope)
+}
+
 /** Scopes that render a bespoke panel instead of the JSON editor. */
 const PANEL_SCOPES = ['application', 'browser', 'ai', 'sync', 'colors', 'about'] as const
 function isPanelScope(scope: Scope): boolean {
@@ -164,21 +178,55 @@ export function SettingsBlock(): React.JSX.Element {
 
   return (
     <div className="flex h-full flex-col text-xs">
+      {/* Browser vs WebDeck. The tabs below belong to whichever side is on. */}
+      <div className="flex flex-none items-center gap-2 border-b border-slate-200 px-2 py-1.5 dark:border-slate-800">
+        <div className="flex rounded-lg bg-slate-100 p-0.5 dark:bg-slate-800">
+          {(
+            [
+              ['browser', 'Browser'],
+              ['webdeck', 'WebDeck']
+            ] as const
+          ).map(([side, label]) => {
+            const active = (side === 'browser') === isBrowserScope(scope)
+            return (
+              <button
+                key={side}
+                onClick={() => setScope(side === 'browser' ? 'browser' : 'application')}
+                className={`rounded-md px-2.5 py-1 text-[11px] font-semibold ${
+                  active
+                    ? 'bg-white text-slate-700 shadow-sm dark:bg-slate-700 dark:text-slate-100'
+                    : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
+                }`}
+                data-testid={`settings-side-${side}`}
+              >
+                {label}
+              </button>
+            )
+          })}
+        </div>
+        <span className="text-[10.5px] text-slate-400">
+          {isBrowserScope(scope)
+            ? 'Chromium’s settings, in this window.'
+            : 'WebDeck’s own application settings.'}
+        </span>
+      </div>
       <div className="flex flex-none items-center gap-1 border-b border-slate-200 px-2 dark:border-slate-800">
-        {TABS.map((entry) => (
-          <button
-            key={entry.scope}
-            onClick={() => setScope(entry.scope)}
-            className={`h-7 px-2 text-[11px] font-semibold ${
-              entry.scope === scope
-                ? 'border-b-2 border-sky-500 text-slate-700 dark:text-slate-200'
-                : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
-            }`}
-            data-testid={`settings-tab-${entry.scope}`}
-          >
-            {entry.label}
-          </button>
-        ))}
+        {TABS.filter((entry) => isBrowserScope(entry.scope) === isBrowserScope(scope)).map(
+          (entry) => (
+            <button
+              key={entry.scope}
+              onClick={() => setScope(entry.scope)}
+              className={`h-7 px-2 text-[11px] font-semibold ${
+                entry.scope === scope
+                  ? 'border-b-2 border-sky-500 text-slate-700 dark:text-slate-200'
+                  : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
+              }`}
+              data-testid={`settings-tab-${entry.scope}`}
+            >
+              {entry.label}
+            </button>
+          )
+        )}
         <div className="ml-auto flex items-center gap-1.5">
           {!isPanelScope(scope) && (
             <button

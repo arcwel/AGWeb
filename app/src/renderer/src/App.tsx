@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { TabStrip } from '@/components/TabStrip'
+import { AssistantPanel } from '@/components/AssistantPanel'
+import { AskButton } from '@/components/AskButton'
 import { UtilitiesBar } from '@/components/UtilitiesBar'
 import { Toolbar } from '@/components/Toolbar'
 import { Stage } from '@/components/Stage'
@@ -219,6 +221,7 @@ export default function App(): React.JSX.Element {
   const verticalTabs = useShellStore((s) => s.verticalTabs)
   const ownsChrome = window.agweb.host.ownsBrowserChrome
   const tabRail = verticalTabs && !ownsChrome
+  const assistantOpen = useShellStore((s) => s.assistantOpen)
 
   return (
     <div className="wd-shell flex h-full flex-col">
@@ -240,10 +243,18 @@ export default function App(): React.JSX.Element {
               <div className="min-w-0 flex-1">
                 <Toolbar />
               </div>
+              <AskButton />
             </div>
           ) : (
             <>
-              <TabStrip />
+              {/* The strip scrolls when there are many tabs; Ask must not go
+                  with it, so it sits outside the scroller, pinned right. */}
+              <div className="flex min-w-0 items-center" data-testid="title-row">
+                <div className="min-w-0 flex-1">
+                  <TabStrip />
+                </div>
+                <AskButton />
+              </div>
               <Toolbar />
             </>
           )}
@@ -267,7 +278,9 @@ export default function App(): React.JSX.Element {
       <div
         className={`workspace ${revealed ? 'revealed' : ''} ${hasRail ? 'has-rail' : ''} ${
           dockEmpty ? 'dock-empty' : ''
-        } ${leftEmpty ? 'left-empty' : ''} ${tabRail ? 'has-tabrail' : ''}`}
+        } ${leftEmpty ? 'left-empty' : ''} ${tabRail ? 'has-tabrail' : ''} ${
+          assistantOpen ? 'has-assistant' : ''
+        }`}
         style={
           {
             '--deck-col-w': `${deckSizes.colWidth}px`,
@@ -282,6 +295,7 @@ export default function App(): React.JSX.Element {
       >
         {tabRail && <TabStrip />}
         <Stage />
+        {assistantOpen && <AssistantPanel />}
         {deckMode === 'attached' && <Deck />}
         <ViewportChip />
       </div>

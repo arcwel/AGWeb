@@ -10,7 +10,6 @@ import {
 import { CloseIcon, DocIcon, GlobeIcon } from '@/components/icons'
 import { usePopover } from '@/popover'
 import { AnchoredPopover } from '@/components/AnchoredPopover'
-import { askAboutPage } from '@/ask-page'
 
 /**
  * Tab strip with drag-to-reorder and Chrome-style tab groups, in two layouts.
@@ -166,20 +165,6 @@ export function TabStrip(): React.JSX.Element {
     </button>
   )
 
-  // Ask: the agent, pointed at this page — where Chrome puts its Gemini button.
-  const askButton = (
-    <button
-      onClick={() => void askAboutPage()}
-      className="no-drag ml-1 flex h-[26px] shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-[var(--wd-glass-border)] bg-[var(--wd-accent-soft)] px-2.5 text-[11.5px] font-medium text-[var(--wd-accent)] hover:brightness-110"
-      aria-label="Ask about this page"
-      title="Ask the agent about this page"
-      data-testid="ask-page"
-    >
-      <AskSparkIcon />
-      Ask
-    </button>
-  )
-
   if (orientation === 'vertical') {
     // A rail BLOCK: glass, its own header, docked to the stage's left edge by
     // App.tsx / styles.css (.tab-rail-block). Same tabs, groups and drag
@@ -201,7 +186,6 @@ export function TabStrip(): React.JSX.Element {
           <span className="flex-1" />
           {toggleButton}
           {newTabButton}
-          {askButton}
         </div>
         <div
           className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-2 py-2 [scrollbar-width:thin]"
@@ -231,16 +215,7 @@ export function TabStrip(): React.JSX.Element {
       {items}
       {toggleButton}
       {newTabButton}
-      {askButton}
     </div>
-  )
-}
-
-function AskSparkIcon(): React.JSX.Element {
-  return (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
-      <path d="M12 2l2.2 6.2L20 10l-5.8 1.8L12 18l-2.2-6.2L4 10l5.8-1.8L12 2zm7 12l1.1 3 3 1.1-3 1.1L19 22l-1.1-2.8-3-1.1 3-1.1L19 14z" />
-    </svg>
   )
 }
 

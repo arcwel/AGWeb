@@ -1,4 +1,9 @@
 import { create } from 'zustand'
+
+/** Which composer a draft is addressed to: the Deck's, or the assistant
+ *  panel's. Without it the first mounted composer claims every draft. */
+export type ComposerSurface = 'deck' | 'assistant'
+
 import { docNavTarget } from '@shared/ipc'
 import type { BrowserTabState, WorkspaceInfo } from '@shared/ipc'
 import type { HistoryEntry } from '@/omnibox-rank'
@@ -767,11 +772,31 @@ interface ShellState {
   breakpoints: Record<string, number[]>
   toggleBreakpoint(path: string, line: number): void
 
-  composerDraft: { text: string; attachments: AgentAttachment[] } | null
-  loadDraft(text: string, attachments: AgentAttachment[]): void
-  /** Bring an Agents block to the front — the existing one, activated in its
-   *  group, or a new one — and reveal the Deck. What the Ask button opens. */
-  revealAgents(): void
+  /** `target` addresses one composer. Without it the first mounted composer
+   *  claims the draft — which, when Ask opens the assistant panel, was the
+   *  Deck's composer being unmounted in the same commit: it took the page and
+   *  vanished with it. */
+  composerDraft: { text: string; attachments: AgentAttachment[]; target?: ComposerSurface } | null
+  /** Fill the composer. `reveal` opens the Deck with it, which is what an
+   *  edit-and-resend wants and what the assistant panel must not do — asking
+   *  about a page should not drag the editor and terminal on screen. */
+  loadDraft(
+    text: string,
+    attachments: AgentAttachment[],
+    options?: { reveal?: boolean; target?: ComposerSurface }
+  ): void
+  /**
+   * The assistant panel: the agent as a side panel beside the page, which is
+   * what the Ask button opens.
+   *
+   * Deliberately NOT a Deck zone. Revealing the Deck brings the editor,
+   * terminal and file tree with it, which is the wrong answer to "what does
+   * this page say" — so this is its own layout, and toggling the Deck neither
+   * opens nor closes it.
+   */
+  assistantOpen: boolean
+  openAssistant(): void
+  closeAssistant(): void
   clearDraft(): void
   closeEditorTab(path: string): void
   setFileDirty(path: string, dirty: boolean): void
@@ -1054,19 +1079,15 @@ export const useShellStore = create<ShellState>((set) => ({
     }),
 
   composerDraft: null,
-  loadDraft: (text, attachments) =>
-    set({ composerDraft: { text, attachments }, deckRevealed: true }),
-  revealAgents: () => {
-    const state = useShellStore.getState()
-    const existing = Object.values(state.blocks).find((b) => b.type === 'agents')
-    if (!existing) {
-      state.addBlock('agents')
-    } else {
-      const group = state.groups.find((g) => g.blockIds.includes(existing.id))
-      if (group) state.activateBlock(group.id, existing.id)
-    }
-    if (useShellStore.getState().deckMode === 'attached') set({ deckRevealed: true })
-  },
+  loadDraft: (text, attachments, options) =>
+    set(
+      options?.reveal === false
+        ? { composerDraft: { text, attachments, target: options?.target } }
+        : { composerDraft: { text, attachments, target: options?.target }, deckRevealed: true }
+    ),
+  assistantOpen: false,
+  openAssistant: () => set({ assistantOpen: true }),
+  closeAssistant: () => set({ assistantOpen: false }),
   clearDraft: () => set({ composerDraft: null }),
   dirtyFiles: {},
   agentSessions: {},

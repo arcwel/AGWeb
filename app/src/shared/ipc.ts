@@ -31,6 +31,9 @@ export interface AppSettings {
   askWhereToSave: boolean
   /** Search-engine id (see SEARCH_ENGINES) used for address-bar queries. */
   searchEngine: string
+  /** Show the Ask button in the title bar. On by default; some people want the
+   *  title bar to hold tabs and nothing else. */
+  showAskButton: boolean
 }
 
 /** The search engines the address bar can use. `%s` is the query slot. */

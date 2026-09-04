@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { DragEvent, KeyboardEvent } from 'react'
 import type { AgentAttachment } from '@shared/agents'
-import { useShellStore } from '@/store'
+import { useShellStore, type ComposerSurface } from '@/store'
 import { usePopover } from '@/popover'
 import {
   AttachIcon,
@@ -50,7 +50,9 @@ const PAGE_STARTERS = [
   'Fill in what this page asks for'
 ]
 
-export function Composer(): React.JSX.Element {
+export function Composer({
+  surface = 'deck'
+}: { surface?: ComposerSurface } = {}): React.JSX.Element {
   const workspace = useShellStore((s) => s.workspace)
   const [text, setText] = useState('')
   const [attachments, setAttachments] = useState<AgentAttachment[]>([])
@@ -210,18 +212,26 @@ export function Composer(): React.JSX.Element {
   // Subscribing rather than reading the draft as state keeps this a one-shot
   // handoff — it fills the box on the transition, not on every render, and a
   // draft that has already been taken can never overwrite what the user typed.
-  useEffect(
-    () =>
-      useShellStore.subscribe((state, prev) => {
-        const draft = state.composerDraft
-        if (!draft || draft === prev.composerDraft) return
-        setText(draft.text)
-        setAttachments(draft.attachments)
-        state.clearDraft()
-        inputRef.current?.focus()
-      }),
-    []
-  )
+  useEffect(() => {
+    const claim = (draft: { text: string; attachments: AgentAttachment[] }): void => {
+      setText(draft.text)
+      setAttachments(draft.attachments)
+      useShellStore.getState().clearDraft()
+      inputRef.current?.focus()
+    }
+    // A draft can be set BEFORE this composer exists — the assistant panel is
+    // created and filled in the same tick, so its composer would never see the
+    // change event. Claim anything already waiting, then subscribe.
+    const mine = (draft: { target?: ComposerSurface }): boolean =>
+      draft.target === undefined || draft.target === surface
+    const pending = useShellStore.getState().composerDraft
+    if (pending && mine(pending)) claim(pending)
+    return useShellStore.subscribe((state, prev) => {
+      const draft = state.composerDraft
+      if (!draft || draft === prev.composerDraft || !mine(draft)) return
+      claim(draft)
+    })
+  }, [surface])
 
   const send = async (): Promise<void> => {
     const task = text.trim()

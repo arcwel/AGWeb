@@ -37,6 +37,7 @@ export interface AppSettings {
   askWhereToSave: boolean
   /** Search-engine id used for address-bar queries. */
   searchEngine: string
+  showAskButton: boolean
 }
 
 const DEFAULTS: AppSettings = {
@@ -48,7 +49,8 @@ const DEFAULTS: AppSettings = {
   restoreTabs: true,
   downloadPath: '',
   askWhereToSave: false,
-  searchEngine: 'duckduckgo'
+  searchEngine: 'duckduckgo',
+  showAskButton: true
 }
 
 function file(): string {
@@ -89,6 +91,7 @@ export function sanitizePatch(patch: Partial<AppSettings>): Partial<AppSettings>
   if (typeof patch.downloadPath === 'string') clean.downloadPath = patch.downloadPath
   if (bool(patch.askWhereToSave)) clean.askWhereToSave = patch.askWhereToSave
   if (typeof patch.searchEngine === 'string') clean.searchEngine = patch.searchEngine
+  if (bool(patch.showAskButton)) clean.showAskButton = patch.showAskButton
   if (Array.isArray(patch.spellcheckLanguages)) {
     clean.spellcheckLanguages = patch.spellcheckLanguages.filter((l) => typeof l === 'string')
   }

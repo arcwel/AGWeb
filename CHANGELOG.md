@@ -68,6 +68,30 @@ All notable changes to Arcwel WebDeck are recorded here. This project adheres to
 - The About panel no longer lists an Electron version this build does not have,
   and the clear-data checkbox labelled "Auth cache" says what it clears.
 
+### Changed (assistant panel and one settings sheet)
+
+- **Ask opens a side panel, not the Dev Deck.** The assistant is its own
+  layout: a panel beside the page, full height, with the Deck's zones and the
+  stage inset by its width so nothing is drawn over anything. Toggling the
+  Deck neither opens nor closes it. Asking about a page should not drag the
+  editor, terminal and file tree on screen with it.
+- **The Ask button is pinned to the top right** of the window rather than
+  sitting at the end of the tab strip, where enough open tabs scrolled it out
+  of reach.
+- **Ask can be turned off** in Settings → WebDeck → Application.
+- **One settings sheet with a Browser / WebDeck switch.** Settings used to be
+  two surfaces reached from two menus: closing ours left a chrome:// settings
+  tab behind it, and nothing said which was which. There is now one sheet —
+  Browser is Chromium's settings, WebDeck is the application's — and the
+  profile menu's duplicate entry is gone. The app menu's Settings item and its
+  Command-comma accelerator are forwarded to the same sheet, so every route
+  lands in one place.
+- The agent has one live surface at a time: a Deck agents block says where the
+  conversation went while the panel holds it, rather than rendering a second
+  composer over the same session. A draft now names the composer it is for,
+  which is what stopped the Deck's composer claiming the page attachment and
+  then unmounting with it.
+
 ### Added (Chrome settings parity)
 
 - **The Browser tab is chrome://settings, in WebDeck's window.** The sections,

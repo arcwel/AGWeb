@@ -1,4 +1,4 @@
-import type { BlockInstance } from '@/store'
+import { useShellStore, type BlockInstance } from '@/store'
 import { EditorBlock } from '@/components/EditorBlock'
 import { TerminalBlock } from '@/components/TerminalBlock'
 import { FilesTree } from '@/components/FilesTree'
@@ -19,6 +19,14 @@ import { ExtensionViewBlock } from '@/components/ExtensionViewBlock'
 
 /** Content for each block type. */
 export function BlockContent({ block }: { block: BlockInstance }): React.JSX.Element {
+  // The agent has one surface at a time. While the assistant panel is open it
+  // is the agent, so a Deck block of the same kind would be a second live
+  // composer over the same conversation — two of everything, one behind the
+  // other. The block keeps its place in the layout and says where it went.
+  const assistantOpen = useShellStore((s) => s.assistantOpen)
+  if (block.type === 'agents' && assistantOpen) {
+    return <AgentsMovedNotice />
+  }
   switch (block.type) {
     case 'files':
       return <FilesTree />
@@ -57,4 +65,27 @@ export function BlockContent({ block }: { block: BlockInstance }): React.JSX.Ele
     case 'extview':
       return <ExtensionViewBlock containerId={block.payload?.containerId ?? ''} />
   }
+}
+
+/** Shown in a Deck agents block while the assistant panel holds the agent. */
+function AgentsMovedNotice(): React.JSX.Element {
+  const close = useShellStore((s) => s.closeAssistant)
+  return (
+    <div className="flex h-full flex-col items-start gap-2 p-4 text-[12px] text-[var(--wd-dim)]">
+      <span className="font-medium text-[var(--wd-muted)]">
+        The agent is in the assistant panel
+      </span>
+      <span className="leading-relaxed">
+        Ask opened it beside the page. Close the panel to bring the conversation back into this
+        block.
+      </span>
+      <button
+        onClick={close}
+        className="rounded-md border border-[var(--wd-glass-border)] px-2 py-1 text-[11px] text-[var(--wd-muted)] hover:bg-[var(--wd-hover)]"
+        data-testid="agents-moved-close"
+      >
+        Close the panel
+      </button>
+    </div>
+  )
 }

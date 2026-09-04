@@ -212,6 +212,24 @@ body,
    on top of anything (the Deck rule: blocks fit their zone, never overlap). */
 .workspace {
   --tabrail-w: 0px;
+  /* The assistant panel: the Ask button's home. A layout of its own, not a
+     Deck zone — it opens over the page without revealing the editor, terminal
+     and file tree, and it stays put when the Deck is toggled. Every other zone
+     is inset by its width, because a block never sits on top of another. */
+  --assistant-w: 0px;
+}
+.workspace.has-assistant {
+  --assistant-w: 392px;
+}
+.assistant-panel {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  bottom: 6px;
+  width: calc(var(--assistant-w) - 12px);
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
 }
 .workspace.has-tabrail {
   --tabrail-w: 232px;
@@ -228,7 +246,7 @@ body,
 /* The stage is the browser viewport. Browsing: full bleed. Deck: spotlit frame. */
 .stage {
   position: absolute;
-  inset: 0 0 0 var(--tabrail-w);
+  inset: 0 var(--assistant-w) 0 var(--tabrail-w);
   overflow: hidden;
   border: 0;
   border-radius: 0;
@@ -372,7 +390,7 @@ body,
 .deck-col {
   position: absolute;
   top: 6px;
-  right: calc(6px + var(--rail-w));
+  right: calc(6px + var(--rail-w) + var(--assistant-w));
   bottom: calc(var(--deck-dock-h) + 12px);
   width: var(--deck-col-w);
   display: flex;
@@ -400,7 +418,7 @@ body,
 .deck-dock {
   position: absolute;
   left: calc(var(--deck-left-w) + 6px + var(--tabrail-w));
-  right: calc(6px + var(--rail-w));
+  right: calc(6px + var(--rail-w) + var(--assistant-w));
   bottom: 6px;
   height: var(--deck-dock-h);
   display: flex;
@@ -459,7 +477,7 @@ body,
 }
 .deck-resize-dock {
   left: calc(var(--deck-left-w) + 6px);
-  right: calc(6px + var(--rail-w));
+  right: calc(6px + var(--rail-w) + var(--assistant-w));
   bottom: calc(12px + var(--deck-dock-h));
   height: 12px;
   cursor: row-resize;

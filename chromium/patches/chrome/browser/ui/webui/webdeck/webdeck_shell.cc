@@ -1109,6 +1109,11 @@ bool WebDeckShell::ForwardCommand(int command_id, bool execute) {
     case IDC_DEV_TOOLS_CONSOLE:    name = "devtools"; break;
     case IDC_DEV_TOOLS_INSPECT:    name = "devtools"; break;
     case IDC_WEBDECK_TOGGLE_DECK:  name = "toggle-deck"; break;
+    // The app menu's Settings item and its Command-, accelerator. Chromium
+    // would open chrome://settings in a tab; the shell has one settings sheet
+    // whose Browser side IS those settings, so both land in the same place
+    // instead of leaving two surfaces open at once.
+    case IDC_OPTIONS:              name = "preferences"; break;
     default:
       return false;
   }
@@ -1121,7 +1126,8 @@ bool WebDeckShell::ForwardCommand(int command_id, bool execute) {
   // responder away from the staged page's native view, so without this the
   // keystrokes that follow ⌘L keep going to the page.
   if (name == "focus-address" || name == "find" || name == "find-next" ||
-      name == "find-prev" || name == "new-tab" || name == "toggle-deck") {
+      name == "find-prev" || name == "new-tab" || name == "toggle-deck" ||
+      name == "preferences") {
     // Through the views FocusManager, not WebContents::Focus() alone: the
     // staged tab's WebView is the focused view, and only RequestFocus on the
     // shell's own WebView moves both the views focus and the native first

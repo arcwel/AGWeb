@@ -116,6 +116,9 @@ export async function runMenuCommand(command: string): Promise<void> {
       store.toggleDeck()
       return
 
+    // 'preferences' is the app menu's Settings item (IDC_OPTIONS), forwarded
+    // by the browser so it opens this one sheet rather than a chrome:// tab.
+    case 'app:preferences':
     case 'app:settings':
       // Settings opens as its own overlay, not a deck block — it configures
       // the app and browser, not the developer workspace.
