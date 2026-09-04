@@ -1,0 +1,23 @@
+{
+  "name": "@webdeck/sync",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A sync service that speaks Chromium's own sync protocol, so WebDeck can sync without Google.",
+  "bin": {
+    "webdeck-sync": "./src/cli.mjs"
+  },
+  "scripts": {
+    "vendor:protos": "node scripts/vendor-protos.mjs",
+    "check:protos": "node scripts/vendor-protos.mjs --check",
+    "test": "node --test src/*.test.mjs",
+    "sync": "node --no-warnings=ExperimentalWarning src/cli.mjs",
+    "serve": "node --no-warnings=ExperimentalWarning src/cli.mjs serve"
+  },
+  "dependencies": {
+    "protobufjs": "^7.4.0"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
