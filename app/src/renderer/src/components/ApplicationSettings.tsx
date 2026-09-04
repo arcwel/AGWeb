@@ -1,5 +1,11 @@
 import { useEffect, useState } from 'react'
-import { SEARCH_ENGINES, type AppInfo, type AppSettings, type ClearableData } from '@shared/ipc'
+import {
+  SEARCH_ENGINES,
+  type AppInfo,
+  type AppSettings,
+  type ClearableData,
+  type HistorySourceInfo
+} from '@shared/ipc'
 import { useShellStore } from '@/store'
 import { pickProfileImage } from '@/profile-image'
 
@@ -160,6 +166,10 @@ export function ApplicationSettings(): React.JSX.Element {
 
       <Section title="Profile picture">
         <ProfilePicture settings={settings} onChange={setSettings} />
+      </Section>
+
+      <Section title="Import browsing history">
+        <ImportHistory />
       </Section>
 
       <Section title="Downloads">
@@ -350,6 +360,97 @@ function Section({
       </h3>
       {children}
     </section>
+  )
+}
+
+/**
+ * Bring history over from another browser on this machine.
+ *
+ * Import rather than sync, because syncing with a Google account is not ours
+ * to offer: signing in to a Chromium build is restricted by Google. Reading
+ * another browser's own database needs nobody's permission and works today.
+ */
+function ImportHistory(): React.JSX.Element {
+  const [sources, setSources] = useState<HistorySourceInfo[] | null>(null)
+  const [busy, setBusy] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    void window.agweb.history
+      .sources()
+      .then((found) => {
+        if (!cancelled) setSources(found)
+      })
+      .catch(() => {
+        if (!cancelled) setSources([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const importFrom = (source: HistorySourceInfo): void => {
+    setBusy(source.id)
+    setNotice(null)
+    void window.agweb.history
+      .importFrom(source.id)
+      .then((result) => {
+        if (result.error || !result.entries) {
+          setNotice(result.error ?? 'That history could not be read.')
+          return
+        }
+        const added = useShellStore.getState().importHistory(result.entries)
+        // Say what changed, not what was read: importing the same browser
+        // twice reads thousands of pages and adds none, and "0 new" is the
+        // honest report of that.
+        setNotice(
+          added === 0
+            ? `Nothing new from ${source.label} — already imported.`
+            : `Added ${added.toLocaleString()} pages from ${source.label}.`
+        )
+      })
+      .catch((error) => setNotice(String(error)))
+      .finally(() => setBusy(null))
+  }
+
+  if (sources === null) {
+    return <p className="px-2 py-1.5 text-[11px] text-[var(--wd-dim)]">Looking for browsers…</p>
+  }
+  if (sources.length === 0) {
+    return (
+      <p className="px-2 py-1.5 text-[11px] text-[var(--wd-dim)]">
+        No other browser on this Mac has history to import.
+      </p>
+    )
+  }
+  return (
+    <div className="flex flex-col gap-1" data-testid="history-import">
+      {sources.map((source) => (
+        <div key={source.id} className="flex items-center gap-3 px-2 py-1.5">
+          <span className="min-w-0 flex-1 truncate text-[12px]">{source.label}</span>
+          <span className="flex-none text-[11px] text-[var(--wd-dim)]">
+            {source.error ? source.error : `${(source.entries ?? 0).toLocaleString()} pages`}
+          </span>
+          <button
+            onClick={() => importFrom(source)}
+            disabled={busy !== null || !source.entries}
+            className="flex-none rounded-md border border-[var(--wd-glass-border)] px-2 py-1 text-[11px] text-[var(--wd-muted)] hover:bg-[var(--wd-hover)] disabled:opacity-40"
+            data-testid={`history-import-${source.id}`}
+          >
+            {busy === source.id ? 'Importing…' : 'Import'}
+          </button>
+        </div>
+      ))}
+      {notice && (
+        <p
+          className="px-2 pb-1 text-[11px] text-[var(--wd-dim)]"
+          data-testid="history-import-notice"
+        >
+          {notice}
+        </p>
+      )}
+    </div>
   )
 }
 

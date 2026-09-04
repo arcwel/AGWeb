@@ -166,6 +166,10 @@ export function createAgwebApi(ipcRenderer: IpcLike, host: HostCapabilities): Ag
     bookmarks: {
       importFile: () => ipcRenderer.invoke(IpcChannels.bookmarksImportFile)
     },
+    history: {
+      sources: () => ipcRenderer.invoke(IpcChannels.historySources),
+      importFrom: (id, limit) => ipcRenderer.invoke(IpcChannels.historyImport, id, limit)
+    },
     windows: {
       newWindow: () => ipcRenderer.invoke(IpcChannels.windowNew),
       openDeck: () => ipcRenderer.invoke(IpcChannels.deckOpen),
