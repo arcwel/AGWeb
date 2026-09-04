@@ -122,8 +122,12 @@ function Preview(): React.JSX.Element {
         >
           Active tab
         </span>
+        {/* A swatch showing what a field looks like, not a control. It was in
+            the tab order and announced as an unlabelled text box. */}
         <input
           readOnly
+          aria-hidden
+          tabIndex={-1}
           value="Field"
           className="w-16 rounded-md border border-[var(--wd-glass-border)] bg-[var(--wd-field)] px-2 py-1 text-[11px] text-[var(--wd-text)]"
         />
@@ -183,7 +187,7 @@ function ColorRow({
               resetColor(theme, token.token)
               onChange()
             }}
-            className="flex-none text-[10px] text-[var(--wd-dim)] opacity-0 group-hover:opacity-100 hover:text-[var(--wd-text)]"
+            className="flex-none text-[10px] text-[var(--wd-dim)] opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 hover:text-[var(--wd-text)]"
             title="Restore the default"
           >
             reset
@@ -240,11 +244,14 @@ function RgbaPicker({
   const channel = (key: 'r' | 'g' | 'b', label: string): React.JSX.Element => (
     <label className="flex items-center gap-2">
       <span className="w-3 text-[10px] text-[var(--wd-dim)]">{label}</span>
+      {/* Both inputs sit inside one label, so a screen reader announced both
+          as just "R". Name them apart. */}
       <input
         type="range"
         min={0}
         max={255}
         value={draft[key]}
+        aria-label={`${label} slider`}
         onChange={(e) => update({ ...draft, [key]: Number(e.target.value) })}
         className="h-1 flex-1 accent-[var(--wd-accent)]"
       />
@@ -253,6 +260,7 @@ function RgbaPicker({
         min={0}
         max={255}
         value={draft[key]}
+        aria-label={`${label} value`}
         onChange={(e) => update({ ...draft, [key]: Number(e.target.value) })}
         className="w-11 rounded border border-[var(--wd-glass-border)] bg-transparent px-1 py-0.5 text-right text-[10px] outline-none"
       />

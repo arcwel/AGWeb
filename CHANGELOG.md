@@ -43,6 +43,116 @@ All notable changes to Arcwel WebDeck are recorded here. This project adheres to
   the user had done anything. The macOS permission text now names Arcwel
   WebDeck.
 
+### Fixed (settings QA round)
+
+- **The Application tab's "Clear now" did nothing.** Its channel has no handler
+  on the fork, so the button raised "no handler for app-settings:clear-data"
+  and cleared nothing — and the call had no error path, so the failure was
+  invisible. Chromium's own remover on the Browser tab is the real one; the
+  Application tab now points at it and at the Chromium pages that own site
+  permissions, languages, hardware acceleration and Do Not Track.
+- **Four toggles that changed nothing are gone.** Hardware acceleration, ask
+  before granting page permissions, spell-check and Do Not Track wrote
+  WebDeck's own settings file, which nothing on this build reads; Do Not Track
+  also contradicted the working switch on the Browser tab. Chromium owns all
+  four, so the panel names where each lives instead.
+- **Failures no longer pass silently.** Saving an application setting, choosing
+  the agent model and every sync action caught nothing: a rejected call left a
+  control snapped back or a button quietly re-enabled with no message. Each
+  reports now, and the model dropdown reverts rather than showing a model that
+  was never saved.
+- Settings is a real dialog: `role="dialog"`, an accessible name, and focus
+  moves into the sheet when it opens. The colour channel inputs are named
+  apart, the reset button is visible when focused rather than only on hover,
+  and the decorative field swatch is out of the tab order.
+- The About panel no longer lists an Electron version this build does not have,
+  and the clear-data checkbox labelled "Auth cache" says what it clears.
+
+### Added (Chrome settings parity)
+
+- **The Browser tab is chrome://settings, in WebDeck's window.** The sections,
+  their order and their wording are Chrome's — You and Google, Autofill and
+  passwords, Privacy and security, Performance, Appearance, Search engine, On
+  startup, Downloads, Languages, Accessibility, System, Reset — and each row is
+  provided the way Chrome provides it. A preference Chrome shows as a switch or
+  a dropdown is a switch or a dropdown here, writing the same pref
+  chrome://settings writes; a setting Chrome hands to a subpage (passwords,
+  payment methods, addresses, site permissions, search engines, languages,
+  reset) is a row that opens Chromium's real page. There is a search box over
+  the whole surface, as Chrome has. Safe Browsing is its three-way choice over
+  the two booleans behind it.
+- **An allowlisted preference bridge.** chrome://settings is a page of controls
+  over the profile's PrefService, so the shell needed the same values — but a
+  renderer that could name any pref would be a hole the size of the browser.
+  The browser keeps a list: 27 preferences, each with its type, whether it
+  lives in the profile or in Local State, and whether it may be written at all.
+  A name that is not on it reads back exactly like one this build does not
+  register, so refusing leaks nothing. Wrong types are refused, policy-managed
+  prefs are refused and drawn disabled, and two prefs that the surface only
+  displays (the download folder, the language list) are read-only here and
+  changed on Chromium's own page — otherwise an arbitrary download directory
+  plus "don't ask where to save" would be a writable-path primitive.
+- A row whose pref this build does not register is hidden rather than drawn
+  dead, which is how the wrong caret-browsing pref name was caught.
+
+### Added (settings QA round)
+
+- **Ask.** A button at the end of the tab strip, where Chrome keeps "Ask
+  Gemini", that points the agent at the page you are looking at. Chrome's
+  version is its Gemini side panel, which is compiled out of an unbranded
+  Chromium and loads a Google-hosted client, so this browser cannot carry it.
+  Ours takes a snapshot of the active tab's visible text, brings the Agents
+  block forward with the page attached ("Sharing …"), and offers starters —
+  summarise, what can I do here, explain the terms, fill in the form. The agent
+  reads the page first and then is the ordinary agent: every tool, the same
+  permissions and guards, the same transcript. The page text is handed to the
+  model as data to answer from, with the same injection framing as chat-with-
+  page, and capped in the core.
+
+- **Ask Gemini.** The omnibox answer panel can hand the same question to
+  Gemini and back, streaming from Google's API in the core. The button appears
+  only when a Gemini key is configured, so it can never be a button that only
+  says "no key"; the panel names which model answered. The key never leaves the
+  core — the page sees tokens.
+
+### Fixed (feedback round)
+
+- **Pinned extensions now appear in the toolbar.** Chromium draws extension
+  buttons in its own toolbar, which this build does not have — the toolbar is
+  the shell's page — so "Pin to toolbar" in chrome://extensions was a switch
+  with nowhere to show its result. The shell reads the same pinned list
+  Chromium's toolbar reads, with each action's per-page title, badge and
+  enabled state, and draws them; the icon comes from Chromium's own
+  chrome://extension-icon. Clicking one runs the action exactly as the native
+  button would, and the browser opens the extension's popup in its own window.
+- **The profile button shows the signed-in Google account**, picture and all,
+  and updates on its own. It read the profile only while its menu was open, so
+  the icon never changed; the account now comes from the browser (its identity
+  manager) on load and after each navigation, which is also when a freshly
+  downloaded avatar first exists.
+- **The profile menu names the account** instead of opening with four links to
+  nowhere in particular, and links straight at Chromium's own passwords,
+  autofill and addresses, payment methods and sync pages. Those read the
+  profile's encrypted store and cannot be rebuilt outside Chromium's settings,
+  so pointing at them is the whole job.
+- **The address bar can reach the browser's own pages.** Typing any
+  `chrome://…` URL was handed to the search engine as a query, because the
+  URL-or-search test did not know the scheme. chrome://password-manager, where
+  chrome://settings/passwords redirects, was also missing from the shell's
+  navigation allowlist, so saved passwords were doubly unreachable.
+- **Markdown, JSON, CSV and friends open in Document Studio again** when
+  navigated to, with its styled/source toggle, instead of rendering as raw
+  text. The interception lived in the Electron main process and was deleted
+  with it; the decision now lives in shared code and runs before a native view
+  is created, so a workspace document never flashes as plain text. It is still
+  limited to documents inside the open workspace.
+
+### Changed
+
+- **Apple Silicon only, deliberately.** Intel Macs are out of scope; Windows
+  and Linux come first when the platform list grows. Packaging no longer warns
+  about the missing universal build.
+
 ### Added
 
 - **A normal Mac install.** `package-fork` gained `--identity` and

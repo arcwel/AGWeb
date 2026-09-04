@@ -28,12 +28,33 @@
 #include "chrome/browser/ui/browser_window/public/browser_window_interface_iterator.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
+#include "chrome/browser/ui/navigator/browser_navigator.h"
+#include "chrome/browser/ui/navigator/browser_navigator_params.h"
 #include "chrome/browser/ui/select_file_policy/chrome_select_file_policy.h"
 #include "chrome/browser/ui/tabs/tab_enums.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
 #include "chrome/browser/ui/views/frame/contents_container_view.h"
 #include "chrome/browser/webdeck/webdeck_shell_host.h"
+#include "base/base64.h"
+#include "chrome/browser/extensions/extension_action_runner.h"
+#include "extensions/browser/extension_action_manager.h"
+#include "base/json/json_reader.h"
+#include "base/json/json_writer.h"
+#include "chrome/browser/browser_process.h"
+#include "components/prefs/pref_service.h"
+#include "chrome/browser/profiles/profile_attributes_entry.h"
+#include "chrome/browser/profiles/profile_attributes_storage.h"
+#include "chrome/browser/profiles/profile_manager.h"
+#include "chrome/browser/signin/identity_manager_factory.h"
+#include "chrome/browser/ui/toolbar/toolbar_actions_model.h"
+#include "components/sessions/content/session_tab_helper.h"
+#include "components/signin/public/identity_manager/account_info.h"
+#include "components/signin/public/identity_manager/identity_manager.h"
+#include "extensions/browser/extension_action.h"
+#include "extensions/browser/extension_registry.h"
+#include "extensions/common/extension.h"
+#include "ui/gfx/image/image.h"
 #include "chrome/common/chrome_isolated_world_ids.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/webui_url_constants.h"
@@ -93,8 +114,18 @@ bool IsAllowedShellUrl(const GURL& url) {
   // Chromium owns extensions, history, downloads and bookmarks on this build.
   // Still no chrome://flags, chrome://policy or other privileged surfaces.
   static constexpr const char* kAllowedHosts[] = {
-      chrome::kChromeUIWebDeckHost, "settings",  "extensions", "history",
-      "downloads",                   "bookmarks", "newtab",     "version"};
+      chrome::kChromeUIWebDeckHost,
+      "settings",
+      // Saved passwords live here: chrome://settings/passwords is a redirect
+      // to chrome://password-manager, so refusing this host meant the
+      // password manager could be opened and then instantly dead-ended.
+      "password-manager",
+      "extensions",
+      "history",
+      "downloads",
+      "bookmarks",
+      "newtab",
+      "version"};
   for (const char* host : kAllowedHosts) {
     if (url.host() == host) {
       return true;
@@ -703,6 +734,321 @@ void WebDeckShell::SetAsDefaultBrowser(SetAsDefaultBrowserCallback callback) {
         std::move(cb).Run(DefaultBrowserStateCode(state));
       },
       std::move(callback)));
+}
+
+void WebDeckShell::GetExtensionActions(int32_t tab_id,
+                                       GetExtensionActionsCallback callback) {
+  std::vector<mojom::ExtensionActionInfoPtr> out;
+  Profile* profile = GetProfile();
+  content::WebContents* contents = GetTabById(tab_id);
+  // ToolbarActionsModel is the authority on what "pinned to the toolbar" means
+  // — it is the same list Chromium's own toolbar draws, and the same one the
+  // "Pin to toolbar" switch in chrome://extensions writes. Reading it here is
+  // what makes that switch do something in a browser whose toolbar is HTML.
+  ToolbarActionsModel* model =
+      profile ? ToolbarActionsModel::Get(profile) : nullptr;
+  if (!model || !contents) {
+    std::move(callback).Run(std::move(out));
+    return;
+  }
+  // Extensions address tabs by session id, not by our shell's tab id.
+  const int session_tab_id =
+      sessions::SessionTabHelper::IdForTab(contents).id();
+  extensions::ExtensionRegistry* registry =
+      extensions::ExtensionRegistry::Get(profile);
+  extensions::ExtensionActionManager* actions =
+      extensions::ExtensionActionManager::Get(profile);
+  if (!registry || !actions) {
+    std::move(callback).Run(std::move(out));
+    return;
+  }
+  for (const auto& action_id : model->pinned_action_ids()) {
+    const extensions::Extension* extension =
+        registry->enabled_extensions().GetByID(action_id);
+    if (!extension) {
+      // A pinned id can outlive the extension (disabled, or removed while the
+      // pref survives). Skipping is right: there is nothing to draw.
+      continue;
+    }
+    extensions::ExtensionAction* action =
+        actions->GetExtensionAction(*extension);
+    if (!action) {
+      continue;
+    }
+    auto info = mojom::ExtensionActionInfo::New();
+    info->id = extension->id();
+    info->name = extension->name();
+    info->title = action->GetTitle(session_tab_id);
+    info->badge_text = action->GetExplicitlySetBadgeText(session_tab_id);
+    info->enabled = action->GetIsVisible(session_tab_id);
+    info->has_popup = action->HasPopup(session_tab_id);
+    out.push_back(std::move(info));
+  }
+  std::move(callback).Run(std::move(out));
+}
+
+void WebDeckShell::RunExtensionAction(int32_t tab_id,
+                                      const std::string& extension_id,
+                                      RunExtensionActionCallback callback) {
+  Profile* profile = GetProfile();
+  content::WebContents* contents = GetTabById(tab_id);
+  if (!profile || !contents) {
+    std::move(callback).Run(false);
+    return;
+  }
+  extensions::ExtensionRegistry* registry =
+      extensions::ExtensionRegistry::Get(profile);
+  const extensions::Extension* extension =
+      registry ? registry->enabled_extensions().GetByID(extension_id) : nullptr;
+  extensions::ExtensionActionRunner* runner =
+      extensions::ExtensionActionRunner::GetForWebContents(contents);
+  if (!extension || !runner) {
+    std::move(callback).Run(false);
+    return;
+  }
+  // RunAction is the same entry point the native button uses: it grants
+  // activeTab for this page and fires onClicked, then tells us whether the
+  // extension wants a popup shown.
+  const extensions::ExtensionAction::ShowAction show =
+      runner->RunAction(extension, /*grant_tab_permissions=*/true);
+  if (show != extensions::ExtensionAction::ShowAction::kShowPopup) {
+    std::move(callback).Run(false);
+    return;
+  }
+  extensions::ExtensionActionManager* actions =
+      extensions::ExtensionActionManager::Get(profile);
+  extensions::ExtensionAction* action =
+      actions ? actions->GetExtensionAction(*extension) : nullptr;
+  const int session_tab_id =
+      sessions::SessionTabHelper::IdForTab(contents).id();
+  const GURL popup = action ? action->GetPopupUrl(session_tab_id) : GURL();
+  if (!popup.is_valid()) {
+    std::move(callback).Run(false);
+    return;
+  }
+  ShowExtensionPopup(popup);
+  std::move(callback).Run(true);
+}
+
+void WebDeckShell::ShowExtensionPopup(const GURL& url) {
+  Profile* profile = GetProfile();
+  if (!profile) {
+    return;
+  }
+  // Chromium anchors a real extension popup to its toolbar button, which this
+  // build does not have — the toolbar is the shell's own HTML. A popup window
+  // is the honest approximation: the extension's page, in its own small
+  // window, with the same origin and permissions it would have in a bubble.
+  NavigateParams params(profile, url, ui::PAGE_TRANSITION_AUTO_TOPLEVEL);
+  params.disposition = WindowOpenDisposition::NEW_POPUP;
+  // NEW_POPUP shows the window on its own; only the size needs saying.
+  params.window_features.bounds = gfx::Rect(0, 0, 400, 600);
+  params.window_features.has_width = true;
+  params.window_features.has_height = true;
+  // Qualified: WebDeckShell has its own Navigate(tab_id, url).
+  ::Navigate(&params);
+}
+
+namespace {
+
+// Every Chromium preference the shell's settings may read or write.
+//
+// This list IS the security boundary for GetSettingPrefs/SetSettingPref: it is
+// what stops a compromised chrome://webdeck renderer from turning off Safe
+// Browsing, redirecting the proxy, or reading anything else in the profile by
+// name. Adding a row is a deliberate act — it must be a setting a person is
+// meant to change from a settings page, and nothing else.
+//
+// `local_state` marks the browser-wide prefs (they live in Local State, not
+// the profile), which is where Chrome keeps the ones that outlive a profile.
+struct AllowedPref {
+  const char* name;
+  base::Value::Type type;
+  bool local_state;
+  // Readable but not writable. A path or a language list is shown in the
+  // settings surface and changed on Chromium's own page, which validates it —
+  // so there is no reason for this interface to accept a new value, and every
+  // reason not to: an arbitrary download directory plus "don't ask where to
+  // save" is a writeable-path primitive.
+  bool writable;
+};
+
+constexpr AllowedPref kAllowedPrefs[] = {
+    // Appearance
+    {"bookmark_bar.show_on_all_tabs", base::Value::Type::BOOLEAN, false, true},
+    {"browser.show_home_button", base::Value::Type::BOOLEAN, false, true},
+    {"webkit.webprefs.default_font_size", base::Value::Type::INTEGER, false, true},
+    // On startup
+    {"session.restore_on_startup", base::Value::Type::INTEGER, false, true},
+    // Downloads
+    {"download.prompt_for_download", base::Value::Type::BOOLEAN, false, true},
+    {"download.default_directory", base::Value::Type::STRING, false, false},
+    // Autofill and passwords
+    {"autofill.profile_enabled", base::Value::Type::BOOLEAN, false, true},
+    {"autofill.credit_card_enabled", base::Value::Type::BOOLEAN, false, true},
+    {"credentials_enable_service", base::Value::Type::BOOLEAN, false, true},
+    {"credentials_enable_autosignin", base::Value::Type::BOOLEAN, false, true},
+    // Privacy and security
+    {"safebrowsing.enabled", base::Value::Type::BOOLEAN, false, true},
+    {"safebrowsing.enhanced", base::Value::Type::BOOLEAN, false, true},
+    {"search.suggest_enabled", base::Value::Type::BOOLEAN, false, true},
+    {"alternate_error_pages.enabled", base::Value::Type::BOOLEAN, false, true},
+    {"dns_over_https.mode", base::Value::Type::STRING, true, true},
+    {"privacy_sandbox.m1.topics_enabled", base::Value::Type::BOOLEAN, false, true},
+    {"privacy_sandbox.m1.fledge_enabled", base::Value::Type::BOOLEAN, false, true},
+    {"privacy_sandbox.m1.ad_measurement_enabled", base::Value::Type::BOOLEAN, false, true},
+    // Performance
+    {"performance_tuning.high_efficiency_mode.state",
+     base::Value::Type::INTEGER, true, true},
+    {"performance_tuning.battery_saver_mode.state", base::Value::Type::INTEGER, true, true},
+    // Languages and spell-check
+    {"browser.enable_spellchecking", base::Value::Type::BOOLEAN, false, true},
+    {"intl.accept_languages", base::Value::Type::STRING, false, false},
+    // Accessibility
+    {"settings.a11y.focus_highlight", base::Value::Type::BOOLEAN, false, true},
+    {"accessibility.captions.live_caption_enabled", base::Value::Type::BOOLEAN, false, true},
+    {"settings.a11y.caretbrowsing.enabled", base::Value::Type::BOOLEAN, false, true},
+    // System
+    {"hardware_acceleration_mode.enabled", base::Value::Type::BOOLEAN, true, true},
+    {"background_mode.enabled", base::Value::Type::BOOLEAN, true, true},
+};
+
+const AllowedPref* FindAllowedPref(const std::string& name) {
+  for (const AllowedPref& pref : kAllowedPrefs) {
+    if (name == pref.name) {
+      return &pref;
+    }
+  }
+  return nullptr;
+}
+
+}  // namespace
+
+void WebDeckShell::GetSettingPrefs(const std::vector<std::string>& names,
+                                   GetSettingPrefsCallback callback) {
+  std::vector<mojom::SettingPrefPtr> out;
+  Profile* profile = GetProfile();
+  for (const std::string& name : names) {
+    auto entry = mojom::SettingPref::New();
+    entry->name = name;
+    entry->managed = false;
+    entry->unavailable = true;
+    const AllowedPref* allowed = FindAllowedPref(name);
+    PrefService* prefs = nullptr;
+    if (allowed) {
+      prefs = allowed->local_state ? g_browser_process->local_state()
+                                   : (profile ? profile->GetPrefs() : nullptr);
+    }
+    // A name that is not allowlisted is reported exactly like one this build
+    // does not register: the shell learns nothing about the profile from it.
+    const PrefService::Preference* pref =
+        prefs ? prefs->FindPreference(name) : nullptr;
+    // `allowed` is re-tested rather than inferred from `prefs` being non-null:
+    // the two are only linked by the block above, and a reader should not have
+    // to prove that to know this dereference is safe.
+    if (allowed && pref && pref->GetType() == allowed->type) {
+      entry->unavailable = false;
+      entry->managed = !pref->IsUserModifiable();
+      std::string json;
+      if (base::JSONWriter::Write(*pref->GetValue(), &json)) {
+        entry->json_value = json;
+      }
+    }
+    out.push_back(std::move(entry));
+  }
+  std::move(callback).Run(std::move(out));
+}
+
+void WebDeckShell::SetSettingPref(const std::string& name,
+                                 const std::string& json_value,
+                                 SetSettingPrefCallback callback) {
+  const AllowedPref* allowed = FindAllowedPref(name);
+  // Not on the list, or on it only to be read: refuse. The settings surface
+  // shows these and sends the user to Chromium's own page to change them.
+  if (!allowed || !allowed->writable) {
+    std::move(callback).Run(false);
+    return;
+  }
+  Profile* profile = GetProfile();
+  PrefService* prefs = allowed->local_state
+                           ? g_browser_process->local_state()
+                           : (profile ? profile->GetPrefs() : nullptr);
+  const PrefService::Preference* pref =
+      prefs ? prefs->FindPreference(name) : nullptr;
+  if (!pref || pref->GetType() != allowed->type) {
+    std::move(callback).Run(false);
+    return;
+  }
+  // Policy wins. chrome://settings draws a managed pref disabled; writing it
+  // here would silently do nothing, so say so instead.
+  if (!pref->IsUserModifiable()) {
+    std::move(callback).Run(false);
+    return;
+  }
+  // No comments, no trailing commas: this is a value the renderer produced
+  // with JSON.stringify, not a config file.
+  std::optional<base::Value> parsed =
+      base::JSONReader::Read(json_value, base::JSON_PARSE_RFC);
+  if (!parsed || parsed->type() != allowed->type) {
+    std::move(callback).Run(false);
+    return;
+  }
+  prefs->Set(name, *parsed);
+  std::move(callback).Run(true);
+}
+
+void WebDeckShell::GetAccountInfo(GetAccountInfoCallback callback) {
+  auto info = mojom::SignInInfo::New();
+  info->signed_in = false;
+  Profile* profile = GetProfile();
+  if (!profile) {
+    std::move(callback).Run(std::move(info));
+    return;
+  }
+  // The local profile's display name exists whether or not anyone is signed
+  // in, and it is what the button falls back to.
+  ProfileAttributesEntry* entry =
+      g_browser_process->profile_manager()
+          ->GetProfileAttributesStorage()
+          .GetProfileAttributesWithPath(profile->GetPath());
+  if (entry) {
+    info->profile_name = base::UTF16ToUTF8(entry->GetName());
+  }
+  signin::IdentityManager* identity =
+      IdentityManagerFactory::GetForProfile(profile);
+  if (!identity) {
+    std::move(callback).Run(std::move(info));
+    return;
+  }
+  // kSignin, not kSync: someone signed into the browser without turning sync on
+  // still has an account and an avatar, and the menu should say so.
+  const CoreAccountInfo core =
+      identity->GetPrimaryAccountInfo(signin::ConsentLevel::kSignin);
+  if (core.IsEmpty()) {
+    std::move(callback).Run(std::move(info));
+    return;
+  }
+  const ::AccountInfo account =
+      identity->FindExtendedAccountInfoByAccountId(core.account_id);
+  info->signed_in = true;
+  info->email = core.email;
+  const std::optional<std::string_view> full_name = account.GetFullName();
+  if (full_name.has_value()) {
+    info->full_name = std::string(full_name.value());
+  }
+  // The account image is a downloaded bitmap with no chrome:// URL the page
+  // could load, so it travels as a data: URL. It is absent until the fetch
+  // finishes, which is why the shell re-reads this on tab changes rather than
+  // once at startup.
+  const std::optional<gfx::Image> avatar = account.GetAvatarImage();
+  if (avatar.has_value() && !avatar->IsEmpty()) {
+    scoped_refptr<base::RefCountedMemory> png = avatar->As1xPNGBytes();
+    if (png && png->size() > 0) {
+      info->avatar_data_url =
+          "data:image/png;base64," + base::Base64Encode(*png);
+    }
+  }
+  std::move(callback).Run(std::move(info));
 }
 
 void WebDeckShell::SetClient(mojo::PendingRemote<mojom::ShellClient> client) {

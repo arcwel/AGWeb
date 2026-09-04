@@ -192,6 +192,42 @@ interface Shell {
   // (same encoding as GetDefaultBrowserState).
   SetAsDefaultBrowser() => (int32 state);
 
+  // The extensions the user pinned to the toolbar (chrome://extensions ->
+  // "Pin to toolbar"), as they should appear for `tab_id`. The shell draws the
+  // toolbar, so Chromium's own extension buttons have nowhere to live; this is
+  // where that pinned state reaches them. Icons are not sent here — the page
+  // loads chrome://extension-icon/<id>/<size>/1 directly.
+  GetExtensionActions(int32 tab_id) => (array<ExtensionActionInfo> actions);
+
+  // Click a pinned extension's action for `tab_id`, exactly as pressing its
+  // toolbar button would: it grants activeTab and fires the extension's
+  // onClicked handler. When the extension wants a popup, the BROWSER opens it
+  // as a popup window and reports that it did. The chrome-extension:// URL is
+  // deliberately never handed back to the page: the shell is not trusted to
+  // navigate anywhere privileged (IsAllowedShellUrl), and a returned URL would
+  // be exactly that, laundered through a reply.
+  RunExtensionAction(int32 tab_id, string extension_id) => (bool showed_popup);
+
+  // Chromium's own settings, by preference name.
+  //
+  // chrome://settings is a page of controls over the profile's PrefService.
+  // The shell draws its own settings, so it needs the same values — but a
+  // renderer that could read or write ANY pref by name would be a hole the
+  // size of the browser (kSafeBrowsingEnabled, the proxy config, the update
+  // URL). So the browser keeps an allowlist: a name that is not on it is
+  // refused, and a value of the wrong type is refused. `unavailable` is set
+  // when a build simply does not register that pref, so the shell can hide
+  // the control rather than draw a dead one.
+  GetSettingPrefs(array<string> names) => (array<SettingPref> prefs);
+  // Returns false when the name is not allowlisted, the type does not match,
+  // or policy controls the pref.
+  SetSettingPref(string name, string json_value) => (bool ok);
+
+  // Who is signed in, for the profile button and its menu. The avatar arrives
+  // as a data: URL because the account image is a downloaded bitmap with no
+  // stable chrome:// URL the page could load.
+  GetAccountInfo() => (SignInInfo info);
+
   // Registers the observer channel for state pushed back to the shell.
   SetClient(pending_remote<ShellClient> client);
 
@@ -236,6 +272,48 @@ interface ShellClient {
   // "reopen-tab", "focus-address", "find", "find-next", "find-prev",
   // "bookmark", "devtools", "toggle-deck". Anything not forwarded runs natively.
   OnCommand(string command);
+};
+
+// One of Chromium's own preferences, as chrome://settings would show it.
+struct SettingPref {
+  string name;
+  // The value as JSON, so one struct carries a bool, an int or a string.
+  string json_value;
+  // Policy or an extension controls it: chrome://settings draws these
+  // disabled with a "managed" badge, and so does the shell.
+  bool managed;
+  // Not registered in this build — the shell hides the control entirely.
+  bool unavailable;
+};
+
+// One pinned extension, as it should be drawn for a particular tab.
+struct ExtensionActionInfo {
+  string id;
+  // The extension's name — the accessible label when it has no per-tab title.
+  string name;
+  // The action's tooltip for this tab. Extensions change it per page.
+  string title;
+  // The badge an extension paints over its icon (a count, "ON", ...). Empty
+  // when there is none.
+  string badge_text;
+  // Extensions grey their own button out on pages they cannot act on.
+  bool enabled;
+  // Whether clicking opens a popup, as opposed to only firing onClicked.
+  bool has_popup;
+};
+
+// The signed-in Google account and the Chromium profile it belongs to.
+// Named SignInInfo, not AccountInfo: signin's own AccountInfo is a global
+// struct, and the two collide in the implementation.
+struct SignInInfo {
+  bool signed_in;
+  string email;
+  string full_name;
+  // PNG data: URL of the Google account picture. Empty when signed out, or
+  // while the image is still being fetched.
+  string avatar_data_url;
+  // The local profile's name, which exists whether or not anyone is signed in.
+  string profile_name;
 };
 
 struct TabInfo {

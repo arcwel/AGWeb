@@ -1,5 +1,11 @@
 import { IpcChannels, IpcEvents } from '@shared/ipc'
-import type { BrowserTabState, Rect } from '@shared/ipc'
+import type {
+  BrowserAccountInfo,
+  BrowserTabState,
+  ExtensionActionInfo,
+  Rect,
+  SettingPref
+} from '@shared/ipc'
 
 /**
  * The WebDeck window's half of driving its own tabs.
@@ -48,6 +54,17 @@ interface ShellRemote {
   // Read the tab's rendered visible text (document.body.innerText, capped
   // browser-side). tab_id 0 = active tab. Resolves to an object with the text.
   getPageText(tabId: number): Promise<{ text: string }>
+  // The extensions pinned in chrome://extensions, for the toolbar the shell
+  // draws, and the click that runs one. `popupUrl` is empty unless the
+  // extension wants a popup shown.
+  getExtensionActions(tabId: number): Promise<{ actions: ExtensionActionInfo[] }>
+  runExtensionAction(tabId: number, extensionId: string): Promise<{ showedPopup: boolean }>
+  // Chromium's own settings, by preference name. The browser refuses any name
+  // that is not on its allowlist.
+  getSettingPrefs(names: string[]): Promise<{ prefs: SettingPref[] }>
+  setSettingPref(name: string, jsonValue: string): Promise<{ ok: boolean }>
+  // Who is signed in, for the profile button.
+  getAccountInfo(): Promise<{ info: BrowserAccountInfo }>
   find(tabId: number, query: string, forward: boolean): void
   stopFind(tabId: number): void
   setZoom(tabId: number, level: number): Promise<{ applied: number }>
@@ -567,6 +584,24 @@ export const SHELL_BROWSER: Record<string, (...args: unknown[]) => Promise<unkno
   // falls back to the active tab, the same as every other tab op.
   [IpcChannels.browserGetPageText]: async (shellId) =>
     (await getShell()).getPageText(handleFor(shellId)).then((r) => r.text),
+  // Pinned extensions. The browser answers for the tab the user is looking at,
+  // because an extension's title, badge and enabled state are all per-page.
+  [IpcChannels.extensionsActions]: async (shellId) =>
+    (await getShell()).getExtensionActions(handleFor(shellId)).then((r) => r.actions),
+  [IpcChannels.extensionsRunAction]: async (shellId, extensionId) =>
+    (await getShell())
+      .runExtensionAction(handleFor(shellId), String(extensionId))
+      .then((r) => r.showedPopup),
+  [IpcChannels.profilesAccount]: async () =>
+    (await getShell()).getAccountInfo().then((r) => r.info),
+  // Chromium's settings. The renderer names prefs; the browser decides which
+  // it will answer for.
+  [IpcChannels.browserGetSettingPrefs]: async (names) =>
+    (await getShell())
+      .getSettingPrefs(Array.isArray(names) ? (names as string[]).map(String) : [])
+      .then((r) => r.prefs),
+  [IpcChannels.browserSetSettingPref]: async (name, jsonValue) =>
+    (await getShell()).setSettingPref(String(name), String(jsonValue)).then((r) => r.ok),
   // --- browser-level preferences. These are window/profile-wide (not per-tab),
   // so they take no shell id; the browser reads/writes the shell's own Profile.
   [IpcChannels.browserGetCookieBlock]: async () =>
@@ -624,6 +659,12 @@ export type BrowserDefaultState = 0 | 1 | 2
  * getShell() throws; the panel catches and shows it.
  */
 export interface BrowserPrefsApi {
+  /** Read Chromium's own settings by preference name. Names the browser does
+   *  not allowlist come back `unavailable`, never as an error. */
+  getSettingPrefs(names: string[]): Promise<SettingPref[]>
+  /** Write one. False when the name is refused, the type is wrong, or policy
+   *  controls it. */
+  setSettingPref(name: string, value: boolean | number | string): Promise<boolean>
   getBlockThirdPartyCookies(): Promise<boolean>
   setBlockThirdPartyCookies(blocked: boolean): Promise<void>
   getSendDoNotTrack(): Promise<boolean>
@@ -646,6 +687,13 @@ export interface BrowserPrefsApi {
 }
 
 export const browserPrefs: BrowserPrefsApi = {
+  getSettingPrefs: (names) =>
+    SHELL_BROWSER[IpcChannels.browserGetSettingPrefs](names) as Promise<SettingPref[]>,
+  setSettingPref: (name, value) =>
+    SHELL_BROWSER[IpcChannels.browserSetSettingPref](
+      name,
+      JSON.stringify(value)
+    ) as Promise<boolean>,
   getBlockThirdPartyCookies: () =>
     SHELL_BROWSER[IpcChannels.browserGetCookieBlock]() as Promise<boolean>,
   setBlockThirdPartyCookies: async (blocked) => {

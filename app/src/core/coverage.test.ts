@@ -43,6 +43,15 @@ const HOST_OWNED: Record<string, string> = {
   'browser:set-visible': 'Electron-only view geometry; the fork uses real tabs',
   'browser:set-corner-radius': 'Electron-only view geometry; the fork uses real tabs',
   'browser:devtools': 'Chromium owns DevTools',
+  // The toolbar is the shell's own HTML, so Chromium's extension buttons have
+  // nowhere to appear; these read the pinned list and run an action through
+  // the browser. Nothing headless can answer them — there is no toolbar and no
+  // profile behind the socket.
+  'extensions:actions': 'Chromium owns extensions and what is pinned to the toolbar',
+  'extensions:run-action': 'Chromium owns extensions and what is pinned to the toolbar',
+  'profiles:account': 'Chromium owns Google sign-in and the account picture',
+  'browser:get-setting-prefs': "Chromium's own PrefService — there is no profile behind the socket",
+  'browser:set-setting-pref': "Chromium's own PrefService — there is no profile behind the socket",
   'browser:find': 'Chromium owns the find bar',
   'browser:find-stop': 'Chromium owns the find bar',
   'browser:print': 'Chromium owns printing',

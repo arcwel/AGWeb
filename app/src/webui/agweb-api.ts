@@ -151,7 +151,8 @@ export function createAgwebApi(ipcRenderer: IpcLike, host: HostCapabilities): Ag
       setActive: (id) => ipcRenderer.invoke(IpcChannels.profilesSetActive, id),
       create: (name) => ipcRenderer.invoke(IpcChannels.profilesCreate, name),
       remove: (id) => ipcRenderer.invoke(IpcChannels.profilesRemove, id),
-      googleStatus: () => ipcRenderer.invoke(IpcChannels.profilesGoogleStatus)
+      googleStatus: () => ipcRenderer.invoke(IpcChannels.profilesGoogleStatus),
+      account: () => ipcRenderer.invoke(IpcChannels.profilesAccount)
     },
     bookmarks: {
       importFile: () => ipcRenderer.invoke(IpcChannels.bookmarksImportFile)
@@ -214,8 +215,9 @@ export function createAgwebApi(ipcRenderer: IpcLike, host: HostCapabilities): Ag
     },
     agents: {
       start: (task, attachments) => ipcRenderer.invoke(IpcChannels.agentStart, task, attachments),
-      ask: (askId, prompt, context) =>
-        ipcRenderer.invoke(IpcChannels.agentAsk, askId, prompt, context),
+      ask: (askId, prompt, context, provider) =>
+        ipcRenderer.invoke(IpcChannels.agentAsk, askId, prompt, context, provider),
+      geminiAvailable: () => ipcRenderer.invoke(IpcChannels.agentGeminiAvailable),
       onAskToken: (listener) => {
         const handler = (_e: unknown, payload: { askId: string; token: string }): void =>
           listener(payload)
@@ -361,7 +363,10 @@ export function createAgwebApi(ipcRenderer: IpcLike, host: HostCapabilities): Ag
       loadPacked: () => ipcRenderer.invoke(IpcChannels.extLoadPacked),
       loadPath: (path) => ipcRenderer.invoke(IpcChannels.extLoadPath, path),
       list: () => ipcRenderer.invoke(IpcChannels.extList),
-      remove: (id) => ipcRenderer.invoke(IpcChannels.extRemove, id)
+      remove: (id) => ipcRenderer.invoke(IpcChannels.extRemove, id),
+      // Pinned toolbar actions, for the tab the user is looking at.
+      actions: (tabId) => ipcRenderer.invoke(IpcChannels.extensionsActions, tabId),
+      runAction: (tabId, id) => ipcRenderer.invoke(IpcChannels.extensionsRunAction, tabId, id)
     },
     embedProxy: {
       status: () => ipcRenderer.invoke(IpcChannels.proxyStatus),

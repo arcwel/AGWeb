@@ -68,6 +68,10 @@ export type AiProvider = 'anthropic' | 'openai' | 'gemini'
  */
 
 /** Page context handed to an ask so the model can ground "this page" questions. */
+/** Which model answers an omnibox ask. Anthropic is the default; Gemini is
+ *  offered only when a Gemini key is configured. */
+export type AskProvider = 'anthropic' | 'gemini'
+
 export interface AskContext {
   /** The active tab's URL, when it's a real page (not about:blank). */
   url?: string
@@ -631,7 +635,8 @@ export const IpcChannels = {
   // see webui/shell.ts pageText facade and PageAssistantBlock.tsx.
   browserGetPageText: 'browser:get-page-text',
   // Browser-level Chromium preferences, reached over the Mojo Shell because a
-  // WebDeck window blocks chrome://settings. Fork-only; see BrowserSettings.tsx
+  // shell draws the toolbar, so it has no native controls for them. Fork-only;
+  // see BrowserSettings.tsx
   // and BROWSER_PREFS_PLAN.md.
   browserGetCookieBlock: 'browser:get-cookie-block',
   browserSetCookieBlock: 'browser:set-cookie-block',
@@ -661,6 +666,11 @@ export const IpcChannels = {
   profilesCreate: 'profiles:create',
   profilesRemove: 'profiles:remove',
   profilesGoogleStatus: 'profiles:google-status',
+  profilesAccount: 'profiles:account',
+  browserGetSettingPrefs: 'browser:get-setting-prefs',
+  browserSetSettingPref: 'browser:set-setting-pref',
+  extensionsActions: 'extensions:actions',
+  extensionsRunAction: 'extensions:run-action',
   bookmarksImportFile: 'bookmarks:import-file',
   windowNew: 'window:new',
   windowClosed: 'window:closed',
@@ -691,6 +701,7 @@ export const IpcChannels = {
   exportCapture: 'export:capture',
   agentStart: 'agent:start',
   agentAsk: 'agent:ask',
+  agentGeminiAvailable: 'agent:gemini-available',
   chatPage: 'chat:page',
   agentEditCode: 'agent:edit-code',
   // Abort an in-flight one-shot streamed call (ask/chatPage/editCode) by its id.
@@ -847,6 +858,39 @@ export interface SyncStatus {
   sections: string[]
 }
 
+/** One extension the user pinned in chrome://extensions, as it should be drawn
+ *  for the active tab. The icon is loaded from chrome://extension-icon. */
+export interface ExtensionActionInfo {
+  id: string
+  name: string
+  title: string
+  badgeText: string
+  enabled: boolean
+  hasPopup: boolean
+}
+
+/** One of Chromium's own preferences, as chrome://settings would show it.
+ *  `unavailable` means this build does not register it — hide the control
+ *  rather than draw a dead one. */
+export interface SettingPref {
+  name: string
+  /** The value as JSON: a bool, an int or a string. Empty when unavailable. */
+  jsonValue: string
+  /** Policy or an extension controls it; the control is shown disabled. */
+  managed: boolean
+  unavailable: boolean
+}
+
+/** The signed-in Google account behind the profile button. */
+export interface BrowserAccountInfo {
+  signedIn: boolean
+  email: string
+  fullName: string
+  /** PNG data: URL of the account picture; empty when signed out. */
+  avatarDataUrl: string
+  profileName: string
+}
+
 /** File types the Document Studio renders as styled documents. Shared so main
  *  (browser navigation interception) and the renderer agree on what a doc is. */
 export const DOC_EXTENSIONS = new Set([
@@ -870,6 +914,46 @@ export function isDocFile(path: string): boolean {
 /** *.slides.md files render as Reveal.js decks instead of Document Studio. */
 export function isSlidesFile(path: string): boolean {
   return /\.slides\.md$/i.test(path)
+}
+
+/**
+ * Decide whether a browser navigation should open Document Studio instead of
+ * loading raw source.
+ *
+ * Returns the workspace-relative path of a `file:` URL that points at a
+ * document *inside* the open workspace — and nothing else. Out-of-workspace
+ * URLs, path traversal, non-`file:` schemes, slide decks (they have their own
+ * runtime) and non-doc files all return null and load in the browser as
+ * before. Because it only ever yields paths that resolve within the
+ * workspace, it can never be used to surface an arbitrary local file.
+ *
+ * This lives in shared/ rather than the core because the decision has to be
+ * made in the renderer, before a native view is created for the URL. The core
+ * kept a `node:path` version of it that no longer had a caller: browser
+ * navigation used to be intercepted in the Electron main process, and when
+ * that was deleted for the Chromium fork the interception went with it, which
+ * is why a .md link has been rendering as raw text ever since.
+ */
+export function docNavTarget(url: string, workspacePath: string | null): string | null {
+  if (!workspacePath || !/^file:/i.test(url)) return null
+  let abs: string
+  try {
+    const parsed = new URL(url)
+    // A file: URL with a host is a UNC path, not this machine's filesystem.
+    if (parsed.hostname && parsed.hostname !== 'localhost') return null
+    abs = decodeURIComponent(parsed.pathname)
+  } catch {
+    return null
+  }
+  if (abs.includes('\0')) return null
+  const root = workspacePath.endsWith('/') ? workspacePath.slice(0, -1) : workspacePath
+  if (abs !== root && !abs.startsWith(`${root}/`)) return null
+  const rel = abs.slice(root.length + 1)
+  // A traversal cannot escape the prefix check above, but a path that still
+  // contains one is not something to hand on as a workspace-relative path.
+  if (!rel || rel.split('/').includes('..')) return null
+  if (isSlidesFile(rel) || !isDocFile(rel)) return null
+  return rel
 }
 
 export interface FsEntry {
@@ -957,6 +1041,9 @@ export interface AgwebApi {
     remove(id: string): Promise<ProfilesState>
     /** Which profiles hold a signed-in Google account, keyed by profile id. */
     googleStatus(): Promise<Record<string, boolean>>
+    /** The signed-in Google account behind the profile button, from the
+     *  browser itself. Only meaningful on the fork. */
+    account(): Promise<BrowserAccountInfo>
   }
   /** Read a bookmarks export file the user picks (HTML or JSON) as text. */
   bookmarks: {
@@ -1097,7 +1184,15 @@ export interface AgwebApi {
      * the links it referenced (or an error string, never a rejection for the
      * expected "no key"/"declined" cases).
      */
-    ask(askId: string, prompt: string, context?: AskContext): Promise<AskResult>
+    ask(
+      askId: string,
+      prompt: string,
+      context?: AskContext,
+      provider?: AskProvider
+    ): Promise<AskResult>
+    /** Whether a Gemini key is configured, so the UI can offer "Ask Gemini"
+     *  only when it would work. */
+    geminiAvailable(): Promise<boolean>
     /** Subscribe to streamed answer tokens; filter by the askId you passed to ask(). */
     onAskToken(listener: (payload: { askId: string; token: string }) => void): () => void
     /**
@@ -1300,6 +1395,12 @@ export interface AgwebApi {
     loadPath(path: string): Promise<{ extension?: ExtensionInfo; error?: string }>
     list(): Promise<ExtensionInfo[]>
     remove(id: string): Promise<void>
+    /** The extensions pinned to the toolbar, as they should be drawn for
+     *  `tabId`. Empty off the fork, which has no pinned state to read. */
+    actions(tabId: string): Promise<ExtensionActionInfo[]>
+    /** Click a pinned action, as pressing its toolbar button would. Resolves
+     *  to whether the browser opened the extension's popup window. */
+    runAction(tabId: string, id: string): Promise<boolean>
   }
 
   /** Dev-preview embed proxy: strips X-Frame-Options / frame-ancestors for

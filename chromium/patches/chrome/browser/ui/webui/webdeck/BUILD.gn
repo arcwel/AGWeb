@@ -51,6 +51,14 @@ source_set("impl") {
     "//chrome/browser/resources/webdeck:resources",
     "//chrome/browser/ui/browser_window",
     "//chrome/browser/ui/navigator",
+    # Pinned extension actions (the toolbar the shell draws) and the signed-in
+    # account behind the profile button.
+    "//chrome/browser/extensions",
+    "//chrome/browser/ui/toolbar",
+    "//components/sessions:session_id",
+    "//components/signin/public/identity_manager",
+    "//extensions/browser",
+    "//extensions/common",
     "//chrome/browser/webdeck:core_service",
     "//chrome/browser/webdeck:shell_host",
     "//chrome/common",

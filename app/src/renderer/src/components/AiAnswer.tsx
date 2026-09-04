@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { AskSource } from '@shared/ipc'
+import type { AskProvider, AskSource } from '@shared/ipc'
 import { ProseTurn } from '@/components/TranscriptTurn'
 import { CloseIcon, GlobeIcon } from '@/components/icons'
 
@@ -29,7 +29,26 @@ interface AiAnswerProps {
 
 type AskState = 'streaming' | 'done' | 'error'
 
+const PROVIDER_LABEL: Record<AskProvider, string> = {
+  anthropic: 'Claude',
+  gemini: 'Gemini'
+}
+
 export function AiAnswer({ query, url, title, onOpen, onClose }: AiAnswerProps): React.JSX.Element {
+  // Which model answers. Gemini is offered only when a key is configured — a
+  // button that can only ever say "no key" is worse than no button.
+  const [provider, setProvider] = useState<AskProvider>('anthropic')
+  const [geminiAvailable, setGeminiAvailable] = useState(false)
+  useEffect(() => {
+    let live = true
+    void window.agweb.agents
+      .geminiAvailable()
+      .then((yes) => live && setGeminiAvailable(yes))
+      .catch(() => live && setGeminiAvailable(false))
+    return () => {
+      live = false
+    }
+  }, [])
   const [text, setText] = useState('')
   const [sources, setSources] = useState<AskSource[]>([])
   const [state, setState] = useState<AskState>('streaming')
@@ -63,7 +82,7 @@ export function AiAnswer({ query, url, title, onOpen, onClose }: AiAnswerProps):
     })
 
     window.agweb.agents
-      .ask(askId, query, contextRef.current)
+      .ask(askId, query, contextRef.current, provider)
       .then((result) => {
         if (cancelled) return
         // Cancelled by the user (Stop): stop the spinner and keep the partial
@@ -96,7 +115,8 @@ export function AiAnswer({ query, url, title, onOpen, onClose }: AiAnswerProps):
       // panel closes or the question changes. A no-op if it already settled.
       void window.agweb.agents.cancel(askId)
     }
-  }, [query])
+    // `provider` is a dependency on purpose: switching model re-asks.
+  }, [query, provider])
 
   // Stop the stream but keep the panel open: the ask() promise then settles with
   // `cancelled: true`, which stops the spinner above.
@@ -120,12 +140,30 @@ export function AiAnswer({ query, url, title, onOpen, onClose }: AiAnswerProps):
           </span>
           <span className="block text-[10.5px] text-[var(--wd-dim)]">
             {state === 'streaming'
-              ? 'Answering…'
+              ? `${PROVIDER_LABEL[provider]} is answering…`
               : state === 'error'
                 ? 'Could not answer'
-                : 'AI answer'}
+                : `Answered by ${PROVIDER_LABEL[provider]}`}
           </span>
         </span>
+        {/* Ask the other model the same question. Re-runs the stream, because
+            the answer is the point — not a second opinion pasted underneath. */}
+        {geminiAvailable && (
+          <button
+            type="button"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => setProvider(provider === 'gemini' ? 'anthropic' : 'gemini')}
+            className="flex-none whitespace-nowrap rounded-md border border-[var(--wd-glass-border)] px-2 py-0.5 text-[10.5px] font-medium text-[var(--wd-muted)] hover:bg-[var(--wd-hover)] hover:text-[var(--wd-text)]"
+            title={
+              provider === 'gemini'
+                ? 'Answer this with Claude instead'
+                : 'Answer this with Gemini instead'
+            }
+            data-testid="ask-gemini"
+          >
+            {provider === 'gemini' ? 'Ask Claude' : 'Ask Gemini'}
+          </button>
+        )}
         {state === 'streaming' && (
           <button
             type="button"

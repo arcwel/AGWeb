@@ -128,8 +128,8 @@ MAC_BUNDLE_ID=tech.arcwel.webdeck
 **`use_remoteexec = false`** — no reclient/RBE credentials here. Keep it off or
 `gn gen` will demand a backend.
 
-**`target_cpu = "arm64"`** — this machine and this checkout. A shipping build for
-Intel Macs would need a second `target_cpu = "x64"` out dir and a merge through
+**`target_cpu = "arm64"`** — this machine and this checkout, and the only Mac
+target there will be. Intel Macs would need a second `target_cpu = "x64"` out dir and a merge through
 `chrome/installer/mac/universalizer.py`. That doubles everything in §3.
 
 Deliberately **not** set, and why:
@@ -519,8 +519,10 @@ Ranked by how much trouble they will cause.
 4. **No updater.** `enable_updater = false`; a shipped `.dmg` has no update path
    and no way to push a security fix to users. For a browser this is a serious
    ongoing obligation, not a nice-to-have.
-5. **arm64 only.** A universal binary needs a second full `target_cpu = "x64"`
-   build and `universalizer.py` — doubling every number in §3.
+5. **Apple Silicon only, deliberately.** Intel Macs are out of scope: a
+   universal binary needs a second full `target_cpu = "x64"` build and
+   `universalizer.py`, doubling every number in §3, for a shrinking population.
+   Windows and Linux come first when the platform list grows.
 6. **Chromium security releases.** Shipping a browser means rebasing onto each
    new stable within days of a CVE, on the 2.5–4 h build described above. The
    `verify-patches` / `upstream:check` machinery exists; the *cadence* obligation

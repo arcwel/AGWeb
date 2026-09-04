@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { docNavTarget } from '@shared/ipc'
 import type { BrowserTabState, WorkspaceInfo } from '@shared/ipc'
 import type { HistoryEntry } from '@/omnibox-rank'
 import type { AgentAttachment, AgentSessionInfo } from '@shared/agents'
@@ -768,6 +769,9 @@ interface ShellState {
 
   composerDraft: { text: string; attachments: AgentAttachment[] } | null
   loadDraft(text: string, attachments: AgentAttachment[]): void
+  /** Bring an Agents block to the front — the existing one, activated in its
+   *  group, or a new one — and reveal the Deck. What the Ask button opens. */
+  revealAgents(): void
   clearDraft(): void
   closeEditorTab(path: string): void
   setFileDirty(path: string, dirty: boolean): void
@@ -1052,6 +1056,17 @@ export const useShellStore = create<ShellState>((set) => ({
   composerDraft: null,
   loadDraft: (text, attachments) =>
     set({ composerDraft: { text, attachments }, deckRevealed: true }),
+  revealAgents: () => {
+    const state = useShellStore.getState()
+    const existing = Object.values(state.blocks).find((b) => b.type === 'agents')
+    if (!existing) {
+      state.addBlock('agents')
+    } else {
+      const group = state.groups.find((g) => g.blockIds.includes(existing.id))
+      if (group) state.activateBlock(group.id, existing.id)
+    }
+    if (useShellStore.getState().deckMode === 'attached') set({ deckRevealed: true })
+  },
   clearDraft: () => set({ composerDraft: null }),
   dirtyFiles: {},
   agentSessions: {},
@@ -1190,6 +1205,18 @@ export const useShellStore = create<ShellState>((set) => ({
     })),
 
   updateBrowserState: (browserState) => {
+    // A link click, or the OS opening a file with WebDeck, commits in the
+    // native view without passing through navigateTab. Catching it here is
+    // what makes "clicked a .md link" behave like "opened it from Files":
+    // the tab becomes a doc tab and the native view is hidden, so the raw
+    // text underneath is never shown.
+    const store = useShellStore.getState()
+    const docPath = docNavTarget(browserState.url, store.workspace?.path ?? null)
+    if (docPath) {
+      void window.agweb.browser.setVisible(browserState.tabId, false)
+      store.openDoc(docPath)
+      return
+    }
     set((state) => ({
       browserStates: { ...state.browserStates, [browserState.tabId]: browserState },
       tabs: state.tabs.map((tab) => {

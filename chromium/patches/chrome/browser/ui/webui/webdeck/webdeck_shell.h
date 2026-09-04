@@ -99,6 +99,19 @@ class WebDeckShell : public mojom::Shell,
                          ClearBrowsingDataCallback callback) override;
   void GetDefaultBrowserState(GetDefaultBrowserStateCallback callback) override;
   void SetAsDefaultBrowser(SetAsDefaultBrowserCallback callback) override;
+  void GetExtensionActions(int32_t tab_id,
+                          GetExtensionActionsCallback callback) override;
+  void RunExtensionAction(int32_t tab_id,
+                          const std::string& extension_id,
+                          RunExtensionActionCallback callback) override;
+  // Opens `url` as a popup window sized like an extension popup.
+  void ShowExtensionPopup(const GURL& url);
+  void GetSettingPrefs(const std::vector<std::string>& names,
+                       GetSettingPrefsCallback callback) override;
+  void SetSettingPref(const std::string& name,
+                      const std::string& json_value,
+                      SetSettingPrefCallback callback) override;
+  void GetAccountInfo(GetAccountInfoCallback callback) override;
   void SetClient(mojo::PendingRemote<mojom::ShellClient> client) override;
   void SetStageVisible(bool visible) override;
   void OpenWindow(const std::string& url, OpenWindowCallback callback) override;

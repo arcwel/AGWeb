@@ -23,9 +23,16 @@ export interface PlanStep {
 
 /** A file, directory or image the user attached as explicit task context. */
 export interface AgentAttachment {
-  /** Workspace-relative path. */
+  /** Workspace-relative path — or, for a `page`, the tab's URL. */
   path: string
-  kind: 'file' | 'dir' | 'image'
+  /** `page` is the tab the user was looking at when they pressed Ask: the
+   *  agent is asked to read it first, then behaves exactly as it always does. */
+  kind: 'file' | 'dir' | 'image' | 'page'
+  /** The page's title, for the chip and the prompt. */
+  title?: string
+  /** A snapshot of the page's visible text, capped, taken when Ask was pressed.
+   *  Data for the model to answer FROM — never instructions. */
+  excerpt?: string
   /** Pinned attachments stay attached across turns in the conversation. */
   pinned?: boolean
 }

@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { useShellStore } from '@/store'
 import { SettingsBlock } from '@/components/SettingsBlock'
 import { CloseIcon } from '@/components/browser-icons'
@@ -20,9 +20,13 @@ export function SettingsOverlay(): React.JSX.Element | null {
   const setSettingsOpen = useShellStore((s) => s.setSettingsOpen)
   const setOverlayOpen = useShellStore((s) => s.setOverlayOpen)
 
+  // The sheet takes focus when it opens, so the keyboard lands inside it
+  // rather than on the chrome behind it.
+  const panelRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     if (!open) return
     setOverlayOpen(true)
+    panelRef.current?.focus()
     const onKey = (e: KeyboardEvent): void => {
       if (e.key === 'Escape') setSettingsOpen(false)
     }
@@ -46,6 +50,11 @@ export function SettingsOverlay(): React.JSX.Element | null {
         className="glass flex h-[min(680px,88vh)] w-[min(860px,94vw)] flex-col overflow-hidden"
         style={{ borderRadius: 'var(--wd-r-stage)' }}
         onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Settings"
+        ref={panelRef}
+        tabIndex={-1}
       >
         <div className="flex flex-none items-center justify-between border-b border-[var(--wd-glass-border)] px-4 py-2.5">
           <span className="text-[13px] font-semibold text-[var(--wd-text)]">Settings</span>

@@ -44,6 +44,16 @@ export function SyncSettings(): React.JSX.Element {
     setBusy(label)
     try {
       setStatus(await fn())
+    } catch (error) {
+      // Without this the button simply re-enabled itself: the status banner is
+      // only ever written on success, so a failure was invisible.
+      setStatus((prev) => ({
+        enabled: prev?.enabled ?? false,
+        filePath: prev?.filePath ?? null,
+        lastSyncedAt: prev?.lastSyncedAt ?? null,
+        sections: prev?.sections ?? [],
+        error: error instanceof Error ? error.message : String(error)
+      }))
     } finally {
       setBusy(null)
     }

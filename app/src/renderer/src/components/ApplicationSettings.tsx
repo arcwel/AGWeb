@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { SEARCH_ENGINES, type AppInfo, type AppSettings, type ClearableData } from '@shared/ipc'
+import { useShellStore } from '@/store'
 
 /**
  * The Electron application settings — the ones that configure the app itself
@@ -37,11 +38,21 @@ const TOGGLES: Array<{ key: keyof AppSettings; label: string; hint: string; rest
   }
 ]
 
+/** The toggles above that Chromium owns on the fork, and the page that owns
+ *  them. Each writes WebDeck's own settings file, which nothing on this build
+ *  reads — a switch that moves and changes nothing is worse than no switch. */
+const CHROMIUM_OWNED: Partial<Record<keyof AppSettings, string>> = {
+  hardwareAcceleration: 'chrome://settings/system',
+  askForPermissions: 'chrome://settings/content',
+  spellcheck: 'chrome://settings/languages',
+  doNotTrack: 'chrome://settings/cookies'
+}
+
 const CLEARABLE: Array<{ kind: ClearableData; label: string }> = [
   { kind: 'cache', label: 'Cached files' },
   { kind: 'cookies', label: 'Cookies' },
   { kind: 'storage', label: 'Site storage' },
-  { kind: 'history', label: 'Auth cache' }
+  { kind: 'history', label: 'History' }
 ]
 
 export function ApplicationSettings(): React.JSX.Element {
@@ -63,11 +74,19 @@ export function ApplicationSettings(): React.JSX.Element {
     key: K,
     value: AppSettings[K]
   ): Promise<void> => {
-    const next = await window.agweb.appSettings.write({ [key]: value })
-    setSettings(next)
-    if (TOGGLES.find((t) => t.key === key)?.restart) {
-      setStatus('Saved — restart WebDeck to apply.')
-      setTimeout(() => setStatus(null), 4000)
+    try {
+      const next = await window.agweb.appSettings.write({ [key]: value })
+      setSettings(next)
+      if (TOGGLES.find((t) => t.key === key)?.restart) {
+        setStatus('Saved — restart WebDeck to apply.')
+        setTimeout(() => setStatus(null), 4000)
+      }
+    } catch (error) {
+      // The checkbox is driven entirely by `settings`, so a failed write makes
+      // it snap back. Without this the user sees the switch move and return
+      // with no reason given.
+      setStatus(`Could not save: ${error instanceof Error ? error.message : String(error)}`)
+      setTimeout(() => setStatus(null), 6000)
     }
   }
 
@@ -82,7 +101,9 @@ export function ApplicationSettings(): React.JSX.Element {
   return (
     <div className="flex flex-col gap-4 p-3 text-[12px]">
       <Section title="General">
-        {TOGGLES.map((toggle) => (
+        {TOGGLES.filter(
+          (t) => !(window.agweb.host.ownsBrowserFeatures && t.key in CHROMIUM_OWNED)
+        ).map((toggle) => (
           <label
             key={toggle.key}
             className="flex cursor-pointer items-start gap-2.5 rounded-lg px-2 py-1.5 hover:bg-[var(--wd-hover)]"
@@ -152,43 +173,83 @@ export function ApplicationSettings(): React.JSX.Element {
         )}
       </Section>
 
-      <Section title="Privacy — clear browsing data">
-        <div className="flex flex-wrap gap-2 px-2 py-1">
-          {CLEARABLE.map((item) => (
-            <label key={item.kind} className="flex items-center gap-1.5 text-[11px]">
-              <input
-                type="checkbox"
-                className="accent-[var(--wd-accent)]"
-                checked={clearing.has(item.kind)}
-                onChange={(e) =>
-                  setClearing((prev) => {
-                    const next = new Set(prev)
-                    if (e.target.checked) next.add(item.kind)
-                    else next.delete(item.kind)
-                    return next
-                  })
-                }
-              />
-              {item.label}
-            </label>
-          ))}
-        </div>
-        <button
-          onClick={() => void clearNow()}
-          disabled={clearing.size === 0}
-          className="mx-2 mt-1 w-fit rounded-md bg-rose-500/90 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-rose-500 disabled:opacity-40"
-        >
-          Clear now
-        </button>
-      </Section>
+      {window.agweb.host.ownsBrowserFeatures ? (
+        <Section title="Privacy">
+          {/* This panel's own clear-data call has no handler on the fork: the
+              button reported "no handler for app-settings:clear-data" and
+              cleared nothing. Chromium's remover is the real one — the Browser
+              tab drives it, and chrome://settings has the full set. */}
+          <p className="px-2 py-1 text-[11px] leading-relaxed text-[var(--wd-dim)]">
+            Clearing browsing data lives on the <strong>Browser</strong> tab, which drives
+            Chromium&apos;s own remover. For everything else — site permissions, spell-check
+            languages, hardware acceleration and Do Not Track — Chromium owns the setting:
+          </p>
+          <div className="flex flex-wrap gap-1.5 px-2 pb-1 pt-0.5">
+            {(
+              [
+                ['Site permissions', 'chrome://settings/content'],
+                ['Languages & spell-check', 'chrome://settings/languages'],
+                ['System & hardware acceleration', 'chrome://settings/system'],
+                ['Cookies & Do Not Track', 'chrome://settings/cookies'],
+                ['All settings', 'chrome://settings/']
+              ] as const
+            ).map(([label, url]) => (
+              <button
+                key={url}
+                onClick={() => {
+                  useShellStore.getState().newTab(url)
+                  useShellStore.getState().setSettingsOpen(false)
+                }}
+                className="rounded-md border border-[var(--wd-glass-border)] px-2 py-1 text-[11px] text-[var(--wd-muted)] hover:bg-[var(--wd-hover)] hover:text-[var(--wd-text)]"
+              >
+                {label} →
+              </button>
+            ))}
+          </div>
+        </Section>
+      ) : (
+        <Section title="Privacy — clear browsing data">
+          <div className="flex flex-wrap gap-2 px-2 py-1">
+            {CLEARABLE.map((item) => (
+              <label key={item.kind} className="flex items-center gap-1.5 text-[11px]">
+                <input
+                  type="checkbox"
+                  className="accent-[var(--wd-accent)]"
+                  checked={clearing.has(item.kind)}
+                  onChange={(e) =>
+                    setClearing((prev) => {
+                      const next = new Set(prev)
+                      if (e.target.checked) next.add(item.kind)
+                      else next.delete(item.kind)
+                      return next
+                    })
+                  }
+                />
+                {item.label}
+              </label>
+            ))}
+          </div>
+          <button
+            onClick={() => void clearNow()}
+            disabled={clearing.size === 0}
+            className="mx-2 mt-1 w-fit rounded-md bg-rose-500/90 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-rose-500 disabled:opacity-40"
+          >
+            Clear now
+          </button>
+        </Section>
+      )}
 
       {info && (
         <Section title="About">
           <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-0.5 px-2 py-1 text-[11px] text-[var(--wd-muted)]">
             <dt className="text-[var(--wd-dim)]">Version</dt>
             <dd>{info.version}</dd>
-            <dt className="text-[var(--wd-dim)]">Electron</dt>
-            <dd>{info.electron}</dd>
+            {!window.agweb.host.ownsBrowserFeatures && (
+              <>
+                <dt className="text-[var(--wd-dim)]">Electron</dt>
+                <dd>{info.electron}</dd>
+              </>
+            )}
             <dt className="text-[var(--wd-dim)]">Chromium</dt>
             <dd>{info.chrome}</dd>
             <dt className="text-[var(--wd-dim)]">Platform</dt>

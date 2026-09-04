@@ -109,6 +109,15 @@ describe('asDirectUrl', () => {
     expect(asDirectUrl('example.com')).toBe('https://example.com')
   })
 
+  it("navigates to the browser's own pages instead of searching for them", () => {
+    // Typing chrome://settings/passwords used to be handed to the search
+    // engine as a query, which made Chromium's password manager, autofill and
+    // payment settings unreachable by the one route every user tries.
+    expect(asDirectUrl('chrome://settings/passwords')).toBe('chrome://settings/passwords')
+    expect(asDirectUrl('chrome://password-manager')).toBe('chrome://password-manager')
+    expect(asDirectUrl('chrome://settings/autofill')).toBe('chrome://settings/autofill')
+  })
+
   it('returns null for plain words that are not a host', () => {
     expect(asDirectUrl('just words')).toBeNull()
   })

@@ -75,8 +75,12 @@ export function AiSettings(): React.JSX.Element {
           <select
             value={model}
             onChange={(e) => {
-              setModel(e.target.value)
-              void window.agweb.agents.setModel(e.target.value)
+              // Optimistic, then reverted if the save fails — otherwise the
+              // dropdown shows a model that was never persisted.
+              const previous = model
+              const next = e.target.value
+              setModel(next)
+              void window.agweb.agents.setModel(next).catch(() => setModel(previous))
             }}
             className="ml-auto rounded-md border border-[var(--wd-glass-border)] bg-[var(--wd-field)] px-2 py-1 text-[11px] outline-none focus:border-[var(--wd-accent)]"
             aria-label="Agent model"

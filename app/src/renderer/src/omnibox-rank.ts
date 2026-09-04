@@ -69,7 +69,12 @@ export const LOCAL_HOST_PATTERN =
 export function asDirectUrl(input: string): string | null {
   const trimmed = input.trim()
   if (!trimmed) return null
-  if (/^(https?|data|about|file):/i.test(trimmed)) return trimmed
+  // `chrome:` belongs here as much as `about:`: without it, typing
+  // chrome://settings/passwords was handed to the search engine as a query,
+  // which is how the browser's own password manager became unreachable by the
+  // one route every user expects. What the shell is then ALLOWED to open is a
+  // separate decision, made in the browser (IsAllowedShellUrl).
+  if (/^(https?|chrome|data|about|file):/i.test(trimmed)) return trimmed
   const bare = trimmed.replace(/^https?:\/\//i, '')
   if (LOCAL_HOST_PATTERN.test(bare)) return `http://${bare}`
   if (/^[^\s]+\.[^\s/]+(\/.*)?$/.test(trimmed)) return `https://${bare}`

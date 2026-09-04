@@ -304,7 +304,8 @@ the detail):
 - **No auto-update.** `enable_updater = false`; there is no way to push a fix to
   a tester once they have the DMG. Each build is a fresh download.
 - **No PGO**, so the browser is slower than stock Chrome.
-- **arm64 only.** No Intel or universal build.
+- **Apple Silicon only, deliberately.** Intel Macs are out of scope; Windows
+  and Linux come first when the platform list grows.
 - **No media codecs.** `proprietary_codecs = false` → no H.264/AAC; a
   patent-licensing decision, not a build flag.
 - **Rebasing on upstream security fixes** means a 2–4 hour build within days of

@@ -47,6 +47,13 @@ const SECONDARY = [
   IpcChannels.browserPictureInPicture,
   // Page Assistant: read the staged tab's visible text (roadmap A4)
   IpcChannels.browserGetPageText,
+  // The toolbar the shell draws: pinned extension actions, and the signed-in
+  // account behind the profile button. Both are the browser's own state.
+  IpcChannels.extensionsActions,
+  IpcChannels.extensionsRunAction,
+  IpcChannels.profilesAccount,
+  IpcChannels.browserGetSettingPrefs,
+  IpcChannels.browserSetSettingPref,
   // Browser-preferences panel (privacy, cookies, default browser)
   IpcChannels.browserGetCookieBlock,
   IpcChannels.browserSetCookieBlock,

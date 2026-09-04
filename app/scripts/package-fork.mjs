@@ -347,13 +347,10 @@ if (gnArgs.is_official_build !== 'true') {
   ok('is_official_build', 'true')
 }
 
-if (gnArgs.target_cpu && gnArgs.target_cpu !== 'arm64') ok('target_cpu', gnArgs.target_cpu)
-else {
-  warn(
-    'target_cpu',
-    'arm64 only — Intel Macs cannot run this. A universal build needs a second x64 out dir and chrome/installer/mac/universalizer.py'
-  )
-}
+// Apple Silicon is the whole target. Intel Macs are deliberately out of scope
+// (Windows and Linux come before them), so an arm64-only build is correct here
+// and saying otherwise on every run trains people to ignore the warnings.
+ok('target_cpu', `${gnArgs.target_cpu ?? 'arm64'} — Apple Silicon only, by design`)
 
 // ── webdeck-core ────────────────────────────────────────────────────────────
 // The fork spawns an executable called webdeck-core out of base::DIR_MODULE.

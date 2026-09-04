@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
-import { searchUrlFor } from '@shared/ipc'
+import { docNavTarget, searchUrlFor } from '@shared/ipc'
+import type { BrowserAccountInfo, ExtensionActionInfo } from '@shared/ipc'
 import { BLOCK_LABELS, useShellStore, type BlockType, type DeckPreset } from '@/store'
 import { asDirectUrl, type Suggestion } from '@/omnibox-rank'
 import {
@@ -50,9 +51,18 @@ export function toNavigableUrl(input: string): string | null {
   return asDirectUrl(trimmed) ?? searchUrlFor(currentSearchEngine(), trimmed)
 }
 
-/** Ensure the tab's WebContentsView exists, then load the URL into it. */
+/** Ensure the tab's WebContentsView exists, then load the URL into it.
+ *
+ *  A document in the open workspace is answered by Document Studio instead:
+ *  checked BEFORE the native view is created, so a .md never flashes as raw
+ *  text on its way to being styled. */
 export async function navigateTab(tabId: string, url: string): Promise<void> {
-  const { tabs, markTabHasContent } = useShellStore.getState()
+  const { tabs, markTabHasContent, workspace, openDoc } = useShellStore.getState()
+  const docPath = docNavTarget(url, workspace?.path ?? null)
+  if (docPath) {
+    openDoc(docPath)
+    return
+  }
   const tab = tabs.find((t) => t.id === tabId)
   if (tab && !tab.hasContent) {
     await window.agweb.browser.create(tabId)
@@ -376,6 +386,7 @@ export function Toolbar(): React.JSX.Element {
             </button>
           </>
         )}
+        <PinnedExtensions tabId={activeTabId} url={state?.url ?? ''} />
         <ExtensionsButton />
         <DownloadsIndicator />
         <FindBar tabId={activeTabId} />
@@ -514,7 +525,9 @@ function ProfileButton(): React.JSX.Element {
     activeId: string
   } | null>(null)
   const [google, setGoogle] = useState<Record<string, boolean>>({})
+  const [account, setAccount] = useState<BrowserAccountInfo | null>(null)
   const [adding, setAdding] = useState('')
+  const activeUrl = useShellStore((s) => s.browserStates[s.activeTabId]?.url ?? '')
   const ref = usePopover(
     open,
     useCallback(() => setOpen(false), [])
@@ -527,6 +540,27 @@ function ProfileButton(): React.JSX.Element {
   useEffect(() => {
     if (open) refresh()
   }, [open, refresh])
+
+  // The account is read on mount and after every navigation, not only when the
+  // menu opens — the button shows the avatar, so waiting for a click meant it
+  // never updated at all. Signing in navigates, so the picture appears as soon
+  // as it exists; the image itself is fetched asynchronously by the browser,
+  // which is the other reason a single read at startup is not enough.
+  useEffect(() => {
+    if (!window.agweb.host.ownsBrowserFeatures) return
+    let cancelled = false
+    void window.agweb.profiles
+      .account()
+      .then((info) => {
+        if (!cancelled) setAccount(info)
+      })
+      .catch(() => {
+        if (!cancelled) setAccount(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [activeUrl, open])
 
   // Sign a Google account into a specific profile: make it active, then open
   // Google's own sign-in page in a tab of that profile's session.
@@ -548,7 +582,22 @@ function ProfileButton(): React.JSX.Element {
         aria-label="Profiles"
         data-testid="profile-button"
       >
-        {active ? (
+        {account?.avatarDataUrl ? (
+          <img
+            src={account.avatarDataUrl}
+            alt=""
+            width={18}
+            height={18}
+            className="h-[18px] w-[18px] rounded-full"
+            data-testid="account-avatar"
+          />
+        ) : account?.signedIn ? (
+          // Signed in, picture not downloaded yet: the initial of the account,
+          // which is still more informative than a generic silhouette.
+          <span className="flex h-[18px] w-[18px] items-center justify-center rounded-full bg-[var(--wd-accent)] text-[10px] font-bold text-[var(--wd-accent-ink)]">
+            {(account.fullName || account.email).charAt(0).toUpperCase()}
+          </span>
+        ) : active ? (
           <span
             className="flex h-4 w-4 items-center justify-center rounded-full text-[9px] font-bold text-[var(--wd-accent-ink)]"
             style={{ background: active.color }}
@@ -563,15 +612,61 @@ function ProfileButton(): React.JSX.Element {
         // Chromium owns profiles and Google sign-in on the fork: hand the person
         // to the browser's own pages, opened as tabs in this window.
         <div className="glass absolute right-0 top-11 z-50 w-72 max-w-[calc(100vw-1rem)] overflow-hidden rounded-[14px] p-1">
-          <p className="px-3 pb-1 pt-1.5 text-[10px] font-bold uppercase tracking-wider text-[var(--wd-dim)]">
-            Google account
-          </p>
-          {[
-            ['Sign in to Google', 'https://accounts.google.com/'],
-            ['Profiles & account settings', 'chrome://settings/people'],
-            ['Browser settings', 'chrome://settings/'],
-            ['Extensions', 'chrome://extensions/']
-          ].map(([label, url]) => (
+          {/* Who is signed in, said plainly at the top — the menu used to open
+              with four links and never name the account it belonged to. */}
+          <div className="flex items-center gap-2.5 px-3 pb-2 pt-2">
+            {account?.avatarDataUrl ? (
+              <img
+                src={account.avatarDataUrl}
+                alt=""
+                width={32}
+                height={32}
+                className="h-8 w-8 flex-none rounded-full"
+              />
+            ) : (
+              <span className="flex h-8 w-8 flex-none items-center justify-center rounded-full bg-[var(--wd-field)] text-[13px] font-bold text-[var(--wd-dim)]">
+                {(account?.fullName || account?.email || '?').charAt(0).toUpperCase()}
+              </span>
+            )}
+            <span className="min-w-0">
+              <span className="block truncate text-[12.5px] font-medium text-[var(--wd-text)]">
+                {account?.fullName || account?.profileName || 'Not signed in'}
+              </span>
+              <span className="block truncate text-[10.5px] text-[var(--wd-dim)]">
+                {account?.signedIn ? account.email : 'Sign in to sync and use Google services'}
+              </span>
+            </span>
+          </div>
+
+          {!account?.signedIn && (
+            <button
+              onClick={() => {
+                useShellStore.getState().newTab('https://accounts.google.com/')
+                setOpen(false)
+              }}
+              className="mb-1 block w-full rounded-lg bg-[var(--wd-accent)] px-3 py-1.5 text-center text-[12px] font-semibold text-[var(--wd-accent-ink)]"
+            >
+              Sign in to Google
+            </button>
+          )}
+
+          <div className="my-1 border-t border-[var(--wd-hairline)]" />
+          {/* Saved passwords, autofill, payment methods and addresses are
+              Chromium's own surfaces and cannot be rebuilt from outside them —
+              they read the profile's encrypted store. So the menu links
+              straight at each one rather than dropping people at the root of
+              settings to hunt. */}
+          {(
+            [
+              ['Passwords', 'chrome://password-manager/passwords'],
+              ['Autofill and addresses', 'chrome://settings/addresses'],
+              ['Payment methods', 'chrome://settings/payments'],
+              ['Sync and Google services', 'chrome://settings/syncSetup'],
+              ['Profiles & account settings', 'chrome://settings/people'],
+              ['Browser settings', 'chrome://settings/'],
+              ['Extensions', 'chrome://extensions/']
+            ] as const
+          ).map(([label, url]) => (
             <button
               key={url}
               onClick={() => {
@@ -699,6 +794,69 @@ function ProfileButton(): React.JSX.Element {
 }
 
 const CHROME_WEB_STORE_URL = 'https://chromewebstore.google.com/'
+
+/**
+ * The extensions the user pinned in chrome://extensions, drawn in the toolbar.
+ *
+ * Chromium paints extension buttons in its own toolbar, which this build does
+ * not have — the toolbar is this page. So "Pin to toolbar" was a switch with
+ * nowhere to show its result. The pinned list, each action's per-page title,
+ * badge and enabled state all come from the browser; the icon is Chromium's
+ * own chrome://extension-icon renderer, so nothing ships bitmaps over Mojo.
+ *
+ * `url` is not read — it is the re-fetch trigger. An extension changes its
+ * badge and title per page, so the list is re-read whenever the tab navigates.
+ */
+function PinnedExtensions({ tabId, url }: { tabId: string; url: string }): React.JSX.Element {
+  const [actions, setActions] = useState<ExtensionActionInfo[]>([])
+
+  useEffect(() => {
+    if (!window.agweb.host.ownsBrowserFeatures) return
+    let cancelled = false
+    void window.agweb.extensions
+      .actions(tabId)
+      .then((list) => {
+        if (!cancelled) setActions(list)
+      })
+      .catch(() => {
+        // An older browser build has no such call. An empty toolbar is the
+        // right answer; a thrown promise would take the whole toolbar down.
+        if (!cancelled) setActions([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [tabId, url])
+
+  if (actions.length === 0) return <></>
+  return (
+    <>
+      {actions.map((action) => (
+        <button
+          key={action.id}
+          onClick={() => void window.agweb.extensions.runAction(tabId, action.id)}
+          className={`wd-icon relative ${action.enabled ? '' : 'opacity-40'}`}
+          title={action.title || action.name}
+          aria-label={action.title || action.name}
+          data-testid={`extension-action-${action.id}`}
+        >
+          <img
+            src={`chrome://extension-icon/${action.id}/32/1`}
+            alt=""
+            width={16}
+            height={16}
+            className="h-4 w-4"
+          />
+          {action.badgeText && (
+            <span className="pointer-events-none absolute -bottom-0.5 -right-0.5 min-w-3 rounded-sm bg-[var(--wd-accent)] px-0.5 text-center text-[8px] font-bold leading-3 text-[var(--wd-accent-ink)]">
+              {action.badgeText.slice(0, 4)}
+            </span>
+          )}
+        </button>
+      ))}
+    </>
+  )
+}
 
 function ExtensionsButton(): React.JSX.Element {
   const [open, setOpen] = useState(false)

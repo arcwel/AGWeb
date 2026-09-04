@@ -3,7 +3,15 @@ import type { DragEvent, KeyboardEvent } from 'react'
 import type { AgentAttachment } from '@shared/agents'
 import { useShellStore } from '@/store'
 import { usePopover } from '@/popover'
-import { AttachIcon, FolderIcon, ImageIcon, MicIcon, SendIcon, SlashIcon } from '@/components/icons'
+import {
+  AttachIcon,
+  FolderIcon,
+  GlobeIcon,
+  ImageIcon,
+  MicIcon,
+  SendIcon,
+  SlashIcon
+} from '@/components/icons'
 import { useSpeechInput } from '@/speech'
 import { PermissionPopover, policySummary, usePolicyStatus } from '@/components/PermissionPopover'
 import { AnchoredPopover } from '@/components/AnchoredPopover'
@@ -33,6 +41,14 @@ const SLASH_COMMANDS: { name: string; hint: string; template: string }[] = [
 ]
 
 const MAX_CHARS = 12000
+
+/** What to do with a page, offered when Ask brings one in and the box is empty. */
+const PAGE_STARTERS = [
+  'Summarize this page',
+  'What can I do here?',
+  'Explain the key terms on this page',
+  'Fill in what this page asks for'
+]
 
 export function Composer(): React.JSX.Element {
   const workspace = useShellStore((s) => s.workspace)
@@ -307,10 +323,14 @@ export function Composer(): React.JSX.Element {
                   <FolderIcon size={11} className="text-slate-400" />
                 ) : a.kind === 'image' ? (
                   <ImageIcon size={11} className="text-violet-500" />
+                ) : a.kind === 'page' ? (
+                  <GlobeIcon size={11} className="text-[var(--wd-accent)]" />
                 ) : (
                   <AttachIcon size={11} className="text-sky-500" />
                 )}
-                <span className="max-w-40 truncate">{a.path}</span>
+                <span className="max-w-40 truncate">
+                  {a.kind === 'page' ? `Sharing “${a.title || a.path}”` : a.path}
+                </span>
                 <button
                   onClick={() => setAttachments((prev) => prev.filter((x) => x.path !== a.path))}
                   className="rounded px-0.5 text-slate-400 hover:text-red-500"
@@ -323,6 +343,22 @@ export function Composer(): React.JSX.Element {
           </div>
         )}
 
+        {text === '' && attachments.some((a) => a.kind === 'page') && (
+          <div className="flex flex-wrap gap-1.5 px-2.5 pt-2" data-testid="page-ask-starters">
+            {PAGE_STARTERS.map((starter) => (
+              <button
+                key={starter}
+                onClick={() => {
+                  setText(starter)
+                  inputRef.current?.focus()
+                }}
+                className="rounded-full border border-slate-200 px-2.5 py-1 text-[11px] text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+              >
+                {starter}
+              </button>
+            ))}
+          </div>
+        )}
         <textarea
           ref={inputRef}
           value={text}

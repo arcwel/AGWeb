@@ -61,6 +61,7 @@ Three things follow from that ordering:
 - Plan → approve → execute → verify. The plan is editable before anything runs.
 - Commands run in **live terminals inside the transcript**; file edits come with before/after diffs; browser actions drive real tabs in your session over an in-process DevTools channel, never a debugging port.
 - **Agent Vision**: the agent reads the page, the console and the network of the tabs it opened.
+- **Ask**, at the end of the tab strip: the agent, pointed at the page you are on. It reads the page first, offers starters (summarise, what can I do here, fill in the form), and then behaves as the ordinary agent — every tool, the same permissions.
 - Composer with **attachments** from the native file panel, `@mention` for workspace files, `/` commands, voice input, and a model picker (Anthropic, OpenAI, Gemini).
 - **Permissions where the run starts.** A pill beside the model picker in the composer sets the mode, from Secure (ask about everything) to Full autonomy (never asks), with custom rules and the standing per-site decisions in the same popover.
 - **Five guards, each its own switch**: payments & checkout, banking & brokerage, passwords & identity, email & messaging, posting publicly. A guard makes the agent ask before it navigates to, clicks, types in or runs script on that kind of page, even under full autonomy. Inline prompts name the guard that asked; an audit log records every decision. The policy gate fails closed.
@@ -197,6 +198,10 @@ npm run verify:fork -- --browser <binary>            # the shell boots, opens a 
 npm run verify:hardening -- --browser <binary> --release   # sandbox, site isolation, CSP, gn config, signature
 node scripts/verify-deliverable.mjs --app <.app>     # runs on a machine that never saw the build tree
 ```
+
+### Settings
+
+The **Browser** tab in Settings mirrors chrome://settings: the same sections in the same order, with each setting provided the way Chrome provides it. Simple preferences are switches and dropdowns that write the pref Chromium itself writes; the ones Chromium must own — passwords, payment methods, addresses, site permissions, search engines, languages, reset — are rows that open Chromium's own page. The browser answers only for an allowlist of preferences, so the shell can never name an arbitrary one.
 
 ### Making the installer
 
