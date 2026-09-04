@@ -797,6 +797,12 @@ interface ShellState {
   assistantOpen: boolean
   openAssistant(): void
   closeAssistant(): void
+
+  /** A block is being dragged right now. An empty zone collapses to a 10px
+   *  strip, which is close to unhittable with a block under the cursor — so
+   *  while this is true every zone opens into a band you can actually aim at. */
+  blockDragging: boolean
+  setBlockDragging(dragging: boolean): void
   clearDraft(): void
   closeEditorTab(path: string): void
   setFileDirty(path: string, dirty: boolean): void
@@ -1088,6 +1094,9 @@ export const useShellStore = create<ShellState>((set) => ({
   assistantOpen: false,
   openAssistant: () => set({ assistantOpen: true }),
   closeAssistant: () => set({ assistantOpen: false }),
+
+  blockDragging: false,
+  setBlockDragging: (dragging) => set({ blockDragging: dragging }),
   clearDraft: () => set({ composerDraft: null }),
   dirtyFiles: {},
   agentSessions: {},

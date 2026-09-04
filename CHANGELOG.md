@@ -68,6 +68,18 @@ All notable changes to Arcwel WebDeck are recorded here. This project adheres to
 - The About panel no longer lists an Electron version this build does not have,
   and the clear-data checkbox labelled "Auth cache" says what it clears.
 
+### Fixed (block drop targets)
+
+- **The drop zones open while a block is in the air.** An empty zone rests as
+  a 10px strip, which is a fine resting state and a poor target: the cursor is
+  carrying a block, the pointer is not where the eye is, and a miss drops the
+  block back where it started. During a drag the left column and the bottom
+  dock each open to a 96px band and all three zones show a dashed edge, so
+  every target is both aimable and visible. The bands are overlays — the
+  stage's insets come from inline custom properties that are left alone, so
+  nothing reflows and the page does not jump under the drag. They close on
+  `dragend`, which fires whether the block was dropped or abandoned.
+
 ### Changed (assistant panel and one settings sheet)
 
 - **Ask opens a side panel, not the Dev Deck.** The assistant is its own

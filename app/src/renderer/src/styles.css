@@ -358,6 +358,11 @@ body,
   border-color: var(--wd-accent-line);
   background: var(--wd-accent-soft);
 }
+/* An empty dock is display:none-adjacent at 10px; during a drag it is a band,
+   so its resizer must not reappear over it. */
+.workspace.dragging-block.dock-empty .deck-resize-dock {
+  display: none;
+}
 
 /* Left column of blocks. Zero-width until something is dropped into it, but
    the drop target itself stays reachable at the stage's left edge. */
@@ -386,6 +391,31 @@ body,
   width: 10px;
   overflow: visible;
 }
+
+/* ---- Drop targets while a block is in the air ----------------------------
+   A 10px strip is a fine resting state and a poor target: the cursor carries
+   a block, the pointer is not where the eye is, and a miss drops the block
+   back where it came from. While a drag is running every zone opens into a
+   band wide enough to aim at, and says so with a dashed edge. The bands are
+   overlays — the stage's insets come from inline custom properties that are
+   not touched here, so nothing reflows and the page does not jump. */
+.workspace.dragging-block .deck-left,
+.workspace.dragging-block .deck-col,
+.workspace.dragging-block .deck-dock {
+  border: 1px dashed var(--wd-accent-line);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--wd-accent) 7%, transparent);
+}
+.workspace.dragging-block.left-empty .deck-left {
+  width: 96px;
+  overflow: visible;
+}
+.workspace.dragging-block.dock-empty .deck-dock {
+  height: 96px;
+  bottom: 6px;
+}
+/* The right column is the one zone that always reserves its width, so it needs
+   no widening — only the same edge, so all three read as targets at once. */
 
 .deck-col {
   position: absolute;

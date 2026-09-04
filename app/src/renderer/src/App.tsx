@@ -222,6 +222,7 @@ export default function App(): React.JSX.Element {
   const ownsChrome = window.agweb.host.ownsBrowserChrome
   const tabRail = verticalTabs && !ownsChrome
   const assistantOpen = useShellStore((s) => s.assistantOpen)
+  const blockDragging = useShellStore((s) => s.blockDragging)
 
   return (
     <div className="wd-shell flex h-full flex-col">
@@ -280,7 +281,7 @@ export default function App(): React.JSX.Element {
           dockEmpty ? 'dock-empty' : ''
         } ${leftEmpty ? 'left-empty' : ''} ${tabRail ? 'has-tabrail' : ''} ${
           assistantOpen ? 'has-assistant' : ''
-        }`}
+        } ${blockDragging ? 'dragging-block' : ''}`}
         style={
           {
             '--deck-col-w': `${deckSizes.colWidth}px`,

@@ -37,6 +37,15 @@ function startDrag(event: DragEvent, payload: DragPayload, label: string): void 
   event.dataTransfer.setData(DRAG_MIME, JSON.stringify(payload))
   event.dataTransfer.effectAllowed = 'move'
 
+  // Open the drop zones for the duration of the drag. `dragend` fires on the
+  // source whether the drag was dropped or abandoned, so it is the one signal
+  // that always arrives — a drop handler alone would leave the zones open when
+  // someone drags out of the window and lets go.
+  useShellStore.getState().setBlockDragging(true)
+  window.addEventListener('dragend', () => useShellStore.getState().setBlockDragging(false), {
+    once: true
+  })
+
   const ghost = document.createElement('div')
   ghost.className = 'drag-ghost'
   // The grip, so the ghost reads as the same header the block wears.
