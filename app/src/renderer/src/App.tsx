@@ -86,10 +86,6 @@ export default function App(): React.JSX.Element {
     const offAdopt = window.agweb.browser.onAdoptTab((tabId, url) => {
       useShellStore.getState().adoptBrowserTab(tabId, url)
     })
-    // A file: navigation to a workspace doc renders it in Document Studio (P3-3).
-    const offDoc = window.agweb.browser.onOpenDoc((path) => {
-      useShellStore.getState().openDoc(path)
-    })
     // Files dropped on the window. The browser has already opened anything it
     // renders itself, in its own tab; what arrives here is the documents only
     // WebDeck can read, as paths it signed.
@@ -111,7 +107,6 @@ export default function App(): React.JSX.Element {
       offState()
       offOpen()
       offAdopt()
-      offDoc()
       offCommand()
     }
   }, [])

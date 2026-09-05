@@ -282,8 +282,13 @@ The Electron shell is gone (2026-09-02); there is one product, the fork.
   as described under _The fork_: no eval, no remote origin, framed by nobody,
   `require-trusted-types-for 'script'` with a **default Trusted Types policy**
   (`webui/main.tsx`) that admits script URLs only from `chrome://webdeck/` and
-  same-origin blobs. `src/core/csp-policy.test.ts` reads the C++ and fails if
-  any of that is loosened.
+  same-origin blobs, and refuses HTML strings outright — with one door
+  (`renderer/src/trusted-html.ts`): mermaid, which renders to markup in a
+  scratch element, is let through for the duration of its own render. What it
+  renders is parsed through a second, named policy (`webdeck-inert-parse`)
+  that feeds only an inert DOMParser, then scrubbed and inserted as nodes
+  (`svg-node.ts`), never as the string. `src/core/csp-policy.test.ts` reads
+  the C++ and fails if any of that is loosened.
 - **Web content** is ordinary Chromium tabs in the user's profile, with site
   isolation doing the work a separate partition used to describe;
   `verify:hardening` proves the sandbox and site isolation positively at
@@ -614,8 +619,9 @@ than none, so anything below is something we do **not** have today.
 - **`connect-src` on `chrome://webdeck` allows any loopback port**, not just the
   core's, because the core's port is ephemeral and a static header cannot pin it.
 - **`trusted-types *`** allows any policy name; the default policy in
-  `webui/main.tsx` is what restricts script URLs, so a page-side bug there is a
-  page-side bug in the CSP.
+  `webui/main.tsx` is what restricts script URLs and HTML strings, so a
+  page-side bug there — or a render left inside the mermaid door in
+  `trusted-html.ts` — is a page-side bug in the CSP.
 - **Only macOS arm64 has been measured.** `verify:hardening`'s renderer-sandbox
   evidence is macOS seatbelt-specific and reports `unverified` elsewhere.
 - **The fork's navigation guard denies rather than prompting** on a `confirm`

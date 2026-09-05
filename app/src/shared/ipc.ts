@@ -869,7 +869,6 @@ export const IpcEvents = {
   editorCommandRequest: 'event:editor-command-request',
   policyChanged: 'event:policy-changed',
   policyDenied: 'event:policy-denied',
-  openDoc: 'event:open-doc',
   shellShortcut: 'event:shell-shortcut',
   terminalAdopt: 'event:terminal-adopt',
   syncStatusChanged: 'event:sync-status',
@@ -1241,7 +1240,6 @@ export interface AgwebApi {
      *  the browser can render itself never reaches here. */
     onDocumentsDropped(listener: (files: { path: string; auth: string }[]) => void): () => void
     /** A `file:` navigation to a workspace doc — open it in Document Studio. */
-    onOpenDoc(listener: (path: string) => void): () => void
   }
 
   /** Multi-window deck: the detached IDE window, float windows, state sync. */

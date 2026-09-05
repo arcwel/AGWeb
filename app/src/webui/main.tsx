@@ -12,6 +12,7 @@ import { CoreClient } from '../core/transports/ws-client'
 import { serveAgentTabs } from './agent-tabs'
 import { createAgwebApi } from './agweb-api'
 import { createWebUiIpc, primeSyncCache } from './ipc-adapter'
+import { htmlSinksAllowed } from '@/trusted-html'
 import '@/styles.css'
 
 /**
@@ -40,7 +41,13 @@ declare global {
     __WEBDECK_ASSETS?: Record<string, string>
     /** Trusted Types factory (lib.dom does not declare it yet). */
     trustedTypes?: {
-      createPolicy(name: string, rules: { createScriptURL?: (input: string) => string }): unknown
+      createPolicy(
+        name: string,
+        rules: {
+          createScriptURL?: (input: string) => string
+          createHTML?: (input: string) => string
+        }
+      ): unknown
     }
   }
 }
@@ -78,6 +85,11 @@ function installAssetFetchShim(): void {
  * *default* policy is the one place to vet them: only this origin's own bundle
  * and same-origin blobs pass; anything else is refused at the sink, which is
  * exactly the guarantee the CSP directive exists to give.
+ *
+ * HTML strings are refused too, with one door (trusted-html.ts): a library
+ * that must render to markup in a scratch element, mermaid, is let through
+ * for the duration of its render and nothing else. What it renders is still
+ * parsed, scrubbed and inserted as nodes, never as the string.
  */
 function installTrustedTypesPolicy(): void {
   const tt = window.trustedTypes
@@ -89,6 +101,10 @@ function installTrustedTypesPolicy(): void {
       createScriptURL: (url: string) => {
         if (url.startsWith(own) || url.startsWith(ownBlob)) return url
         throw new TypeError(`Refused script URL outside chrome://webdeck: ${url.slice(0, 120)}`)
+      },
+      createHTML: (html: string) => {
+        if (htmlSinksAllowed()) return html
+        throw new TypeError('Refused an HTML string: chrome://webdeck inserts nodes, not markup')
       }
     })
   } catch {

@@ -37,6 +37,17 @@ All notable changes to Arcwel WebDeck are recorded here. This project adheres to
   the cookie key never touches the login keychain. Neither is for a release.
 - Every drop leaves a line in `~/.webdeck/drops.log`, the one record that
   survives a Finder launch.
+- **Mermaid diagrams render again.** The page requires Trusted Types for every
+  HTML sink and the diagram was inserted as an HTML string, which the policy
+  refuses; mermaid's own render also writes markup into a scratch element. The
+  page's policy now lets an HTML string through only while a diagram is
+  rendering; the result is parsed by an inert parser through a policy of its
+  own, scrubbed of anything that could run (scripts, handler attributes,
+  `javascript:` links, embedded frames), and inserted as nodes. Every other
+  HTML string is still refused, and a diagram that fails says so in the
+  console instead of silently showing its fence text.
+- Removed the open-document event channel, a listener nothing had emitted
+  since the Electron shell.
 
 ### Added (sync service, identity, history import)
 

@@ -115,11 +115,6 @@ export function createAgwebApi(ipcRenderer: IpcLike, host: HostCapabilities): Ag
         const handler = (_event: unknown, command: string): void => listener(command)
         ipcRenderer.on(IpcEvents.browserCommand, handler)
         return () => ipcRenderer.removeListener(IpcEvents.browserCommand, handler)
-      },
-      onOpenDoc: (listener) => {
-        const handler = (_event: unknown, path: string): void => listener(path)
-        ipcRenderer.on(IpcEvents.openDoc, handler)
-        return () => ipcRenderer.removeListener(IpcEvents.openDoc, handler)
       }
     },
     appSettings: {
