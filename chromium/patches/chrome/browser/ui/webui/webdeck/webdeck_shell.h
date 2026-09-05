@@ -120,9 +120,11 @@ class WebDeckShell : public mojom::Shell,
   void PickPaths(int32_t mode, PickPathsCallback callback) override;
   void OpenLocalFile(int32_t tab_id, OpenLocalFileCallback callback) override;
 
-  // Files were dropped on this shell's window. Called by the WebContents view
-  // delegate, which is the only place the real paths exist.
-  void OnFilesDropped(const std::vector<base::FilePath>& paths);
+  // Files were dropped on this shell's window, on the tab strip or on a page
+  // (both of Chromium's drop paths ask, via webdeck_shell_host). Returns the
+  // paths the shell did NOT take, for Chromium to open as it normally would.
+  std::vector<base::FilePath> OnFilesDropped(
+      const std::vector<base::FilePath>& paths);
 
   // ui::SelectFileDialog::Listener: the PickPaths panel answered.
   void FileSelected(const ui::SelectedFileInfo& file, int index) override;

@@ -32,9 +32,10 @@ let extraRoots: WorkspaceInfo[] = []
  * Individual files the user attached through a picker (task 3B.4 follow-up).
  *
  * A narrower grant than a root: attaching one file from the Desktop should not
- * hand the agent the Desktop. Like roots these last one session and are never
- * persisted, and like roots the only way to add one is a gesture the user
- * drove — a native dialog, or dropping the file onto the window.
+ * hand the agent the Desktop. The only way to add one is a gesture the user
+ * drove — a native dialog, or dropping the file onto the window. Unlike roots,
+ * files opened that way are remembered across launches (file-grants.ts), so a
+ * restored tab on one can read it; a folder never is.
  */
 const grantedFiles = new Set<string>()
 

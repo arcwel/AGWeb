@@ -1,10 +1,12 @@
 import { createHmac, timingSafeEqual } from 'node:crypto'
+import { existsSync, statSync } from 'node:fs'
 import { isAbsolute, resolve } from 'node:path'
 import { Buffer } from 'node:buffer'
 import { IpcChannels } from '@shared/ipc'
 import { core } from '../rpc'
 import { asString } from '../coerce'
 import { grantFile } from './workspace'
+import { JsonStore } from './json-store'
 
 /**
  * Files the BROWSER vouched for, opened at the path they actually live at.
@@ -63,7 +65,47 @@ export function openSignedPath(path: string, auth: string): { path?: string; err
   if (full !== path) return { error: 'That path is not in its plain form.' }
   if (!isSignedPath(full, auth)) return { error: 'The browser did not open that file.' }
   grantFile(full)
+  rememberOpenedFile(full)
   return { path: full }
+}
+
+/**
+ * Files the user opened from outside a project, kept across launches.
+ *
+ * A tab on a dropped file is restored like any other tab, and a restored tab
+ * that cannot read its file is a broken tab. So the paths the user chose —
+ * and only those: a signed drop or pick is the sole way onto this list — are
+ * kept, and granted again at startup while the file still exists. A path
+ * that is gone is dropped from the list, and the tab shows why it is empty.
+ *
+ * This is narrower than a folder grant, which stays session-only on purpose
+ * (see workspace.ts): one file the user already opened, not a tree.
+ */
+const MAX_REMEMBERED = 200
+
+interface OpenedFilesState {
+  paths: string[]
+}
+
+const opened = new JsonStore<OpenedFilesState>('opened-files', { paths: [] })
+
+function rememberOpenedFile(path: string): void {
+  const rest = opened.read().paths.filter((p) => p !== path)
+  opened.write({ paths: [path, ...rest].slice(0, MAX_REMEMBERED) })
+}
+
+/** Grant every remembered file that still exists; forget the rest. Returns the granted paths. */
+export function restoreOpenedFiles(): string[] {
+  const kept = opened.read().paths.filter((path) => {
+    try {
+      return isAbsolute(path) && existsSync(path) && statSync(path).isFile()
+    } catch {
+      return false
+    }
+  })
+  opened.write({ paths: kept })
+  for (const path of kept) grantFile(path)
+  return kept
 }
 
 export function registerFileGrantsRpc(): void {

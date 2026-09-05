@@ -7,13 +7,13 @@ whenever you want it.
 
 ## Supported formats
 
-| Format | Rendered as |
-| :-- | :-- |
-| **Markdown** (`.md`) | A styled document — headings, tables, code blocks, task lists |
-| **JSON** (`.json`) | A readable, structured view |
-| **YAML** (`.yaml` / `.yml`) | A readable, structured view |
-| **CSV** (`.csv`) | A table |
-| **TOML** (`.toml`) | A readable, structured view |
+| Format                      | Rendered as                                                   |
+| :-------------------------- | :------------------------------------------------------------ |
+| **Markdown** (`.md`)        | A styled document — headings, tables, code blocks, task lists |
+| **JSON** (`.json`)          | A readable, structured view                                   |
+| **YAML** (`.yaml` / `.yml`) | A readable, structured view                                   |
+| **CSV** (`.csv`)            | A table                                                       |
+| **TOML** (`.toml`)          | A readable, structured view                                   |
 
 Markdown documents also render:
 
@@ -52,6 +52,23 @@ Beyond the slide exports above, a rendered document can be exported to:
 Open a document from the **Files** tree to see the styled view. (Navigating to a
 file by URL in the browser doesn't yet trigger the styled view — that path is
 tracked for a future release.)
+
+## Source files
+
+Source and plain text — Python, JavaScript and TypeScript, Go, Rust, Java, C
+and C++, shell, SQL, CSS, `.txt`, `.log`, `.ini` and the rest — open in the
+source view, a full editor on the stage, with **Open in Editor** to take the
+file into the Deck. The styled and graph views are not offered for them, since
+they have no styled form.
+
+## Files from outside a project
+
+A file dropped on the window or picked with **Open file…** opens at its own
+path, not as a copy, and the browser signs that path so the page can name
+nothing it was not given. The view reloads on a change event inside the open
+project, right after each save from the editor, and every 30 seconds for a file
+outside any project, where no event ever arrives. Such files come back after a
+relaunch like any other tab, for as long as they still exist.
 
 ## Related
 

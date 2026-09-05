@@ -949,6 +949,78 @@ export function isDocFile(path: string): boolean {
   return DOC_EXTENSIONS.has(ext)
 }
 
+/**
+ * Source and plain-text types WebDeck opens in Document Studio's source view
+ * when they arrive from outside a project — dropped on the window or picked in
+ * the open panel. Chromium has no reader for these: it shows a few as bare
+ * text and downloads the rest. HTML and images are deliberately absent,
+ * because Chromium renders those.
+ *
+ * Mirrored by kEditorExtensions in webdeck_shell.cc, which decides on the
+ * browser side which dropped files the shell claims at all. The two lists must
+ * agree: a type claimed there and not routed here vanishes silently.
+ */
+export const EDITOR_EXTENSIONS = new Set([
+  'py',
+  'js',
+  'mjs',
+  'cjs',
+  'ts',
+  'tsx',
+  'jsx',
+  'vue',
+  'svelte',
+  'go',
+  'rs',
+  'java',
+  'kt',
+  'swift',
+  'dart',
+  'scala',
+  'c',
+  'cc',
+  'cpp',
+  'h',
+  'hpp',
+  'cs',
+  'rb',
+  'php',
+  'lua',
+  'pl',
+  'r',
+  'jl',
+  'ex',
+  'exs',
+  'hs',
+  'zig',
+  'sh',
+  'bash',
+  'zsh',
+  'fish',
+  'ps1',
+  'bat',
+  'sql',
+  'graphql',
+  'gql',
+  'proto',
+  'tf',
+  'hcl',
+  'css',
+  'scss',
+  'less',
+  'txt',
+  'log',
+  'ini',
+  'cfg',
+  'conf',
+  'env'
+])
+
+export function isEditorFile(path: string): boolean {
+  const ext = path.split('.').pop()?.toLowerCase() ?? ''
+  return EDITOR_EXTENSIONS.has(ext)
+}
+
 /** *.slides.md files render as Reveal.js decks instead of Document Studio. */
 export function isSlidesFile(path: string): boolean {
   return /\.slides\.md$/i.test(path)

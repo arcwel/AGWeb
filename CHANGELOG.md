@@ -5,6 +5,39 @@ All notable changes to Arcwel WebDeck are recorded here. This project adheres to
 
 ## Unreleased
 
+### Fixed (file drops, editor boot, local test builds)
+
+- **Dropping a file on the page now opens it.** The shell claimed dropped
+  documents and then never heard about them: the event was emitted on the
+  shell's own bus while the page's listener had been wired to the core socket,
+  because the channel was missing from the routing set. A test now reads the
+  shell source and checks every emitted channel against that set.
+- **Drops are caught on both of Chromium's paths.** A drop on the tab strip is
+  the window's; a drop on the page is the page's, and the page's path had no
+  hook at all. Both now offer the files to the shell first. On the shell page,
+  whatever the shell hands back opens as a new tab instead of being refused,
+  so a PDF dropped on the page opens in Chromium's viewer.
+- **Source files open in Document Studio's source view** — Python, JavaScript,
+  Go, Rust, shell, SQL, CSS, plain text and some forty more — with _Open in
+  Editor_ for the Deck. Nothing opens Deck blocks on its own.
+- **The view follows the file**: on a change inside the open project, right
+  after each save from the editor, and every 30 seconds for a file outside any
+  project.
+- **Files opened from outside a project come back after a relaunch.** Their
+  tabs were restored but the files were not readable. The core now remembers
+  files the user opened by drop or pick and grants them again at startup while
+  they exist; a missing file is forgotten. Folders stay session-only.
+- **Every editor was blank when the core started slowly.** The editor's boot
+  read settings through the shell API before the page had installed it, and a
+  lost race left every editor dead for the session with one console line. The
+  boot now waits for the API.
+- **No more login-password prompt on every rebuild of a local build.**
+  `npm run dev:signing-identity` makes a stable self-signed identity in its own
+  keychain, `package-fork` accepts it, and with `webdeck_dev_keychain = true`
+  the cookie key never touches the login keychain. Neither is for a release.
+- Every drop leaves a line in `~/.webdeck/drops.log`, the one record that
+  survives a Finder launch.
+
 ### Added (sync service, identity, history import)
 
 - **Import browsing history from the browsers already on this machine.**

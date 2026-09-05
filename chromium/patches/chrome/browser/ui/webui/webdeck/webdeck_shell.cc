@@ -186,10 +186,8 @@ WebDeckShell::WebDeckShell(content::WebContents* shell_contents,
       receiver_(this, std::move(receiver)) {}
 
 WebDeckShell::~WebDeckShell() {
-  if (shell_contents_) {
-    webdeck::ClearFilesDropForwarder(shell_contents_);
-  }
   if (forwarding_window_) {
+    webdeck::ClearFilesDropForwarder(forwarding_window_);
     webdeck::ClearCommandForwarder(forwarding_window_);
     forwarding_window_ = nullptr;
   }
@@ -1101,19 +1099,17 @@ void WebDeckShell::SetClient(mojo::PendingRemote<mojom::ShellClient> client) {
                            : false;
             },
             weak_factory_.GetWeakPtr()));
-  }
-  // Dropped files, for the same reason: only the browser knows where they are.
-  if (shell_contents_) {
+    // Dropped files, for the same reason: only the browser knows where they
+    // are, and the drop arrives on the window, not on the page.
     webdeck::SetFilesDropForwarder(
-        shell_contents_,
+        window,
         base::BindRepeating(
             [](base::WeakPtr<WebDeckShell> shell,
                const std::vector<base::FilePath>& paths) {
-              if (shell) {
-                shell->OnFilesDropped(paths);
-              }
+              return shell ? shell->OnFilesDropped(paths) : paths;
             },
             weak_factory_.GetWeakPtr()));
+    webdeck::RecordDropNote("shell registered for drops");
   }
 }
 
@@ -1486,15 +1482,30 @@ void WebDeckShell::PickPaths(int32_t mode, PickPathsCallback callback) {
 
 namespace {
 
-// The formats Chromium cannot render but Document Studio can. Mirrors
-// DOC_EXTENSIONS in app/src/shared/ipc.ts; the two lists are the same decision
-// made on either side of the pipe, so they move together.
+// Files WebDeck reads itself: documents in Document Studio's styled view,
+// source and plain text in its source view. Everything else — PDF, images,
+// HTML — is Chromium's, which renders those properly. The two lists mirror
+// DOC_EXTENSIONS and EDITOR_EXTENSIONS in app/src/shared/ipc.ts, where the
+// page decides which view a claimed file gets; a type claimed here and unknown
+// there would vanish, so the lists move together.
 bool IsDocumentFile(const base::FilePath& path) {
-  static constexpr const char* kExtensions[] = {
+  static constexpr const char* kDocumentExtensions[] = {
       ".md", ".markdown", ".json", ".yaml", ".yml",
       ".toml", ".csv", ".tsv", ".xml", ".svg"};
+  static constexpr const char* kEditorExtensions[] = {
+      ".py", ".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".vue", ".svelte",
+      ".go", ".rs", ".java", ".kt", ".swift", ".dart", ".scala", ".c", ".cc",
+      ".cpp", ".h", ".hpp", ".cs", ".rb", ".php", ".lua", ".pl", ".r", ".jl",
+      ".ex", ".exs", ".hs", ".zig", ".sh", ".bash", ".zsh", ".fish", ".ps1",
+      ".bat", ".sql", ".graphql", ".gql", ".proto", ".tf", ".hcl", ".css",
+      ".scss", ".less", ".txt", ".log", ".ini", ".cfg", ".conf", ".env"};
   const std::string extension = base::ToLowerASCII(path.FinalExtension());
-  for (const char* candidate : kExtensions) {
+  for (const char* candidate : kDocumentExtensions) {
+    if (extension == candidate) {
+      return true;
+    }
+  }
+  for (const char* candidate : kEditorExtensions) {
     if (extension == candidate) {
       return true;
     }
@@ -1597,38 +1608,31 @@ void WebDeckShell::MultiFilesSelected(
   }
 }
 
-// Files dropped on the shell's window.
+// Files dropped on this shell's window, on the tab strip or on a page.
 //
-// The page cannot do this itself: a File object handed to JavaScript carries
-// bytes and a name, never a location, which is why the first version of this
-// posted the whole file through the core as base64 and wrote a copy. The
-// browser has the real paths, so it splits them here — documents go to the
-// shell as signed paths for Document Studio, and everything the browser can
-// render it opens itself, in a tab of its own, without the page in the middle.
-void WebDeckShell::OnFilesDropped(const std::vector<base::FilePath>& paths) {
+// Chromium offers them here before doing its own thing with them. A file
+// WebDeck reads — a document, or source — is taken, and handed to the shell as
+// a signed path. Everything else is given back, and Chromium opens it exactly
+// as it always would, which for a PDF means its own viewer in a tab.
+std::vector<base::FilePath> WebDeckShell::OnFilesDropped(
+    const std::vector<base::FilePath>& paths) {
   std::vector<mojom::SignedFilePtr> documents;
+  std::vector<base::FilePath> unclaimed;
   for (const base::FilePath& path : paths) {
-    if (IsDocumentFile(path)) {
-      if (mojom::SignedFilePtr signed_file = SignForShell(path)) {
-        documents.push_back(std::move(signed_file));
-      }
-      continue;
+    mojom::SignedFilePtr signed_file =
+        IsDocumentFile(path) ? SignForShell(path) : nullptr;
+    // A document we cannot sign — the core is not up, so nothing could be
+    // granted — goes back to Chromium rather than vanishing.
+    if (signed_file) {
+      documents.push_back(std::move(signed_file));
+    } else {
+      unclaimed.push_back(path);
     }
-    // A viewer Chromium already has. Give it its own tab rather than replacing
-    // what the user was reading.
-    Profile* profile = GetProfile();
-    const GURL url = net::FilePathToFileURL(path);
-    if (!profile || !url.is_valid()) {
-      continue;
-    }
-    NavigateParams params(profile, url, ui::PAGE_TRANSITION_AUTO_TOPLEVEL);
-    params.disposition = WindowOpenDisposition::NEW_FOREGROUND_TAB;
-    // Qualified: WebDeckShell has its own Navigate(tab_id, url).
-    ::Navigate(&params);
   }
   if (!documents.empty() && client_) {
     client_->OnDocumentsDropped(std::move(documents));
   }
+  return unclaimed;
 }
 
 // One picked file, opened the way its kind deserves.

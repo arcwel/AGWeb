@@ -19,7 +19,7 @@ import {
 } from './domains/editor-bridge'
 import type { EditorCommandResponse } from '../shared/ipc'
 import { registerAppSettingsRpc } from './domains/app-settings'
-import { registerFileGrantsRpc } from './domains/file-grants'
+import { registerFileGrantsRpc, restoreOpenedFiles } from './domains/file-grants'
 import { registerHistoryImportRpc } from './domains/history-import'
 import {
   abortPendingPrompts,
@@ -108,6 +108,9 @@ export async function startWebdeckCore(opts: CoreServerOptions = {}): Promise<Ws
   registerVsxRpc()
   registerAppSettingsRpc()
   registerFileGrantsRpc()
+  // Tabs on files opened from outside a project restore with the session, so
+  // the files they read have to be readable again before the first tab asks.
+  restoreOpenedFiles()
   registerHistoryImportRpc()
   registerPolicyRpc()
   registerGitRpc()

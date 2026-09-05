@@ -29,7 +29,7 @@ setCoreEnv({
   }
 })
 
-const { openSignedPath, isSignedPath } = await import('./file-grants')
+const { openSignedPath, isSignedPath, restoreOpenedFiles } = await import('./file-grants')
 const { readFile, writeFile } = await import('./fs')
 
 /** Must match kGrantContext in webdeck_core_service.cc. */
@@ -105,5 +105,25 @@ describe('a path the browser did not sign', () => {
   it('is refused when the key is too short to be one of ours', () => {
     process.env.WEBDECK_GRANT_KEY = Buffer.from('short').toString('base64')
     expect(isSignedPath(doc, sign(doc, Buffer.from('short')))).toBe(false)
+  })
+})
+
+describe('a file the user opened is readable again next launch', () => {
+  it('grants remembered files that still exist and forgets the ones that are gone', async () => {
+    const kept = join(dir, 'kept.md')
+    const gone = join(dir, 'gone.md')
+    writeFileSync(kept, 'still here')
+    writeFileSync(gone, 'soon gone')
+    expect(openSignedPath(kept, sign(kept)).path).toBe(kept)
+    expect(openSignedPath(gone, sign(gone)).path).toBe(gone)
+    rmSync(gone)
+
+    const restored = restoreOpenedFiles()
+
+    expect(restored).toContain(kept)
+    expect(restored).not.toContain(gone)
+    expect((await readFile(kept)).content).toBe('still here')
+    // Restoring twice is the same as once: the gone file stays forgotten.
+    expect(restoreOpenedFiles()).not.toContain(gone)
   })
 })

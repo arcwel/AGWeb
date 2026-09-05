@@ -105,6 +105,27 @@ const openEditorFallback: OpenEditor = async (modelRef, options) => {
   return undefined
 }
 
+/**
+ * `window.agweb` once main.tsx has installed it.
+ *
+ * This chain starts at module load — App imports this file, and main.tsx
+ * imports App — which is BEFORE main.tsx has connected to the core and put the
+ * API on the window. VS Code's services usually boot slower than that
+ * connection, but not always: on a slow core start they win, the settings read
+ * below finds no `window.agweb`, the promise rejects, and every editor in the
+ * app is dead for the session with one console line to show for it. Waiting
+ * for the API here is what makes the order irrelevant.
+ */
+function agwebInstalled(): Promise<typeof window.agweb> {
+  return new Promise((resolve) => {
+    const check = (): void => {
+      if (window.agweb) resolve(window.agweb)
+      else setTimeout(check, 50)
+    }
+    check()
+  })
+}
+
 export const monacoReady: Promise<void> = extensionHostOrigin()
   .then((extHostOrigin) =>
     initializeVscodeServices({
@@ -151,7 +172,7 @@ export const monacoReady: Promise<void> = extensionHostOrigin()
   // the defaults so a saved preference wins, and awaited as part of
   // monacoReady so the first editor is created with them already in force.
   .then(async () => {
-    const stored = await window.agweb.settings.read()
+    const stored = await (await agwebInstalled()).settings.read()
     const merged = parseSettingsText(stored.user)
     Object.assign(settings, merged, parseSettingsText(stored.workspace))
     applySettings()

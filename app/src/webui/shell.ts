@@ -210,7 +210,18 @@ export const SHELL_BROWSER_EVENTS: ReadonlySet<string> = new Set([
   IpcEvents.browserAdoptTab,
   // A shell-owned command from the native menu / a key equivalent that fired
   // while the page had focus (ShellClient.OnCommand).
-  IpcEvents.browserCommand
+  IpcEvents.browserCommand,
+  // Documents dropped on the window (ShellClient.OnDocumentsDropped).
+  //
+  // Every channel the ShellClient below emits MUST be in this set. The adapter
+  // uses it to decide where a subscriber's listener goes: a channel named here
+  // is wired to the shell's local bus, and any other channel is wired to the
+  // core's socket instead. A ShellClient method that emits on a channel missing
+  // from this set is shouting into an empty room — the browser reports success,
+  // the page never hears it, and nothing on screen says why. That is exactly
+  // how dropped files reached the shell and then vanished. shell.test.ts now
+  // checks the two lists against each other.
+  IpcEvents.browserDocumentsDropped
 ])
 
 const browserEventListeners = new Map<string, Set<(payload: unknown) => void>>()

@@ -7,6 +7,7 @@ import rehypeKatex from 'rehype-katex'
 import rehypeHighlight from 'rehype-highlight'
 import 'katex/dist/katex.min.css'
 import { useShellStore } from '@/store'
+import { isEditorFile } from '@shared/ipc'
 import { ensureModel, monaco, setEditorTheme } from '@/monaco'
 import { useMonacoReady } from '@/monaco-ready'
 import { JsonTree } from '@/components/JsonTree'
@@ -36,9 +37,15 @@ const sanitizeSchema = {
   }
 } as typeof defaultSchema
 
+/** How often the view re-reads a file no watcher covers. */
+const REFRESH_INTERVAL_MS = 30_000
+
 export function DocStudio({ path }: { path: string }): React.JSX.Element {
   const workspacePath = useShellStore((s) => s.workspace?.path ?? null)
-  const [mode, setMode] = useState<'styled' | 'graph' | 'source'>('styled')
+  // Source and plain text have no styled form: they open in the source view,
+  // and the Styled/Graph switches are not offered for them.
+  const isSource = isEditorFile(path)
+  const [mode, setMode] = useState<'styled' | 'graph' | 'source'>(isSource ? 'source' : 'styled')
   const [content, setContent] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
@@ -60,10 +67,25 @@ export function DocStudio({ path }: { path: string }): React.JSX.Element {
     })
   }, [path])
 
+  // The view follows the file on disk three ways. A change event, when the
+  // file is inside the open project (the watcher covers only that tree). A
+  // reload right after each save from the editor, which is the dirty flag
+  // going back down. And a plain 30-second poll, which is what covers a file
+  // outside any project — a dropped one, say — where no event ever arrives.
   useEffect(() => {
     loadFile()
-    return window.agweb.fs.onChanged(loadFile)
+    const stop = window.agweb.fs.onChanged(loadFile)
+    const poll = setInterval(loadFile, REFRESH_INTERVAL_MS)
+    return () => {
+      stop()
+      clearInterval(poll)
+    }
   }, [loadFile])
+  const wasDirty = useRef(false)
+  useEffect(() => {
+    if (wasDirty.current && !dirty) loadFile()
+    wasDirty.current = Boolean(dirty)
+  }, [dirty, loadFile])
 
   const ext = path.split('.').pop()?.toLowerCase() ?? ''
   const name = path.split('/').pop() ?? path
@@ -199,11 +221,13 @@ export function DocStudio({ path }: { path: string }): React.JSX.Element {
           {isMarkdown && menuButton('theme', 'Theme')}
           {targets.length > 0 && menuButton('convert', 'Convert')}
           {menuButton('export', 'Export')}
-          <div className="flex items-center gap-1 rounded-lg border border-slate-200 p-0.5 dark:border-slate-700">
-            {segment('styled', 'Styled')}
-            {(isTreeDoc || isXml) && segment('graph', 'Graph')}
-            {segment('source', 'Source')}
-          </div>
+          {!isSource && (
+            <div className="flex items-center gap-1 rounded-lg border border-slate-200 p-0.5 dark:border-slate-700">
+              {segment('styled', 'Styled')}
+              {(isTreeDoc || isXml) && segment('graph', 'Graph')}
+              {segment('source', 'Source')}
+            </div>
+          )}
           <button
             onClick={() => openFile(path)}
             className="rounded-md border border-slate-300 px-2.5 py-1 text-xs font-medium text-slate-500 hover:bg-slate-100 dark:border-slate-600 dark:hover:bg-slate-800"

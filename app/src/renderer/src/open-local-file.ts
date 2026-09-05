@@ -1,4 +1,5 @@
 import { browserPrefs } from '../../webui/shell'
+import { isDocFile, isEditorFile } from '@shared/ipc'
 import { useShellStore } from '@/store'
 
 /**
@@ -26,8 +27,17 @@ export async function openSignedDocument(file: {
   if (!granted.path) {
     return { ok: false, error: granted.error ?? 'That file could not be opened.' }
   }
-  useShellStore.getState().openDoc(granted.path)
-  return { ok: true }
+  // Everything WebDeck reads opens on the stage, in Document Studio: a
+  // document in its styled view, source and plain text in the source view.
+  // Nothing opens Deck blocks on its own — the reader's "Open in Editor" is
+  // the user's call. The browser only signs types on one of the two lists,
+  // so anything else here means the lists fell out of step with
+  // webdeck_shell.cc; say so rather than open nothing.
+  if (isDocFile(granted.path) || isEditorFile(granted.path)) {
+    useShellStore.getState().openDoc(granted.path)
+    return { ok: true }
+  }
+  return { ok: false, error: `WebDeck has no reader for ${granted.path.split('/').pop()}.` }
 }
 
 /**

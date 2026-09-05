@@ -237,6 +237,13 @@ export default function App(): React.JSX.Element {
   const blockDragging = useShellStore((s) => s.blockDragging)
 
   return (
+    // No file-drop handler here, and that is the whole design. A dropped file
+    // is handled by the BROWSER, which is the only side that knows the path it
+    // came from; the window offers it to us over Mojo and opens whatever we do
+    // not claim. But the window only ever sees the drop if this page REFUSES
+    // the drag: a page that calls preventDefault on dragover becomes the drop
+    // target itself, the window is never asked, and a file dropped anywhere on
+    // the shell does nothing at all. Refusing is how we receive it.
     <div className="wd-shell flex h-full flex-col">
       {/* Chrome is flush with the top of the window and shares its ground, so
           there is no seam between the app and its title bar. Tabs occupy the

@@ -1,6 +1,8 @@
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { describe, it, expect } from 'vitest'
-import { SHELL_BROWSER, toRect } from './shell'
-import { IpcChannels } from '@shared/ipc'
+import { SHELL_BROWSER, SHELL_BROWSER_EVENTS, toRect } from './shell'
+import { IpcChannels, IpcEvents } from '@shared/ipc'
 
 /**
  * The shell bridge is the renderer's half of the Shell privilege boundary: it
@@ -145,5 +147,31 @@ describe('toRect rounds and clamps the stage rect', () => {
       width: 0,
       height: 0
     })
+  })
+})
+
+describe('SHELL_BROWSER_EVENTS covers every channel the ShellClient emits', () => {
+  // Read the source rather than the runtime: the ShellClient is built inside
+  // ensureShellClient() and is unreachable from a test, but the set of channels
+  // it emits on is written in plain sight as emitShellBrowserEvent(IpcEvents.X).
+  // A channel emitted there and missing from SHELL_BROWSER_EVENTS is delivered
+  // to nobody, because the adapter wires subscribers for it to the core socket
+  // instead of the shell bus. Dropped documents were lost exactly this way.
+  // A path, not import.meta.url: under the DOM test environment that URL is
+  // http-scheme and node:fs refuses it.
+  const source = readFileSync(join(process.cwd(), 'src', 'webui', 'shell.ts'), 'utf8')
+  const emitted = [...source.matchAll(/emitShellBrowserEvent\(\s*IpcEvents\.(\w+)/g)].map(
+    (m) => m[1]
+  )
+
+  it('finds the emit sites (the regex is not silently matching nothing)', () => {
+    expect(emitted).toContain('browserDocumentsDropped')
+    expect(emitted).toContain('browserCommand')
+  })
+
+  it.each([...new Set(emitted)])('routes IpcEvents.%s to the shell bus', (name) => {
+    const channel = IpcEvents[name as keyof typeof IpcEvents]
+    expect(channel, `IpcEvents.${name} does not exist`).toBeDefined()
+    expect(SHELL_BROWSER_EVENTS.has(channel)).toBe(true)
   })
 })

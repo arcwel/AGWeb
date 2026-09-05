@@ -618,18 +618,30 @@ try {
   let signIdentity = '-'
   let identityName = 'ad-hoc'
   if (identityArg !== '-') {
-    const found = run('/usr/bin/security', ['find-identity', '-v', '-p', 'codesigning']).out
-    const rows = [...found.matchAll(/^\s*\d+\)\s+([0-9A-F]{40})\s+"(.+)"\s*$/gm)].map((m) => ({
-      hash: m[1],
-      name: m[2]
-    }))
-    const devIds = rows.filter((r) => r.name.startsWith('Developer ID Application:'))
-    const matches =
+    // Two lists, because they answer different questions. `-v` is the valid
+    // ones: a Developer ID must be there, since a certificate that does not
+    // validate cannot notarize. The full list also holds identities macOS does
+    // not trust — a self-signed one made by dev-signing-identity.mjs is always
+    // untrusted, and codesign signs with it happily. That is the point of it:
+    // it gives local test builds the SAME signature every time, so the
+    // Keychain stops asking for the login password on every rebuild.
+    const parse = (out) =>
+      [...out.matchAll(/^\s*\d+\)\s+([0-9A-F]{40})\s+"(.+?)"/gm)].map((m) => ({
+        hash: m[1],
+        name: m[2]
+      }))
+    const valid = parse(run('/usr/bin/security', ['find-identity', '-v', '-p', 'codesigning']).out)
+    const all = parse(run('/usr/bin/security', ['find-identity', '-p', 'codesigning']).out)
+    const rows = identityArg === 'auto' ? valid : all
+    const devIds = valid.filter((r) => r.name.startsWith('Developer ID Application:'))
+    const candidates =
       identityArg === 'auto'
         ? devIds
         : rows.filter(
             (r) => r.hash === identityArg || r.name === identityArg || r.name.includes(identityArg)
           )
+    // The full list repeats each identity under "Matching" and "Valid only".
+    const matches = [...new Map(candidates.map((r) => [r.hash, r])).values()]
     if (matches.length === 0) {
       cannotRun(
         identityArg === 'auto'

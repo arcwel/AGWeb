@@ -3,6 +3,7 @@
 #ifndef CHROME_BROWSER_WEBDECK_WEBDECK_SHELL_HOST_H_
 #define CHROME_BROWSER_WEBDECK_WEBDECK_SHELL_HOST_H_
 
+#include <string>
 #include <vector>
 
 #include "base/files/file_path.h"
@@ -58,22 +59,37 @@ bool OwnsCommand(BrowserWindowInterface* window, int command_id);
 // Sends `command_id` to the shell if it owns it; true if it did.
 bool ForwardCommand(BrowserWindowInterface* window, int command_id);
 
-// Files dropped on a WebDeck shell's WebContents.
+// Files dropped on a WebDeck window.
 //
-// The page is handed bytes and a name by the drag machinery, never a location,
-// so a shell that wants to open a dropped file where it lives has to be told
-// by the browser. Chromium's own drop path (HandleOnPerformingDrop) asks here
-// first; a WebContents with no shell behind it forwards nothing, so ordinary
-// windows and ordinary pages drop exactly as they did.
-using FilesDropForwarder =
-    base::RepeatingCallback<void(const std::vector<base::FilePath>&)>;
-void SetFilesDropForwarder(content::WebContents* shell_contents,
+// Chromium has two drop paths and both come here. A drop on the tab strip or
+// toolbar is the window's (BrowserRootView), which opens each file as a tab.
+// A drop on a page is the page's (the WebContents view delegate), which hands
+// the file to the renderer. Either way the window's shell is offered the
+// dropped paths first and returns the ones it did not take, and the caller
+// then does what Chromium always did with those — right for a PDF or an image,
+// which Chromium renders, and never reached for a document, which WebDeck
+// reads itself.
+//
+// The page cannot do this on its own: a File handed to JavaScript carries
+// bytes and a name, never a location. A window with no shell forwards
+// nothing, so ordinary Chromium windows drop exactly as they did.
+//
+// A drop happens only under a real hand — no automated drag reaches these
+// paths — and a browser launched from the Finder logs to nowhere. So each drop
+// leaves a line in ~/.webdeck/drops.log, the one way to tell "the shell took
+// it" from "no shell was listening": two failures that look identical from the
+// outside and have different fixes.
+void RecordDropNote(const std::string& line);
+
+using FilesDropForwarder = base::RepeatingCallback<std::vector<base::FilePath>(
+    const std::vector<base::FilePath>&)>;
+void SetFilesDropForwarder(BrowserWindowInterface* window,
                            FilesDropForwarder forwarder);
-void ClearFilesDropForwarder(content::WebContents* shell_contents);
-// Hands `paths` to the shell behind `contents`. True if a shell took them, in
-// which case the drop must NOT also reach the page.
-bool ForwardFilesDrop(content::WebContents* contents,
-                      const std::vector<base::FilePath>& paths);
+void ClearFilesDropForwarder(BrowserWindowInterface* window);
+// Offers `paths` to the window's shell. Returns the ones it did NOT take.
+std::vector<base::FilePath> ForwardDroppedFiles(
+    BrowserWindowInterface* window,
+    const std::vector<base::FilePath>& paths);
 
 class WebDeckShellHost : public content::WebContentsUserData<WebDeckShellHost> {
  public:

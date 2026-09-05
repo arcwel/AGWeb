@@ -81,7 +81,9 @@ Three things follow from that ordering:
 
 Markdown, JSON, YAML, CSV, TSV, XML, SVG and TOML render as styled documents with Mermaid diagrams and math, a one-click toggle to source, and export to HTML or PDF. `.slides.md` files become Reveal.js decks.
 
-**Files open where they live.** Drop one on the window, pick one with **Open file…**, or click it in the Files block: a document opens in Document Studio at its own path, editable and saveable in place. Nothing is copied and nothing is posted through the socket, so a large file costs what reading a file costs. A PDF goes the other way, to Chromium's own viewer with its annotation tools; images, HTML and plain text render there too.
+**Files open where they live.** Drop one on the window, pick one with **Open file…**, or click it in the Files block: a document opens in Document Studio at its own path, editable and saveable in place. Source and plain text — Python, JavaScript, Go, Rust, shell, SQL, CSS, `.txt` and some forty more — open the same way, in the source view, with **Open in Editor** for when you want it in the Deck. Nothing is copied and nothing is posted through the socket, so a large file costs what reading a file costs. A PDF goes the other way, to Chromium's own viewer with its annotation tools; images and HTML render there too.
+
+The view follows the file: it reloads on a change inside the open project, right after each save from the editor, and every 30 seconds for a file outside any project. Files you opened this way come back after a relaunch like any other tab, as long as they still exist.
 
 The page carries the path but is not trusted with it. The browser signs a path only when you actually picked or dropped that file, with a key the page never holds, and the core refuses anything unsigned.
 
@@ -178,7 +180,7 @@ What to know before you start:
 - **The profile lives in `~/Library/Application Support/Chromium`** and is separate from Chrome's. Nothing in your Chrome profile is read or changed.
 - **Start the agent in Review-driven or Agent-driven mode.** Leave the three money and identity guards on, and turn on **Email & messaging** and **Posting publicly** if the agent will be anywhere near your mail or social accounts.
 - **Cast is off** by default, so no "find devices on the local network" prompt.
-- **macOS asks once for Keychain access** ("Arcwel WebDeck Safe Storage"), the same prompt Chrome raises. Click **Always Allow** and it does not come back. It asks because the build is not yet notarized; dragging the app to Applications, rather than running it from the disk image, is what keeps the answer sticking.
+- **macOS asks once for Keychain access** ("Arcwel WebDeck Safe Storage"), the same prompt Chrome raises. Click **Always Allow** and it does not come back for that build. It asks because the build is not yet notarized; dragging the app to Applications, rather than running it from the disk image, is what keeps the answer sticking. A newer build asks again, because an unsigned build has a new identity every time — see [The development loop](#the-development-loop) for how a developer avoids that.
 
 Things worth trying: browse for a while and see whether anything feels less than Chrome; press <kbd>⌘D</kbd> over a page and give the agent a task that touches the page you are looking at; resize the window down to about 760 × 640 and open every menu; open a project and use the editor, terminal and source control together; detach the Deck into its own window.
 
@@ -215,6 +217,16 @@ node scripts/package-fork.mjs --build-dir out/webdeck-release --out ../dist
 | Chromium patches (`chromium/patches`)              | Edit the checkout, `git diff --binary > chromium/patches/upstream-edits.diff`, `npm run verify:patches`                  |
 | A `.mojom` change                                  | Build `…:mojo_bindings` first, then pack; packing refuses bindings that do not match the out dir                         |
 
+A build you rebuild every hour should not ask for your login password every hour. Two things stop it, and both are for builds that stay on your machine:
+
+```bash
+npm run dev:signing-identity      # once: a self-signed identity in its own keychain, so every build carries the same signature
+# in out/<dir>/args.gn:  webdeck_dev_keychain = true   — the cookie key lives in the profile, not the login keychain
+node scripts/package-fork.mjs --build-dir out/webdeck-release --out ../dist --identity "Arcwel WebDeck Dev" --allow-dev-keychain
+```
+
+Every file drop leaves a line in `~/.webdeck/drops.log` saying whether the shell was listening and what it took, because a drop only happens under a real hand and nothing automated reaches that path.
+
 Verification gates, in the order CI runs them:
 
 ```bash
@@ -241,7 +253,7 @@ npm run release:dmg -- --build-dir <out dir> --out <dir>
 
 Without those credentials, `npm run package:dmg` produces the same disk image ad-hoc signed. It installs and runs, but testers meet Gatekeeper once — see [Opening a pre-release build](#opening-a-pre-release-build).
 
-Developer builds may set the `webdeck_dev_keychain` gn arg, which keeps the cookie encryption key in the profile rather than raising the macOS Keychain prompt on every rebuild. Packaging treats such a build as not distributable. See [`chromium/RELEASING.md`](chromium/RELEASING.md).
+Developer builds may set the `webdeck_dev_keychain` gn arg, which keeps the cookie encryption key in the profile rather than raising the macOS Keychain prompt on every rebuild, and sign with the identity `npm run dev:signing-identity` creates so the signature is the same across rebuilds. Packaging treats such a build as not distributable. See [`chromium/RELEASING.md`](chromium/RELEASING.md).
 
 ## How it fits together
 

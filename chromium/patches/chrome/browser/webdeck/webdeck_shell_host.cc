@@ -4,7 +4,15 @@
 
 #include <map>
 
+#include <fcntl.h>
+#include <unistd.h>
+
+#include <cstdlib>
+
+#include "base/logging.h"
 #include "base/no_destructor.h"
+#include "base/strings/strcat.h"
+#include "base/strings/string_number_conversions.h"
 #include "content/public/browser/web_contents.h"
 
 namespace webdeck {
@@ -23,35 +31,63 @@ std::map<BrowserWindowInterface*, CommandForwarder>& Forwarders() {
   return *map;
 }
 
-// Keyed by the shell's own WebContents, which is what Chromium's drop path
-// has in hand when it asks.
-std::map<content::WebContents*, FilesDropForwarder>& DropForwarders() {
-  static base::NoDestructor<std::map<content::WebContents*, FilesDropForwarder>>
+// Keyed by the window, like the command forwarder: Chromium's file drop is a
+// window-level event, and the shell that answers it is the window's own.
+std::map<BrowserWindowInterface*, FilesDropForwarder>& DropForwarders() {
+  static base::NoDestructor<std::map<BrowserWindowInterface*, FilesDropForwarder>>
       forwarders;
   return *forwarders;
 }
 }  // namespace
 
-void SetFilesDropForwarder(content::WebContents* shell_contents,
+void SetFilesDropForwarder(BrowserWindowInterface* window,
                            FilesDropForwarder forwarder) {
-  DropForwarders()[shell_contents] = std::move(forwarder);
+  DropForwarders()[window] = std::move(forwarder);
 }
 
-void ClearFilesDropForwarder(content::WebContents* shell_contents) {
-  DropForwarders().erase(shell_contents);
+void ClearFilesDropForwarder(BrowserWindowInterface* window) {
+  DropForwarders().erase(window);
 }
 
-bool ForwardFilesDrop(content::WebContents* contents,
-                      const std::vector<base::FilePath>& paths) {
-  if (paths.empty()) {
-    return false;
+void RecordDropNote(const std::string& line) {
+  // Plain POSIX on purpose. This runs on the UI thread mid-drag, and each
+  // layer that could refuse it — a blocking-call assertion, a log level the
+  // shipped build filters, a path service that answers differently in a
+  // packaged app — is a way for the only record of what happened to vanish
+  // without saying so. Appending one line to a file under $HOME has none of
+  // those failure modes.
+  LOG(INFO) << "webdeck: " << line;
+  const char* home = getenv("HOME");
+  if (!home) {
+    return;
   }
-  auto it = DropForwarders().find(contents);
-  if (it == DropForwarders().end()) {
-    return false;
+  const std::string path = std::string(home) + "/.webdeck/drops.log";
+  const int fd = open(path.c_str(), O_WRONLY | O_APPEND | O_CREAT, 0644);
+  if (fd < 0) {
+    return;
   }
-  it->second.Run(paths);
-  return true;
+  const std::string text = line + "\n";
+  ssize_t written = write(fd, text.data(), text.size());
+  (void)written;
+  close(fd);
+}
+
+std::vector<base::FilePath> ForwardDroppedFiles(
+    BrowserWindowInterface* window,
+    const std::vector<base::FilePath>& paths) {
+  auto it = DropForwarders().find(window);
+  const bool has_shell = it != DropForwarders().end();
+  RecordDropNote(base::StrCat({base::NumberToString(paths.size()),
+                           " file(s) dropped on a window, shell ",
+                           has_shell ? "listening" : "NOT listening"}));
+  if (paths.empty() || !has_shell) {
+    return paths;
+  }
+  std::vector<base::FilePath> unclaimed = it->second.Run(paths);
+  RecordDropNote(base::StrCat({"shell took ",
+                           base::NumberToString(paths.size() - unclaimed.size()),
+                           " of ", base::NumberToString(paths.size())}));
+  return unclaimed;
 }
 
 void SetCommandForwarder(BrowserWindowInterface* window,

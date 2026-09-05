@@ -28,6 +28,7 @@
     "package:dmg": "node scripts/package-fork.mjs",
     "release:dmg": "node scripts/package-fork.mjs --identity auto --notary-profile webdeck-notary",
     "release:preflight": "node scripts/release-preflight.mjs",
+    "dev:signing-identity": "node scripts/dev-signing-identity.mjs",
     "gen:mojo": "node scripts/gen-mojo-bindings.mjs",
     "pack:webui:release": "node scripts/gen-mojo-bindings.mjs --build-dir out/webdeck-release && npm run build:webui && node scripts/pack-webui.mjs --build-dir out/webdeck-release"
   },
